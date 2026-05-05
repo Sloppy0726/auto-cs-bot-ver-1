@@ -160,7 +160,12 @@ function looksLikeCreditCard(value) {
 }
 
 function isStandalonePhoneNumber(value, text, start, end) {
-  return !hasNearbyDigit(text, start, -1) && !hasNearbyDigit(text, end, 1);
+  const charBefore = text[start - 1] || "";
+  const charAfter = text[end] || "";
+  return !/[A-Za-z]/.test(charBefore)
+    && !/[A-Za-z]/.test(charAfter)
+    && !hasNearbyDigit(text, start, -1)
+    && !hasNearbyDigit(text, end, 1);
 }
 
 function hasNearbyDigit(text, index, direction) {

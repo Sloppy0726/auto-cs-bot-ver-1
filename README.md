@@ -33,6 +33,12 @@ Customer message
 ```text
 auto cs bot ver 1/
 ├── README.md
+├── privacy gateway ver 1.0/
+│   ├── README.md
+│   ├── src/
+│   │   └── privacyGateway.js
+│   └── test/
+│       └── privacyGateway.test.js
 └── privacy filter ver 1.0/
     ├── README.md
     ├── privacy-filter-side-by-side-results.md
@@ -46,6 +52,18 @@ auto cs bot ver 1/
 ```
 
 ## Components
+
+### Privacy Gateway Ver 1.0
+
+The privacy gateway is the routing layer that decides what should happen to each inbound message after privacy filtering.
+
+Current routing decisions:
+
+- `send_to_llm`: sanitized message can be used for an AI draft
+- `review_before_llm`: sanitized message can be shown for staff review before any AI reply
+- `block_and_handoff`: message should not be sent to the LLM
+
+The gateway wraps the privacy filter rather than duplicating detection logic.
 
 ### Privacy Filter Ver 1.0
 
@@ -95,6 +113,38 @@ Expected result:
 privacyFilter: 500 tests passed
 ```
 
+For the 200-case edge suite, run:
+
+```bash
+node test/privacyFilter.edge.test.js
+```
+
+Expected result:
+
+```text
+privacyFilter edge: 200 tests passed
+```
+
+## How To Run The Privacy Gateway Tests
+
+From:
+
+```bash
+auto cs bot ver 1/privacy gateway ver 1.0
+```
+
+Run:
+
+```bash
+node test/privacyGateway.test.js
+```
+
+Expected result:
+
+```text
+privacyGateway: 200 tests passed
+```
+
 ## How To Generate The Side-by-Side Report
 
 From:
@@ -133,7 +183,6 @@ Future components should live inside this main project folder as separate module
 
 Likely next pieces:
 
-- `privacy gateway ver 1.0`: wraps the privacy filter and returns routing decisions such as `send_to_llm`, `review_before_llm`, or `block_and_handoff`
 - `knowledge base ver 1.0`: approved business FAQ, price list, branch info, policies, and retrieval
 - `ai draft engine ver 1.0`: creates Cantonese / English replies from sanitized input and approved knowledge
 - `conversation inbox ver 1.0`: staff review, approval, handoff, tagging, and status tracking

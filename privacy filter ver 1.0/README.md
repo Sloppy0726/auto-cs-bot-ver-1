@@ -14,6 +14,18 @@ node test/privacyFilter.test.js
 
 The suite currently contains exactly 500 cases.
 
+There is also a separate 200-case edge suite:
+
+```bash
+node test/privacyFilter.edge.test.js
+```
+
+Expected result:
+
+```text
+privacyFilter edge: 200 tests passed
+```
+
 ## Generate Side-by-Side Results
 
 ```bash
