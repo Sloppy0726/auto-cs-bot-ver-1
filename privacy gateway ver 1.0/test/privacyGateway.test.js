@@ -187,13 +187,18 @@ function highRiskHintCases() {
     ["medical diagnosis", "醫生診斷過敏感，可以做療程？", ["medical_detail"]],
     ["medical record", "我有病歷想send俾你", ["medical_detail"]],
     ["medical allergy", "I have allergy to laser gel", ["medical_detail"]],
+    ["medical side effects", "Will there be side effects or swelling after treatment?", ["medical_detail"]],
+    ["medical breastfeeding", "I am breastfeeding, can I do HIFU?", ["medical_detail"]],
     ["medical pain", "做完之後好痛點算？", ["medical_detail"]],
     ["child school", "要提供school name嗎？", ["child_data"]],
     ["child dob", "需要date of birth先報名？", ["child_data"]],
     ["child full name", "要小朋友全名先可以試堂？", ["child_data"]],
     ["student id", "Do you need student id?", ["child_data"]],
+    ["child full name english", "Do you need my child's full name?", ["child_data"]],
     ["refund", "I want a refund", ["payment_dispute"]],
     ["chargeback", "I will chargeback this payment", ["payment_dispute"]],
+    ["overcharged", "I was overcharged and want a refund", ["payment_dispute"]],
+    ["payment not found", "I paid but you said payment not found", ["payment_dispute"]],
     ["not received payment", "你哋話未收到款，我想退款", ["payment_dispute"]],
     ["credit card dispute", "信用卡扣多咗錢", ["payment_dispute"]],
     ["mixed medical phone", "我濕疹，電話9123 4567", ["medical_detail"]],
@@ -483,7 +488,7 @@ const cases = [
   ...oddInputCases()
 ];
 
-assert.equal(cases.length, 200, "gateway suite should contain exactly 200 cases");
+assert.equal(cases.length, 205, "gateway suite should contain exactly 205 cases");
 
 for (const testCase of cases) {
   const result = routeMessage(testCase.input, testCase.options);

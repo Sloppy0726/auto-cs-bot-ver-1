@@ -1,7 +1,7 @@
 # Privacy Gateway Ver 1.0
 
 The privacy gateway is the routing layer that sits immediately after an inbound
-customer message and before any LLM call.
+customer message, whether Cantonese, English, or mixed, and before any LLM call.
 
 It wraps `privacy filter ver 1.0` and turns deterministic filter output into a
 clear decision for the rest of the customer support bot.
@@ -18,14 +18,14 @@ clear decision for the rest of the customer support bot.
 node test/privacyGateway.test.js
 ```
 
-The suite currently contains exactly 200 routing and edge cases.
+The suite currently contains 205 Cantonese/English routing and edge cases.
 
 ## Example
 
 ```js
 const { routeMessage } = require("./src/privacyGateway");
 
-const decision = routeMessage("我電話9123 4567，想問underarm幾錢？");
+const decision = routeMessage("My phone is 9123 4567, how much is underarm laser?");
 ```
 
 The returned object includes the original text, sanitized text, filter findings,

@@ -1,12 +1,12 @@
 # Auto CS Bot Ver 1
 
-Auto CS Bot Ver 1 is the first working project for a Hong Kong-focused AI customer support bot.
+Auto CS Bot Ver 1 is the first working project for a Hong Kong-focused Cantonese/English AI customer support bot.
 
-The product goal is to help local SMEs reply faster to repetitive customer inquiries while keeping sensitive customer data away from the LLM wherever possible.
+The product goal is to help local SMEs reply faster to repetitive Cantonese, English, and mixed-language customer inquiries while keeping sensitive customer data away from the LLM wherever possible.
 
 Initial target use case:
 
-- Cantonese and English customer support
+- Cantonese and English customer support, including code-switching
 - WhatsApp / Instagram / website inquiry handling
 - FAQ, pricing, booking, and policy replies
 - Human handoff for risky or sensitive cases
@@ -21,7 +21,8 @@ The intended message flow is:
 ```text
 Customer message
 -> Privacy filter
--> Risk classification
+-> Privacy gateway
+-> Intent classifier
 -> Business rules / backend lookup
 -> Sanitized LLM draft, if allowed
 -> Staff review or direct reply
@@ -39,6 +40,16 @@ auto cs bot ver 1/
 │   │   └── privacyGateway.js
 │   └── test/
 │       └── privacyGateway.test.js
+├── intent classifier ver 1.0/
+│   ├── README.md
+│   ├── src/
+│   │   └── intentClassifier.js
+│   ├── scripts/
+│   │   └── writeSideBySideResults.js
+│   └── test/
+│       ├── intentClassifier.cases.js
+│       ├── intentClassifier.test.js
+│       └── intentClassifier.edge.test.js
 └── privacy filter ver 1.0/
     ├── README.md
     ├── privacy-filter-side-by-side-results.md
@@ -48,7 +59,8 @@ auto cs bot ver 1/
     │   └── privacyFilter.js
     └── test/
         ├── privacyFilter.cases.js
-        └── privacyFilter.test.js
+        ├── privacyFilter.test.js
+        └── privacyFilter.edge.test.js
 ```
 
 ## Components
@@ -64,6 +76,19 @@ Current routing decisions:
 - `block_and_handoff`: message should not be sent to the LLM
 
 The gateway wraps the privacy filter rather than duplicating detection logic.
+
+### Intent Classifier Ver 1.0
+
+The intent classifier runs after the privacy gateway. It reads the sanitized Cantonese, English, or mixed message and gateway metadata, then returns normalized intent JSON for later backend modules.
+
+Current behavior:
+
+- Deterministic rules classify obvious Cantonese and English intents first.
+- An optional injected LLM classifier can handle ambiguous messages.
+- The original raw customer message is not sent to the LLM.
+- Output is normalized so business rules, knowledge retrieval, and draft generation can use one stable shape.
+
+Current intents: `pricing`, `booking`, `reschedule`, `hours_location`, `service_info`, `aftercare`, `payment`, `order_status`, `complaint`, `sensitive_health`, `child_data`, `human_request`, and `general`.
 
 ### Privacy Filter Ver 1.0
 
@@ -113,7 +138,7 @@ Expected result:
 privacyFilter: 500 tests passed
 ```
 
-For the 200-case edge suite, run:
+For the 207-case edge suite, run:
 
 ```bash
 node test/privacyFilter.edge.test.js
@@ -122,7 +147,7 @@ node test/privacyFilter.edge.test.js
 Expected result:
 
 ```text
-privacyFilter edge: 200 tests passed
+privacyFilter edge: 207 tests passed
 ```
 
 ## How To Run The Privacy Gateway Tests
@@ -142,8 +167,38 @@ node test/privacyGateway.test.js
 Expected result:
 
 ```text
-privacyGateway: 200 tests passed
+privacyGateway: 205 tests passed
 ```
+
+## How To Run The Intent Classifier Tests
+
+From:
+
+```bash
+auto cs bot ver 1/intent classifier ver 1.0
+```
+
+Run:
+
+```bash
+node test/intentClassifier.test.js
+node test/intentClassifier.edge.test.js
+```
+
+Expected result:
+
+```text
+intentClassifier: 103 tests passed
+intentClassifier edge: 23 checks passed
+```
+
+Generate intent classifier side-by-side results:
+
+```bash
+node scripts/writeSideBySideResults.js
+```
+
+This writes `intent-classifier-side-by-side-results.md`.
 
 ## How To Generate The Side-by-Side Report
 

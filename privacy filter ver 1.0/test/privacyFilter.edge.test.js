@@ -257,18 +257,25 @@ function hintEdgeCases() {
     ["醫生診斷過敏感，可以做療程？", ["medical_detail"], true, "high"],
     ["我有病歷想send俾你", ["medical_detail"], true, "high"],
     ["I have allergy to laser gel", ["medical_detail"], true, "high"],
+    ["Will there be side effects or swelling after treatment?", ["medical_detail"], true, "high"],
+    ["I am breastfeeding, can I do HIFU?", ["medical_detail"], true, "high"],
     ["做完之後好痛點算？", ["medical_detail"], true, "high"],
     ["要提供school name嗎？", ["child_data"], true, "high"],
     ["需要date of birth先報名？", ["child_data"], true, "high"],
     ["要小朋友全名先可以試堂？", ["child_data"], true, "high"],
     ["Do you need student id?", ["child_data"], true, "high"],
+    ["Do you need my child's full name?", ["child_data"], true, "high"],
+    ["Should I provide my kid's school name?", ["child_data"], true, "high"],
     ["I want a refund", ["payment_dispute"], true, "high"],
     ["I will chargeback this payment", ["payment_dispute"], true, "high"],
+    ["I was charged twice and want a refund", ["payment_dispute"], true, "high"],
+    ["I paid but you said payment not found", ["payment_dispute"], true, "high"],
     ["你哋話未收到款，我想退款", ["payment_dispute"], true, "high"],
     ["信用卡扣多咗錢", ["payment_dispute"], true, "high"],
     ["地址係ABC Building 5/F", ["address_hint"], false, "medium"],
     ["我住太古城某座", ["address_hint"], false, "medium"],
     ["Room 1201, Tower 2", ["address_hint"], false, "medium"],
+    ["My home address is Flat B, Block 3", ["address_hint"], false, "medium"],
     ["送去某大廈地下", ["address_hint"], false, "medium"]
   ];
   return fixtures.map(([input, hints, review, risk], index) => makeCase({
@@ -426,7 +433,7 @@ const cases = [
   ...boundaryNearMissEdgeCases()
 ];
 
-assert.equal(cases.length, 200, "privacy filter edge suite should contain exactly 200 cases");
+assert.equal(cases.length, 207, "privacy filter edge suite should contain exactly 207 cases");
 
 for (const testCase of cases) {
   const result = filterForLLM(testCase.input, testCase.options);

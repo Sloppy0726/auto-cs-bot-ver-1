@@ -56,22 +56,22 @@ const riskHints = [
   {
     type: "medical_detail",
     risk: "high",
-    pattern: /濕疹|敏感|皮膚病|懷孕|傷口|紅腫|痛|藥|醫生|診斷|病歷|eczema|allergy|pregnant|wound|medical|medicine|diagnosis/i
+    pattern: /濕疹|敏感|皮膚病|懷孕|傷口|紅腫|痛|藥|醫生|診斷|病歷|eczema|allergy|pregnant|pregnancy|wound|rash|swelling|side effects?|medical|medicine|medication|prescription|doctor|diagnosis|breastfeeding/i
   },
   {
     type: "child_data",
     risk: "high",
-    pattern: /小朋友全名|學校|幼稚園|學生證|出生日期|child full name|school name|student id|date of birth/i
+    pattern: /小朋友全名|學校|幼稚園|學生證|出生日期|child full name|child.?s full name|kid.?s full name|school name|kindergarten|student id|student number|birth date|date of birth/i
   },
   {
     type: "address_hint",
     risk: "medium",
-    pattern: /地址|大廈|座|樓|室|街|道|邨|村|苑|building|tower|floor|room|street|road|estate/i
+    pattern: /地址|大廈|座|樓|室|街|道|邨|村|苑|building|tower|floor|room|flat|apartment|unit|block|street|road|avenue|lane|estate|home address/i
   },
   {
     type: "payment_dispute",
     risk: "high",
-    pattern: /退款|退錢|未收到款|信用卡|chargeback|refund|payment dispute|not received payment/i
+    pattern: /退款|退錢|未收到款|信用卡|chargeback|refund|payment dispute|not received payment|paid but not received|payment not found|charged twice|overcharged|dispute/i
   }
 ];
 

@@ -167,16 +167,23 @@ function makeBookingReferenceCases() {
 function makeHintCases() {
   const fixtures = [
     { label: "medical eczema", text: "I have eczema, can I do laser?", hints: ["medical_detail"], review: true },
+    { label: "medical side effects", text: "Will there be side effects after HIFU?", hints: ["medical_detail"], review: true },
+    { label: "medical medication", text: "I am taking prescription medication, can I do facial?", hints: ["medical_detail"], review: true },
     { label: "medical pregnancy", text: "我懷孕做唔做得？", hints: ["medical_detail"], review: true },
     { label: "medical wound", text: "傷口未好可以做嗎？", hints: ["medical_detail"], review: true },
     { label: "medical diagnosis", text: "醫生診斷過敏感，可以做療程？", hints: ["medical_detail"], review: true },
     { label: "child school", text: "要提供school name嗎？", hints: ["child_data"], review: true },
+    { label: "child full name english", text: "Do you need my child's full name?", hints: ["child_data"], review: true },
+    { label: "child birth date", text: "Do you need the birth date before trial class?", hints: ["child_data"], review: true },
     { label: "child dob", text: "需要date of birth先報名？", hints: ["child_data"], review: true },
     { label: "child full name", text: "要小朋友全名先可以試堂？", hints: ["child_data"], review: true },
     { label: "address building", text: "地址係ABC Building 5/F", hints: ["address_hint"], review: false },
+    { label: "home address english", text: "My home address is Flat B, Tower 2", hints: ["address_hint"], review: false },
     { label: "address estate", text: "我住太古城某座", hints: ["address_hint"], review: false },
     { label: "payment refund", text: "I want a refund", hints: ["payment_dispute"], review: true },
     { label: "payment chargeback", text: "I will chargeback this payment", hints: ["payment_dispute"], review: true },
+    { label: "payment overcharged", text: "I was overcharged and want a refund", hints: ["payment_dispute"], review: true },
+    { label: "payment not found", text: "I paid but you said payment not found", hints: ["payment_dispute"], review: true },
     { label: "payment not received", text: "你哋話未收到款，我想退款", hints: ["payment_dispute"], review: true }
   ];
   return Array.from({ length: 60 }, (_, index) => {
