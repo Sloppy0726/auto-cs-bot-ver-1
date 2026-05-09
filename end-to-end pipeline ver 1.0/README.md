@@ -38,7 +38,7 @@ const result = await pipeline.runMessage({
 
 ## Server
 
-`src/server.js` exposes `createWebhookServer()` using Node's built-in `http` module. It supports `POST /webhook`. Signed mode requires `x-webhook-timestamp` and `x-webhook-signature`; the signature is HMAC-SHA256 over `timestamp.rawBody`. For tenant isolation, configure per-business `webhookSecrets` so the verified credential derives the authorized `businessId` before the pipeline runs.
+`src/server.js` exposes `createWebhookServer()` using Node's built-in `http` module. It supports `POST /webhook`. Signed mode requires `x-webhook-timestamp` and `x-webhook-signature`; the signature is HMAC-SHA256 over `timestamp.rawBody`. For tenant isolation, configure per-business `webhookSecrets` or set `webhookBusinessId` with a single `webhookSecret` so the verified request is bound to a server-side `businessId` before the pipeline runs. Tenant-scoped payloads are rejected when the signed credential is not bound to a business.
 
 ## Run
 
@@ -48,6 +48,13 @@ node "end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js"
 ```
 
 ## Changelog
+
+### 2026-05-10 03:35:13 HKT - Webhook Tenant Binding and Error Masking
+
+- **Changed:** Single-secret webhook mode now rejects tenant-scoped payloads unless `webhookBusinessId` binds the credential to a server-side business.
+- **Changed:** Production unsigned-webhook mode is rejected even if `allowUnsignedWebhooks` is set.
+- **Changed:** Public 401 and 400 responses now return generic `unauthorized` and `bad_request` messages instead of verifier/parser details.
+- **Verified:** `end-to-end pipeline ver 1.0/test/server.test.js` covers unbound single-secret rejection, production unsigned-mode rejection, and masked auth/bad-request responses.
 
 ### 2026-05-10 03:18:11 HKT - Stable Message ID Hash Hardening
 

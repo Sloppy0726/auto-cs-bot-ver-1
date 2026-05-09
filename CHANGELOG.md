@@ -4,6 +4,13 @@
 
 ### Security
 
+#### 2026-05-10 03:35:13 HKT - Webhook Tenant Binding and Error Masking
+
+- **Security fix:** Closed the single-secret tenant authorization gap by rejecting signed tenant-scoped webhook payloads unless the credential is bound with `webhookBusinessId`.
+- **Authentication hardening:** Rejected production use of `allowUnsignedWebhooks` so unsigned webhook mode cannot be accidentally enabled in deployment.
+- **API hardening:** Masked public 401 and 400 error bodies as `unauthorized` and `bad_request` to avoid exposing signature, timestamp, tenant-binding, or parser oracles.
+- **Tests:** Added end-to-end pipeline server coverage for unbound single-secret rejection, production unsigned-mode rejection, and generic auth/bad-request responses.
+
 #### 2026-05-10 03:18:11 HKT - Stable Message ID Hash Hardening
 
 - **Security hardening:** Replaced the channel adapter 32-bit rolling hash used for generated `externalMessageId` values with a SHA-256-derived identifier.

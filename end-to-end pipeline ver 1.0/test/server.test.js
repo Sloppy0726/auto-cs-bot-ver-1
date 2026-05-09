@@ -10,6 +10,8 @@ const { createWebhookServer, _internal } = require("../src/server");
   assert.equal(_internal.statusCodeForError(Object.assign(new Error("missing_webhook_signature"), { statusCode: 401 })), 401, "auth errors should be unauthorized");
   assert.equal(_internal.statusCodeForError(new Error("database unavailable")), 500, "unexpected errors stay server errors");
   assert.equal(_internal.publicErrorMessage(new Error("database unavailable"), 500), "internal_server_error", "500s should not expose internal messages");
+  assert.equal(_internal.publicErrorMessage(Object.assign(new Error("invalid_webhook_signature"), { statusCode: 401 }), 401), "unauthorized", "auth failures should not expose verifier details");
+  assert.equal(_internal.publicErrorMessage(new SyntaxError("bad json"), 400), "bad_request", "bad requests should not expose parser details");
 
   const body = JSON.stringify({ channel: "website", businessId: "restaurant_demo", sessionId: "s1", text: "hello" });
   const timestamp = "1778400000";
@@ -67,13 +69,20 @@ const { createWebhookServer, _internal } = require("../src/server");
     { channel: "website", businessId: "beauty_demo", text: "hello" },
     tenantContext
   ), /business_id_not_authorized/, "payload businessId must not conflict with credential businessId");
+  assert.throws(() => _internal.authorizeWebhookPayload(
+    { channel: "website", businessId: "beauty_demo", text: "hello" },
+    { credentialId: "default" }
+  ), /business_id_binding_required/, "tenant-scoped payloads require a server-side business binding");
+  assert.throws(() => _internal.verifyUnsignedWebhookMode({ allowUnsignedWebhooks: true, nodeEnv: "production" }), /webhook_signature_required/, "unsigned webhook mode must not run in production");
 
   await assertServerRejectsUnsignedBeforePipeline({ body, secret, timestamp });
   await assertServerAcceptsSignedWebhook({ body, secret, timestamp, signature });
   await assertServerDerivesBusinessIdFromCredential({ secret, timestamp });
   await assertServerRejectsBusinessIdImpersonation({ secret, timestamp });
+  await assertServerRejectsUnboundSingleSecretBusinessId({ body, secret, timestamp, signature });
+  await assertServerMasksAuthAndBadRequestDetails({ secret, timestamp });
 
-  console.log("server: 17 tests passed");
+  console.log("server: 23 tests passed");
 })();
 
 function requestWithHeaders(headers) {
@@ -112,6 +121,7 @@ async function assertServerRejectsUnsignedBeforePipeline({ body, secret, timesta
   let called = false;
   const server = createWebhookServer({
     webhookSecret: secret,
+    webhookBusinessId: "restaurant_demo",
     nowFn: () => new Date(Number(timestamp) * 1000),
     pipeline: {
       async runMessage() {
@@ -123,7 +133,7 @@ async function assertServerRejectsUnsignedBeforePipeline({ body, secret, timesta
 
   const response = await sendJson({ server, payload: body });
   assert.equal(response.statusCode, 401);
-  assert.equal(response.body.error, "missing_webhook_signature");
+  assert.equal(response.body.error, "unauthorized");
   assert.equal(called, false, "pipeline must not run for unsigned requests");
 }
 
@@ -131,6 +141,7 @@ async function assertServerAcceptsSignedWebhook({ body, secret, timestamp, signa
   let receivedPayload = null;
   const server = createWebhookServer({
     webhookSecret: secret,
+    webhookBusinessId: "restaurant_demo",
     nowFn: () => new Date(Number(timestamp) * 1000),
     pipeline: {
       async runMessage(payload) {
@@ -218,6 +229,80 @@ async function assertServerRejectsBusinessIdImpersonation({ secret, timestamp })
   });
 
   assert.equal(response.statusCode, 401);
-  assert.equal(response.body.error, "business_id_not_authorized");
+  assert.equal(response.body.error, "unauthorized");
   assert.equal(called, false, "pipeline must not run when signed credentials claim another businessId");
+}
+
+async function assertServerRejectsUnboundSingleSecretBusinessId({ body, secret, timestamp, signature }) {
+  let called = false;
+  const server = createWebhookServer({
+    webhookSecret: secret,
+    nowFn: () => new Date(Number(timestamp) * 1000),
+    pipeline: {
+      async runMessage() {
+        called = true;
+        throw new Error("pipeline should not run");
+      }
+    }
+  });
+
+  const response = await sendJson({
+    server,
+    payload: body,
+    headers: {
+      "x-webhook-timestamp": timestamp,
+      "x-webhook-signature": "sha256=" + signature
+    }
+  });
+
+  assert.equal(response.statusCode, 401);
+  assert.equal(response.body.error, "unauthorized");
+  assert.equal(called, false, "pipeline must not run when a single secret is not bound to a businessId");
+}
+
+async function assertServerMasksAuthAndBadRequestDetails({ secret, timestamp }) {
+  const server = createWebhookServer({
+    webhookSecret: secret,
+    webhookBusinessId: "restaurant_demo",
+    nowFn: () => new Date(Number(timestamp) * 1000),
+    pipeline: {
+      async runMessage() {
+        throw new Error("pipeline should not run");
+      }
+    }
+  });
+
+  const authResponse = await sendJson({
+    server,
+    payload: { channel: "website", businessId: "restaurant_demo", sessionId: "s4", text: "hello" },
+    headers: {
+      "x-webhook-timestamp": timestamp,
+      "x-webhook-signature": "sha256=abcdef"
+    }
+  });
+  assert.equal(authResponse.statusCode, 401);
+  assert.equal(authResponse.body.error, "unauthorized");
+
+  const invalidJson = "{";
+  const jsonSignature = _internal.signBody({ body: invalidJson, timestamp, secret });
+  const jsonServer = createWebhookServer({
+    webhookSecret: secret,
+    webhookBusinessId: "restaurant_demo",
+    nowFn: () => new Date(Number(timestamp) * 1000),
+    pipeline: {
+      async runMessage() {
+        throw new Error("pipeline should not run");
+      }
+    }
+  });
+  const badRequestResponse = await sendJson({
+    server: jsonServer,
+    payload: invalidJson,
+    headers: {
+      "x-webhook-timestamp": timestamp,
+      "x-webhook-signature": "sha256=" + jsonSignature
+    }
+  });
+  assert.equal(badRequestResponse.statusCode, 400);
+  assert.equal(badRequestResponse.body.error, "bad_request");
 }

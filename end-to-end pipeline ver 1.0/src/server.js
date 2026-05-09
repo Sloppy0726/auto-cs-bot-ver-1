@@ -66,7 +66,10 @@ function parseJson(body) {
 function verifyWebhookRequest(req, body, config = {}) {
   const candidates = webhookSecretCandidates(config);
   if (candidates.length === 0 && config.allowUnsignedWebhooks !== true) throw authError("webhook_secret_required");
-  if (candidates.length === 0) return { businessId: config.webhookBusinessId || null, unsigned: true };
+  if (candidates.length === 0) {
+    verifyUnsignedWebhookMode(config);
+    return { businessId: config.webhookBusinessId || null, unsigned: true };
+  }
 
   const timestamp = getHeader(req, "x-webhook-timestamp");
   const signature = getHeader(req, "x-webhook-signature");
@@ -119,14 +122,23 @@ function webhookSecretCandidates(config = {}) {
 
 function authorizeWebhookPayload(payload, authContext = {}, config = {}) {
   const authorizedBusinessId = authContext.businessId || config.webhookBusinessId || null;
+  const requestedBusinessId = payload?.businessId;
+  if (requestedBusinessId && !authorizedBusinessId) {
+    throw authError("business_id_binding_required");
+  }
+
   if (!authorizedBusinessId) return payload;
 
-  const requestedBusinessId = payload?.businessId;
   if (requestedBusinessId && requestedBusinessId !== authorizedBusinessId) {
     throw authError("business_id_not_authorized");
   }
 
   return { ...payload, businessId: authorizedBusinessId };
+}
+
+function verifyUnsignedWebhookMode(config = {}) {
+  const nodeEnv = config.nodeEnv || process.env.NODE_ENV;
+  if (nodeEnv === "production") throw authError("webhook_signature_required");
 }
 
 function verifyFreshTimestamp(timestamp, config = {}) {
@@ -183,6 +195,8 @@ function statusCodeForError(error) {
 
 function publicErrorMessage(error, statusCode) {
   if (statusCode === 500) return "internal_server_error";
+  if (statusCode === 401) return "unauthorized";
+  if (statusCode === 400) return "bad_request";
   return error.message;
 }
 
@@ -202,6 +216,7 @@ module.exports = {
     readJson,
     signBody,
     statusCodeForError,
+    verifyUnsignedWebhookMode,
     verifyFreshTimestamp,
     verifyWebhookRequest,
     webhookSecretCandidates,
