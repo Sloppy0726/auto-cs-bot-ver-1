@@ -1,5 +1,7 @@
 "use strict";
 
+const crypto = require("node:crypto");
+
 // Channel Adapter ver 1.0
 // Normalises inbound channel payloads and builds outbound payloads.
 // No network sends here; this is pure shape conversion.
@@ -185,12 +187,9 @@ function timestampToIso(value) {
 }
 
 function stableId(channel, senderId, text) {
-  const source = `${channel}:${senderId || ""}:${text || ""}`;
-  let hash = 0;
-  for (let i = 0; i < source.length; i += 1) {
-    hash = ((hash << 5) - hash + source.charCodeAt(i)) | 0;
-  }
-  return `${channel}_${Math.abs(hash)}`;
+  const source = [channel, senderId || "", text || ""].join(":");
+  const digest = crypto.createHash("sha256").update(source).digest("hex").slice(0, 24);
+  return `${channel}_${digest}`;
 }
 
 module.exports = {

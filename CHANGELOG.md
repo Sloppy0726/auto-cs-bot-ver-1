@@ -4,6 +4,12 @@
 
 ### Security
 
+#### 2026-05-10 03:18:11 HKT - Stable Message ID Hash Hardening
+
+- **Security hardening:** Replaced the channel adapter 32-bit rolling hash used for generated `externalMessageId` values with a SHA-256-derived identifier.
+- **Collision reduction:** Generated fallback message IDs now use a deterministic 24-hex-character digest suffix instead of a small signed integer space.
+- **Tests:** Added channel-adapter coverage for deterministic, content-sensitive SHA-256-derived stable IDs.
+
 #### 2026-05-10 03:15:04 HKT - Redaction Placeholder Leak Detection
 
 - **Security fix:** Expanded safety checks to catch bracketed privacy redaction placeholders such as `[PHONE_1]`, `[EMAIL_1]`, `[HKID_1]`, and payment/order/booking placeholders.

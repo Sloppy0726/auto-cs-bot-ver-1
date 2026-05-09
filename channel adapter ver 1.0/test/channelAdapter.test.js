@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { normalizeInbound, buildOutboundMessage } = require("../src/channelAdapter");
+const { normalizeInbound, buildOutboundMessage, _internal } = require("../src/channelAdapter");
 const { standardCases } = require("./channelAdapter.cases");
 
 for (const c of standardCases) {
@@ -29,4 +29,11 @@ const held = buildOutboundMessage({
 assert.equal(held.status, "held", "staff_review must be held");
 assert.equal(held.payload, null);
 
-console.log(`channelAdapter: ${standardCases.length + 2} tests passed`);
+const idA = _internal.stableId("website", "s1", "hello");
+const idB = _internal.stableId("website", "s1", "hello");
+const idC = _internal.stableId("website", "s1", "hello!");
+assert.match(idA, /^website_[a-f0-9]{24}$/, "stableId should use a fixed-length SHA-256-derived hex suffix");
+assert.equal(idA, idB, "stableId should remain deterministic for the same input");
+assert.notEqual(idA, idC, "stableId should change when source content changes");
+
+console.log(`channelAdapter: ${standardCases.length + 5} tests passed`);

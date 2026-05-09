@@ -49,6 +49,12 @@ node "end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js"
 
 ## Changelog
 
+### 2026-05-10 03:18:11 HKT - Stable Message ID Hash Hardening
+
+- **Changed:** Channel adapter fallback `externalMessageId` generation now uses a SHA-256-derived digest instead of a 32-bit rolling hash.
+- **Added:** Test coverage for deterministic and content-sensitive stable IDs.
+- **Verified:** `channelAdapter.test.js` and `pipeline.test.js` passed after the change.
+
 ### 2026-05-10 03:15:04 HKT - Redaction Placeholder Leak Detection
 
 - **Changed:** Safety checker now flags bracketed redaction placeholders like `[PHONE_1]` and `[EMAIL_1]` as placeholder leaks.
