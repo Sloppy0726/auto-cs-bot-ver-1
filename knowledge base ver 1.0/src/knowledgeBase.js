@@ -96,7 +96,8 @@ function lookup(input, entriesByBusiness, options) {
   }));
 
   const bestMatch = matches[0] || null;
-  const backendBound = options.backendBoundIntents.includes(primaryIntent);
+  const backendBound = options.backendBoundIntents.includes(primaryIntent)
+    || matches.some((match) => match.requiresBackend);
 
   return buildResult({
     businessId,

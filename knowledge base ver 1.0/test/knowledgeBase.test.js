@@ -81,4 +81,13 @@ const emptyResult = kb.lookup({});
 assert.equal(emptyResult.gap, true, "empty input must return gap=true");
 assert.ok(emptyResult.suggestedClarification, "empty input must propose a clarification");
 
-console.log(`knowledgeBase: ${standardCases.length + 2} tests passed`);
+const stockResult = kb.lookup({
+  businessId: "igshop_demo",
+  sanitizedText: "有冇現貨 service",
+  intent: { primaryIntent: "service_info", language: "mixed" }
+});
+assert.equal(stockResult.bestMatch.id, "igshop_stock", "stock KB entry should match");
+assert.equal(stockResult.bestMatch.requiresBackend, true, "stock KB entry should carry requiresBackend");
+assert.equal(stockResult.backendBound, true, "requiresBackend KB entry must make lookup backendBound");
+
+console.log(`knowledgeBase: ${standardCases.length + 3} tests passed`);
