@@ -15,7 +15,7 @@ const CUSTOMER_VISIBLE_ACTIONS = Object.freeze(["auto_send", "clarify"]);
 const STAFF_ONLY_ACTIONS = Object.freeze(["staff_review", "handoff"]);
 const BLOCKING_ACTIONS = Object.freeze(["block"]);
 
-const PLACEHOLDER_PATTERN = /<HKID>|<CREDIT_CARD>|<PHONE>|<EMAIL>|\[stub\]|\{\{[^}]+\}\}|TODO|FIXME/i;
+const PLACEHOLDER_PATTERN = /<HKID>|<CREDIT_CARD>|<PHONE>|<EMAIL>|\[(?:HKID|CREDIT_CARD|PHONE|EMAIL|PAYMENT_REF|ORDER_REF|BOOKING_REF)_\d+\]|\[stub\]|\{\{[^}]+\}\}|TODO|FIXME/i;
 const PII_PATTERN = /[A-Z]\d{6}\([0-9A]\)|\b(?:\d[ -]?){13,19}\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\b(?:\+?852[-\s]?)?[569]\d{3}[-\s]?\d{4}\b/i;
 
 function checkDraft(input = {}) {

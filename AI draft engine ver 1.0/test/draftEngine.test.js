@@ -125,6 +125,11 @@ async function run() {
     "customer text should be wrapped in an explicit untrusted-data envelope"
   );
   assert.equal(
+    _internal.validateAgainstForbidden("請聯絡 [PHONE_1]", ["leak_pii"]).ok,
+    false,
+    "bracketed redaction placeholders should be treated as PII leak surfaces"
+  );
+  assert.equal(
     chooseModel({ decision: { action: "staff_review" }, intent: { primaryIntent: "hours_location", riskLevel: "low" } }),
     DEFAULT_MODELS.cheap,
     "simple staff_review should choose cheap model"
@@ -135,7 +140,7 @@ async function run() {
     "handoff/complaint should choose complex model"
   );
 
-  console.log(`draftEngine: ${standardCases.length + 10} tests passed`);
+  console.log(`draftEngine: ${standardCases.length + 11} tests passed`);
 }
 
 run().catch((error) => {

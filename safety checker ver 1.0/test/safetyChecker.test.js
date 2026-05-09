@@ -48,4 +48,14 @@ const pii = checkDraft({
 });
 assert.equal(pii.verdict, "block", "PII-like text must block");
 
-console.log(`safetyChecker: ${standardCases.length + 1} tests passed`);
+const redactionPlaceholder = checkDraft({
+  draft: { action: "staff_review", text: "請同事覆客人 [PHONE_1]", citations: [] },
+  decision: { action: "staff_review", forbiddenCapabilities: [], grounding: [] },
+  knowledge: {},
+  intent: {},
+  gateway: {}
+});
+assert.equal(redactionPlaceholder.verdict, "revise", "bracketed redaction placeholders should not be sendable");
+assert.ok(redactionPlaceholder.violations.some((item) => item.code === "placeholder_leak"), "bracketed redaction placeholder should be flagged");
+
+console.log(`safetyChecker: ${standardCases.length + 2} tests passed`);

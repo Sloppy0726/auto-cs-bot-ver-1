@@ -49,6 +49,12 @@ node "end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js"
 
 ## Changelog
 
+### 2026-05-10 03:15:04 HKT - Redaction Placeholder Leak Detection
+
+- **Changed:** Safety checker now flags bracketed redaction placeholders like `[PHONE_1]` and `[EMAIL_1]` as placeholder leaks.
+- **Changed:** Draft-engine forbidden capability checks now treat bracketed redaction placeholders as `leak_pii` surfaces.
+- **Verified:** `safetyChecker.test.js`, `draftEngine.test.js`, and `pipeline.test.js` passed after the change.
+
 ### 2026-05-10 03:12:52 HKT - Prompt Injection Boundary Hardening
 
 - **Changed:** Draft-engine prompts now quote sanitized customer text inside a `CUSTOMER_MESSAGE` untrusted-data block.

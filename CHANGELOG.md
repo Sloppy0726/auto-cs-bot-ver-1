@@ -4,6 +4,12 @@
 
 ### Security
 
+#### 2026-05-10 03:15:04 HKT - Redaction Placeholder Leak Detection
+
+- **Security fix:** Expanded safety checks to catch bracketed privacy redaction placeholders such as `[PHONE_1]`, `[EMAIL_1]`, `[HKID_1]`, and payment/order/booking placeholders.
+- **Defense in depth:** Added the same bracketed-placeholder surface to the draft-engine `leak_pii` forbidden capability guard.
+- **Tests:** Added safety-checker and draft-engine coverage for bracketed placeholder leaks.
+
 #### 2026-05-10 03:12:52 HKT - Prompt Injection Boundary Hardening
 
 - **Security fix:** Wrapped sanitized customer text in an explicit `CUSTOMER_MESSAGE` untrusted-data envelope before sending it to the draft LLM.

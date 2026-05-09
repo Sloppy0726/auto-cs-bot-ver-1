@@ -84,7 +84,7 @@ const FORBIDDEN_SURFACES = Object.freeze({
   leak_pii: [
     /[A-Z]\d{6}\([0-9A]\)/i,
     /\b(?:\d[ -]?){13,19}\b/,
-    /<HKID>|<CREDIT_CARD>|<PHONE>|<EMAIL>/i
+    /<HKID>|<CREDIT_CARD>|<PHONE>|<EMAIL>|\[(?:HKID|CREDIT_CARD|PHONE|EMAIL|PAYMENT_REF|ORDER_REF|BOOKING_REF)_\d+\]/i
   ]
 });
 
