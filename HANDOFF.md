@@ -420,3 +420,82 @@ node "end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js"
    - `feat: AI draft engine v1.0`
    - `feat: complete support workflow skeleton`
 3. After review, wire real environment concerns: tenant storage, real channel credentials, Anthropic key, staff inbox UI, webhook auth, deployment.
+
+---
+
+## Session 4 notes — Google Drive promotion sync + Hong Kong time expiry
+
+User asked for a 24/7-style agent behavior: every day, read a Google Drive folder containing current offers / Instagram promotions, understand expiry dates, and use those facts before answering. All dates must follow Hong Kong time, UTC+8, not server locale or another region.
+
+### What changed
+
+- Added `google drive promo sync ver 1.0/`.
+  - `src/hkTime.js` provides HK-time helpers:
+    - `hkDateKey()`
+    - `isWithinHkDateRange()`
+    - `nextDailyRunAtHongKong()`
+  - `src/promoSync.js` provides:
+    - `createPromotionStore()`
+    - `createPromoSync({ driveClient, store, folderId, businessId, syncTimeHk })`
+    - `parseDrivePromoDocument()`
+    - `lookupPromotions()`
+  - `seed/promoSeed.js` includes demo active promotions:
+    - `beauty_may_small_face_trial`
+    - `igshop_sf_locker_may`
+  - Tests use a mock `driveClient`; no real Google Drive network/API call yet.
+- Updated `AI draft engine ver 1.0`.
+  - Staff-review and handoff prompts now include active time-bound promotions when the pipeline passes `promotions`.
+  - Promotion context includes title, summary, HK expiry date, and staff instruction.
+- Updated `end-to-end pipeline ver 1.0`.
+  - Pipeline creates a promotion store by default using promo seed data.
+  - Each message now looks up active promotions using `Asia/Hong_Kong` / UTC+8 before draft generation.
+  - Pipeline result now includes `promotions`.
+- Updated `staff inbox ver 1.0`.
+  - Staff items now keep `backendFacts` and `promotions` so staff can see which offer context influenced the draft.
+- Updated root `README.md`, AI draft README, and pipeline README.
+
+### Google Drive promo document format
+
+Google Drive docs can use blocks like:
+
+```text
+Title: 小顏管理五月體驗優惠
+Keywords: 小顏, 小顏管理, 面部輪廓, 收費, 優惠
+Intents: pricing, service_info
+Summary: 小顏管理五月首次體驗 HK$480，原價 HK$880。主要針對面部線條、浮腫感同輪廓保養，效果因人而異。
+StaffInstruction: 可以提五月體驗價，但要提醒客人先做面部狀態評估，唔好承諾一定瘦面。
+StartsOn: 2026-05-01
+ExpiresOn: 2026-05-31
+Approved: true
+```
+
+Multiple promo blocks can be separated by `---`.
+
+### Test status after Session 4
+
+All tests pass:
+
+```bash
+node "privacy filter ver 1.0/test/privacyFilter.test.js"                 # 500 passed
+node "privacy gateway ver 1.0/test/privacyGateway.test.js"               # 205 passed
+node "intent classifier ver 1.0/test/intentClassifier.test.js"            # 103 passed
+node "knowledge base ver 1.0/test/knowledgeBase.test.js"                 # 12 passed
+node "business rules ver 1.0/test/businessRules.test.js"                 # 13 passed
+node "google drive promo sync ver 1.0/test/promoSync.test.js"            # 8 passed
+node "AI draft engine ver 1.0/test/draftEngine.test.js"                  # 13 passed
+node "safety checker ver 1.0/test/safetyChecker.test.js"                 # 7 passed
+node "channel adapter ver 1.0/test/channelAdapter.test.js"               # 5 passed
+node "model router ver 1.0/test/modelRouter.test.js"                     # 5 passed
+node "private business backend mock ver 1.0/test/businessBackendMock.test.js" # 5 passed
+node "staff inbox ver 1.0/test/staffInbox.test.js"                       # 7 passed
+node "end-to-end pipeline ver 1.0/test/pipeline.test.js"                 # 6 passed
+```
+
+Total after Session 4: **889 tests passing**.
+
+### Known limitations after Session 4
+
+1. `google drive promo sync ver 1.0` has a dependency-injected `driveClient` and offline tests. Production still needs a real Google Drive connector/client.
+2. Daily sync scheduling is expressed in code via `runDue()` / `nextDailyRunAtHongKong()`. Production still needs a worker/cron runner to call it daily.
+3. Promotion store is in memory by default. Production should persist synced promotions per tenant.
+4. The pipeline reads active promotions before drafting, but conservative business rules still prevent automatic sending for beauty pricing/treatment claims. This is intentional.

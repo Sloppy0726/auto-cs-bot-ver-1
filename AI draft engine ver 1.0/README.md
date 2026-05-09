@@ -91,6 +91,10 @@ const draft = await generateDraft(input, {
 
 The adapter sets `cache_control` on the system message because the capability/tone policy repeats heavily across tenant traffic.
 
+## Promotion Context
+
+When the pipeline provides `promotions`, the staff-review and handoff prompts include active time-bound promotions that were checked in Hong Kong time. The draft engine treats them as approved contextual facts, but still does not auto-send pricing or treatment claims for conservative archetypes such as `beauty_clinic`.
+
 ## Integration
 
 ```

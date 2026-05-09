@@ -14,6 +14,7 @@ customer channel
   -> privacy gateway
   -> intent classifier
   -> knowledge base
+  -> Google Drive promo sync context
   -> business rules
   -> private business backend mock
   -> model router
@@ -22,7 +23,7 @@ customer channel
   -> send reply or staff inbox
 ```
 
-Current test total: **877 passing**.
+Current test total: **889 passing**.
 
 No npm dependencies are required. Everything is plain Node.js stdlib.
 
@@ -35,13 +36,14 @@ No npm dependencies are required. Everything is plain Node.js stdlib.
 | 3 | `intent classifier ver 1.0` | Classifies Cantonese / English / mixed enquiries into stable intents. |
 | 4 | `knowledge base ver 1.0` | Approved-only business answers and grounding IDs. |
 | 5 | `business rules ver 1.0` | Deterministic policy gate and capability contract. |
-| 6 | `AI draft engine ver 1.0` | Produces grounded drafts or staff-only summaries. |
-| 7 | `safety checker ver 1.0` | Re-validates drafts before anything can be sent. |
-| 8 | `channel adapter ver 1.0` | Normalizes WhatsApp / IG / FB / website payloads and builds outbound payloads. |
-| 9 | `model router ver 1.0` | Chooses no-LLM / Haiku / Sonnet by action and risk. |
-| 10 | `private business backend mock ver 1.0` | Mock booking, order, stock, and payment facts. |
-| 11 | `staff inbox ver 1.0` | In-memory review / handoff queue. |
-| 12 | `end-to-end pipeline ver 1.0` | Orchestrates the whole local workflow. |
+| 6 | `google drive promo sync ver 1.0` | Daily Google Drive promotion sync with Hong Kong time expiry checks. |
+| 7 | `AI draft engine ver 1.0` | Produces grounded drafts or staff-only summaries. |
+| 8 | `safety checker ver 1.0` | Re-validates drafts before anything can be sent. |
+| 9 | `channel adapter ver 1.0` | Normalizes WhatsApp / IG / FB / website payloads and builds outbound payloads. |
+| 10 | `model router ver 1.0` | Chooses no-LLM / Haiku / Sonnet by action and risk. |
+| 11 | `private business backend mock ver 1.0` | Mock booking, order, stock, and payment facts. |
+| 12 | `staff inbox ver 1.0` | In-memory review / handoff queue. |
+| 13 | `end-to-end pipeline ver 1.0` | Orchestrates the whole local workflow. |
 
 ## Local Run
 
@@ -101,6 +103,7 @@ node "privacy gateway ver 1.0/test/privacyGateway.test.js"
 node "intent classifier ver 1.0/test/intentClassifier.test.js"
 node "knowledge base ver 1.0/test/knowledgeBase.test.js"
 node "business rules ver 1.0/test/businessRules.test.js"
+node "google drive promo sync ver 1.0/test/promoSync.test.js"
 node "AI draft engine ver 1.0/test/draftEngine.test.js"
 node "safety checker ver 1.0/test/safetyChecker.test.js"
 node "channel adapter ver 1.0/test/channelAdapter.test.js"
@@ -133,6 +136,7 @@ The generated markdown report lives at the module root.
 
 - Privacy gateway runs before any LLM call.
 - Business policy lives in typed JS rules, not only prompts.
+- Google Drive promotion expiry is checked using `Asia/Hong_Kong` / UTC+8 only.
 - `auto_send` must quote approved KB text exactly.
 - Staff review is required for pricing, backend-bound actions, handoff, safety violations, and privacy blocks.
 - Current channel/server/backend/staff inbox pieces are local skeletons, not production integrations.

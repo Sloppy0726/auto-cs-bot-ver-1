@@ -9,6 +9,7 @@ channel adapter
   -> privacy gateway
   -> intent classifier
   -> knowledge base
+  -> Google Drive promo sync context
   -> business rules
   -> private backend mock
   -> model router
@@ -18,6 +19,8 @@ channel adapter
 ```
 
 This follows the architecture diagram: privacy runs before any model, business rules constrain generation, safety checks drafts before send, and private backend facts stay controlled.
+
+Promotion context is checked using Hong Kong time (`Asia/Hong_Kong`, UTC+8). Active Google Drive promotions are passed into the draft engine and staff inbox before a reply is generated.
 
 ## Main API
 
