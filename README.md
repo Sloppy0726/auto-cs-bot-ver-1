@@ -1,253 +1,140 @@
-# Auto CS Bot Ver 1
+# Hong Kong AI Customer Support SaaS
 
-Auto CS Bot Ver 1 is the first working project for a Hong Kong-focused Cantonese/English AI customer support bot.
+Privacy-first Cantonese AI receptionist for Hong Kong SMEs.
 
-The product goal is to help local SMEs reply faster to repetitive Cantonese, English, and mixed-language customer inquiries while keeping sensitive customer data away from the LLM wherever possible.
+The product goal is to answer repetitive WhatsApp / Instagram / Facebook / website enquiries quickly while keeping private customer data away from the LLM, keeping business policy in deterministic code, and routing risky replies to staff.
 
-Initial target use case:
+## Current Status
 
-- Cantonese and English customer support, including code-switching
-- WhatsApp / Instagram / website inquiry handling
-- FAQ, pricing, booking, and policy replies
-- Human handoff for risky or sensitive cases
-- Privacy filtering before any AI model call
-
-## Core Principle
-
-The LLM should write helpful replies, but it should not be the system of record and it should not receive unnecessary personal data.
-
-The intended message flow is:
+Local v1.0 workflow skeleton is complete:
 
 ```text
-Customer message
--> Privacy filter
--> Privacy gateway
--> Intent classifier
--> Business rules / backend lookup
--> Sanitized LLM draft, if allowed
--> Staff review or direct reply
--> Conversation log
+customer channel
+  -> privacy filter
+  -> privacy gateway
+  -> intent classifier
+  -> knowledge base
+  -> business rules
+  -> private business backend mock
+  -> model router
+  -> AI draft engine
+  -> safety checker
+  -> send reply or staff inbox
 ```
 
-## Current Project Structure
+Current test total: **877 passing**.
 
-```text
-auto cs bot ver 1/
-├── README.md
-├── privacy gateway ver 1.0/
-│   ├── README.md
-│   ├── src/
-│   │   └── privacyGateway.js
-│   └── test/
-│       └── privacyGateway.test.js
-├── intent classifier ver 1.0/
-│   ├── README.md
-│   ├── src/
-│   │   └── intentClassifier.js
-│   ├── scripts/
-│   │   └── writeSideBySideResults.js
-│   └── test/
-│       ├── intentClassifier.cases.js
-│       ├── intentClassifier.test.js
-│       └── intentClassifier.edge.test.js
-└── privacy filter ver 1.0/
-    ├── README.md
-    ├── privacy-filter-side-by-side-results.md
-    ├── scripts/
-    │   └── writeSideBySideResults.js
-    ├── src/
-    │   └── privacyFilter.js
-    └── test/
-        ├── privacyFilter.cases.js
-        ├── privacyFilter.test.js
-        └── privacyFilter.edge.test.js
-```
+No npm dependencies are required. Everything is plain Node.js stdlib.
 
-## Components
+## Modules
 
-### Privacy Gateway Ver 1.0
+| # | Module | Purpose |
+|---|---|---|
+| 1 | `privacy filter ver 1.0` | Redacts PII and flags HK-specific risk before any LLM call. |
+| 2 | `privacy gateway ver 1.0` | Routes sanitized messages: send, review, or block. |
+| 3 | `intent classifier ver 1.0` | Classifies Cantonese / English / mixed enquiries into stable intents. |
+| 4 | `knowledge base ver 1.0` | Approved-only business answers and grounding IDs. |
+| 5 | `business rules ver 1.0` | Deterministic policy gate and capability contract. |
+| 6 | `AI draft engine ver 1.0` | Produces grounded drafts or staff-only summaries. |
+| 7 | `safety checker ver 1.0` | Re-validates drafts before anything can be sent. |
+| 8 | `channel adapter ver 1.0` | Normalizes WhatsApp / IG / FB / website payloads and builds outbound payloads. |
+| 9 | `model router ver 1.0` | Chooses no-LLM / Haiku / Sonnet by action and risk. |
+| 10 | `private business backend mock ver 1.0` | Mock booking, order, stock, and payment facts. |
+| 11 | `staff inbox ver 1.0` | In-memory review / handoff queue. |
+| 12 | `end-to-end pipeline ver 1.0` | Orchestrates the whole local workflow. |
 
-The privacy gateway is the routing layer that decides what should happen to each inbound message after privacy filtering.
+## Local Run
 
-Current routing decisions:
-
-- `send_to_llm`: sanitized message can be used for an AI draft
-- `review_before_llm`: sanitized message can be shown for staff review before any AI reply
-- `block_and_handoff`: message should not be sent to the LLM
-
-The gateway wraps the privacy filter rather than duplicating detection logic.
-
-### Intent Classifier Ver 1.0
-
-The intent classifier runs after the privacy gateway. It reads the sanitized Cantonese, English, or mixed message and gateway metadata, then returns normalized intent JSON for later backend modules.
-
-Current behavior:
-
-- Deterministic rules classify obvious Cantonese and English intents first.
-- An optional injected LLM classifier can handle ambiguous messages.
-- The original raw customer message is not sent to the LLM.
-- Output is normalized so business rules, knowledge retrieval, and draft generation can use one stable shape.
-
-Current intents: `pricing`, `booking`, `reschedule`, `hours_location`, `service_info`, `aftercare`, `payment`, `order_status`, `complaint`, `sensitive_health`, `child_data`, `human_request`, and `general`.
-
-### Privacy Filter Ver 1.0
-
-The privacy filter is the first component of the bot.
-
-It is deterministic code, not an LLM prompt. It detects sensitive values, replaces them with placeholders, and returns structured metadata that the backend can store privately.
-
-Current coverage:
-
-- Hong Kong phone numbers
-- Email addresses
-- HKID-like values
-- Credit-card-like values
-- FPS / PayMe / payment references
-- Order references
-- Booking references
-- Address-risk hints
-- Medical-risk hints
-- Child-data hints
-- Payment dispute hints
-
-Important behavior:
-
-- Normal phone numbers can be redacted and still sent to the LLM as placeholders.
-- HKID-like values require human review.
-- Credit-card-like values block sending to the LLM.
-- Medical, child-data, and payment dispute hints trigger human review.
-- Order references are preserved by default because the backend may need them for lookup, but they can be redacted by configuration.
-
-## How To Run The Privacy Filter Tests
-
-From:
+Example:
 
 ```bash
-auto cs bot ver 1/privacy filter ver 1.0
-```
+node - <<'NODE'
+const { createPipeline } = require("./end-to-end pipeline ver 1.0/src/pipeline");
 
-Run:
+(async () => {
+  const pipeline = createPipeline({
+    llmAdapter: async (prompt, context) => {
+      if (context.decision.action === "handoff") {
+        return { text: "【員工交接】\n意圖：" + context.intent.primaryIntent + "\n建議下一步：由同事跟進。" };
+      }
+      return { text: context.knowledge.bestMatch?.answer || "請問你想了解邊方面？" };
+    }
+  });
 
-```bash
-node test/privacyFilter.test.js
+  const result = await pipeline.runMessage({
+    channel: "website",
+    businessId: "restaurant_demo",
+    sessionId: "local-demo-001",
+    text: "你哋幾點開門？"
+  });
+
+  console.log(JSON.stringify({
+    finalStatus: result.finalStatus,
+    action: result.decision.action,
+    intent: result.intent.primaryIntent,
+    safety: result.safety.verdict,
+    replyText: result.outbound?.payload?.text || result.draft?.text
+  }, null, 2));
+})();
+NODE
 ```
 
 Expected result:
 
-```text
-privacyFilter: 500 tests passed
+```json
+{
+  "finalStatus": "ready_to_send",
+  "action": "auto_send",
+  "intent": "hours_location",
+  "safety": "pass",
+  "replyText": "我哋每日12:00–15:00 lunch，18:00–22:30 dinner，星期一休息。"
+}
 ```
 
-For the 207-case edge suite, run:
+## Test Commands
+
+Run from the repo root:
 
 ```bash
-node test/privacyFilter.edge.test.js
+node "privacy filter ver 1.0/test/privacyFilter.test.js"
+node "privacy gateway ver 1.0/test/privacyGateway.test.js"
+node "intent classifier ver 1.0/test/intentClassifier.test.js"
+node "knowledge base ver 1.0/test/knowledgeBase.test.js"
+node "business rules ver 1.0/test/businessRules.test.js"
+node "AI draft engine ver 1.0/test/draftEngine.test.js"
+node "safety checker ver 1.0/test/safetyChecker.test.js"
+node "channel adapter ver 1.0/test/channelAdapter.test.js"
+node "model router ver 1.0/test/modelRouter.test.js"
+node "private business backend mock ver 1.0/test/businessBackendMock.test.js"
+node "staff inbox ver 1.0/test/staffInbox.test.js"
+node "end-to-end pipeline ver 1.0/test/pipeline.test.js"
 ```
 
-Expected result:
+## Side-by-side Reports
 
-```text
-privacyFilter edge: 207 tests passed
-```
-
-## How To Run The Privacy Gateway Tests
-
-From:
+Each module with a report has:
 
 ```bash
-auto cs bot ver 1/privacy gateway ver 1.0
+node "<module>/scripts/writeSideBySideResults.js"
 ```
 
-Run:
+The generated markdown report lives at the module root.
 
-```bash
-node test/privacyGateway.test.js
-```
+## Demo Businesses
 
-Expected result:
+| businessId | Archetype |
+|---|---|
+| `beauty_demo` | beauty clinic |
+| `restaurant_demo` | restaurant |
+| `igshop_demo` | Instagram shop |
+| `edu_demo` | education centre |
 
-```text
-privacyGateway: 205 tests passed
-```
+## Important Constraints
 
-## How To Run The Intent Classifier Tests
+- Privacy gateway runs before any LLM call.
+- Business policy lives in typed JS rules, not only prompts.
+- `auto_send` must quote approved KB text exactly.
+- Staff review is required for pricing, backend-bound actions, handoff, safety violations, and privacy blocks.
+- Current channel/server/backend/staff inbox pieces are local skeletons, not production integrations.
 
-From:
-
-```bash
-auto cs bot ver 1/intent classifier ver 1.0
-```
-
-Run:
-
-```bash
-node test/intentClassifier.test.js
-node test/intentClassifier.edge.test.js
-```
-
-Expected result:
-
-```text
-intentClassifier: 103 tests passed
-intentClassifier edge: 23 checks passed
-```
-
-Generate intent classifier side-by-side results:
-
-```bash
-node scripts/writeSideBySideResults.js
-```
-
-This writes `intent-classifier-side-by-side-results.md`.
-
-## How To Generate The Side-by-Side Report
-
-From:
-
-```bash
-auto cs bot ver 1/privacy filter ver 1.0
-```
-
-Run:
-
-```bash
-node scripts/writeSideBySideResults.js
-```
-
-This writes:
-
-```text
-privacy-filter-side-by-side-results.md
-```
-
-The report compares each test case side by side:
-
-- Input
-- Expected sanitized output
-- Actual sanitized output
-- Expected detected types
-- Actual detected types
-- Expected risk hints
-- Actual risk hints
-- Whether the message should be sent to the LLM
-- Whether human review is needed
-
-## Planned Next Components
-
-Future components should live inside this main project folder as separate modules.
-
-Likely next pieces:
-
-- `knowledge base ver 1.0`: approved business FAQ, price list, branch info, policies, and retrieval
-- `ai draft engine ver 1.0`: creates Cantonese / English replies from sanitized input and approved knowledge
-- `conversation inbox ver 1.0`: staff review, approval, handoff, tagging, and status tracking
-- `channel adapter ver 1.0`: future WhatsApp, Instagram, and website integrations
-
-## Development Notes
-
-- Keep privacy filtering before any LLM call.
-- Keep business decisions in backend code, not in the model.
-- Use deterministic checks for sensitive data whenever possible.
-- Treat high-risk categories as human-review cases.
-- Add tests before expanding detector behavior.
-- Keep each component small enough to test independently.
+See [HANDOFF.md](HANDOFF.md) for detailed session notes and known limitations.
