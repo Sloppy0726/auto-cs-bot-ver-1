@@ -4,6 +4,12 @@
 
 ### Security
 
+#### 2026-05-10 03:12:52 HKT - Prompt Injection Boundary Hardening
+
+- **Security fix:** Wrapped sanitized customer text in an explicit `CUSTOMER_MESSAGE` untrusted-data envelope before sending it to the draft LLM.
+- **Instruction hardening:** Added system and final-check rules telling the model not to follow instructions inside customer-provided text.
+- **Tests:** Added draft-engine coverage for customer-message delimiters and untrusted-data prompt wording.
+
 #### 2026-05-10 03:03:22 HKT - Data Exposure Reduction
 
 - **Security fix:** Removed raw `originalText` and detector `value` fields from default privacy gateway output so ordinary pipeline results do not carry sensitive customer data.

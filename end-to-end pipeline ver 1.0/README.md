@@ -49,6 +49,12 @@ node "end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js"
 
 ## Changelog
 
+### 2026-05-10 03:12:52 HKT - Prompt Injection Boundary Hardening
+
+- **Changed:** Draft-engine prompts now quote sanitized customer text inside a `CUSTOMER_MESSAGE` untrusted-data block.
+- **Added:** System and final-check prompt rules instruct the model to ignore instructions inside customer-provided text.
+- **Verified:** `AI draft engine ver 1.0/test/draftEngine.test.js` and `end-to-end pipeline ver 1.0/test/pipeline.test.js` passed after the change.
+
 ### 2026-05-10 03:03:22 HKT - Data Exposure Reduction
 
 - **Changed:** Default privacy gateway output no longer exposes raw `originalText` or detector `value` fields.
