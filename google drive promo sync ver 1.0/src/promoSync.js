@@ -18,6 +18,15 @@ function createPromotionStore(config = {}) {
       lastSyncedAt = meta.syncedAt || null;
       return this.snapshot();
     },
+    replaceForBusiness(businessId, nextEntries, meta = {}) {
+      const scopedBusinessId = businessId || "default";
+      entries = [
+        ...entries.filter((entry) => entry.businessId !== scopedBusinessId),
+        ...normalizeEntries(nextEntries || []).filter((entry) => entry.businessId === scopedBusinessId)
+      ];
+      lastSyncedAt = meta.syncedAt || lastSyncedAt;
+      return this.snapshot();
+    },
     upsert(nextEntries, meta = {}) {
       const map = new Map(entries.map((entry) => [entry.id, entry]));
       for (const entry of normalizeEntries(nextEntries || [])) map.set(entry.id, entry);
@@ -68,7 +77,7 @@ function createPromoSync(config = {}) {
           modifiedTime: file.modifiedTime
         }));
       }
-      return store.replace(entries, { syncedAt: nowFn().toISOString() });
+      return store.replaceForBusiness(businessId, entries, { syncedAt: nowFn().toISOString() });
     },
     async runDue(input = {}) {
       const now = input.now || nowFn();

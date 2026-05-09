@@ -59,7 +59,31 @@ async function run() {
   assert.equal(hkDateKey("2026-05-08T16:30:00.000Z"), "2026-05-09", "HK date should use UTC+8");
   assert.equal(nextDailyRunAtHongKong(new Date("2026-05-09T00:00:00.000Z"), "04:00").hongKong, "2026-05-10T04:00:00+08:00");
 
-  console.log(`promoSync: ${standardCases.length + 5} tests passed`);
+  const multiBusinessStore = createPromotionStore({
+    entries: [{
+      id: "igshop_existing",
+      businessId: "igshop_demo",
+      title: "IG shop existing promo",
+      keywords: ["順豐"],
+      intentTags: ["service_info"],
+      summary: "Existing IG promo should survive beauty sync.",
+      startsOn: "2026-05-01",
+      expiresOn: "2026-05-31",
+      approved: true
+    }]
+  });
+  const scopedSync = createPromoSync({
+    driveClient,
+    store: multiBusinessStore,
+    businessId: "beauty_demo",
+    folderId: "folder1",
+    nowFn: () => new Date("2026-05-09T00:00:00.000Z")
+  });
+  await scopedSync.syncOnce();
+  assert.equal(multiBusinessStore.list({ businessId: "igshop_demo" }).length, 1, "syncOnce must preserve other businesses' promotions");
+  assert.equal(multiBusinessStore.list({ businessId: "beauty_demo" }).length, 1, "syncOnce should replace only the scoped business promotions");
+
+  console.log(`promoSync: ${standardCases.length + 7} tests passed`);
 }
 
 run().catch((error) => {
