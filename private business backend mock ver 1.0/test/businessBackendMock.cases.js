@@ -5,6 +5,8 @@ const standardCases = [
   availability("beauty unavailable facial slot", "beauty_demo", "2026-05-09", "20:00", "facial", undefined, true, false),
   availability("restaurant available early dinner table", "restaurant_demo", "2026-05-09", "18:30", undefined, 2, true, true),
   availability("restaurant unavailable peak dinner table", "restaurant_demo", "2026-05-09", "20:00", undefined, 4, true, false),
+  availability("beauty vague booking missing time does not wildcard", "beauty_demo", "2026-05-09", undefined, "facial", undefined, false, null),
+  availability("restaurant vague booking missing headcount does not wildcard", "restaurant_demo", "2026-05-09", "18:30", undefined, undefined, false, null),
   stock("ig shop black tee has stock", "igshop_demo", "TEE-BLK-M", undefined, true, true),
   stock("ig shop cream tote is sold out", "igshop_demo", "BAG-CREAM", undefined, true, false),
   order("ig shop paid order lookup", "igshop_demo", "IG1001", true),

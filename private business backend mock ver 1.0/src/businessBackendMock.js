@@ -27,6 +27,16 @@ function createBusinessBackend(config = {}) {
 }
 
 function checkAvailability(data, query) {
+  const missing = missingAvailabilityFields(query);
+  if (missing.length > 0) {
+    return {
+      found: false,
+      available: null,
+      facts: [],
+      reason: `Missing required availability field(s): ${missing.join(", ")}.`
+    };
+  }
+
   const records = recordsFor(data, query.businessId, "availability");
   const match = records.find((item) => {
     return (!query.date || item.date === query.date)
@@ -43,6 +53,16 @@ function checkAvailability(data, query) {
     facts: minimalFacts(match, ["date", "time", "service", "partySize", "available"]),
     reason: match.available ? "Mock backend has an available slot/table." : "Mock backend record is unavailable."
   };
+}
+
+function missingAvailabilityFields(query) {
+  const missing = [];
+  if (!query.businessId) missing.push("businessId");
+  if (!query.date) missing.push("date");
+  if (!query.time) missing.push("time");
+  if (query.businessId === "restaurant_demo" && !query.partySize) missing.push("partySize");
+  if (query.businessId !== "restaurant_demo" && !query.service) missing.push("service");
+  return missing;
 }
 
 function lookupOrder(data, query) {
@@ -108,5 +128,5 @@ function clone(value) {
 
 module.exports = {
   createBusinessBackend,
-  _internal: { checkAvailability, lookupOrder, getStock, lookupPayment, minimalFacts }
+  _internal: { checkAvailability, lookupOrder, getStock, lookupPayment, minimalFacts, missingAvailabilityFields }
 };
