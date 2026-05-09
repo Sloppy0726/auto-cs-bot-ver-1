@@ -1,15 +1,9 @@
 "use strict";
 
-const fs = require("node:fs");
 const path = require("node:path");
 const { createPipeline } = require("../src/pipeline");
 const { standardCases } = require("../test/pipeline.cases");
-
-function cell(value) {
-  if (value == null) return "";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value).replace(/\|/g, "\\|").replace(/\n/g, "<br>");
-}
+const { writeReadableReport } = require("../../scripts/readableSideBySideReport");
 
 async function main() {
   const pipeline = createPipeline({
@@ -21,23 +15,46 @@ async function main() {
       return { text: context.knowledge.bestMatch?.answer || "請問你想了解邊方面？" };
     }
   });
-  const lines = [
-    "# End-to-end Pipeline ver 1.0 - Side-by-side results",
-    "",
-    "Pipeline: channel -> privacy -> intent -> KB -> rules -> backend mock -> model route -> draft -> safety -> outbound/staff inbox.",
-    "",
-    "| Case | Expected | Actual |",
-    "|---|---|---|"
-  ];
+
+  const rows = [];
   for (const c of standardCases) {
     const result = await pipeline.runMessage(c.input);
-    lines.push(`| ${cell(c.name)} | ${cell({ finalStatus: c.expectStatus, action: c.expectAction, promotion: c.expectPromotion || "" })} | ${cell({ finalStatus: result.finalStatus, action: result.decision.action, safety: result.safety.verdict, promotion: result.promotions?.bestPromotion?.id || "", outbound: result.outbound?.status, staffItemId: result.staffItem?.id || null })} |`);
+    const expected = { finalStatus: c.expectStatus, action: c.expectAction, promotion: c.expectPromotion || "" };
+    const actual = {
+      finalStatus: result.finalStatus,
+      action: result.decision?.action || null,
+      route: result.gateway?.route || null,
+      intent: result.intent?.primaryIntent || null,
+      kb: result.knowledge?.bestMatch?.id || null,
+      safety: result.safety?.verdict || null,
+      safeToSend: result.safety?.safeToSend || false,
+      promotion: result.promotions?.bestPromotion?.id || "",
+      outbound: result.outbound?.status || null,
+      staffItemId: result.staffItem?.id || null
+    };
+    const problems = [];
+    if (actual.finalStatus !== expected.finalStatus) problems.push(`finalStatus expected ${expected.finalStatus}, got ${actual.finalStatus}`);
+    if (actual.action !== expected.action) problems.push(`action expected ${expected.action}, got ${actual.action}`);
+    if (expected.promotion && actual.promotion !== expected.promotion) problems.push(`promotion expected ${expected.promotion}, got ${actual.promotion}`);
+    rows.push({
+      name: c.name,
+      status: problems.length ? "FAIL" : "PASS",
+      keyResult: `${actual.finalStatus} / ${actual.action}`,
+      context: { input: c.input },
+      expected,
+      actual,
+      problems
+    });
   }
-  lines.push("");
 
   const out = path.join(__dirname, "..", "end-to-end-pipeline-side-by-side-results.md");
-  fs.writeFileSync(out, lines.join("\n"), "utf8");
-  console.log(`Wrote ${standardCases.length} rows to ${out}`);
+  writeReadableReport(out, {
+    title: "End-to-end Pipeline ver 1.0 - Readable Side-by-side Results",
+    description: "Each case compares the expected final route with every major pipeline checkpoint: privacy, intent, KB, rules, safety, outbound, and staff inbox.",
+    rows
+  });
+  console.log(`Wrote ${rows.length} readable rows to ${out}`);
+  if (rows.some((row) => row.status !== "PASS")) process.exitCode = 1;
 }
 
 main().catch((error) => {

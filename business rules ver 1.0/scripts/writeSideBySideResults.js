@@ -1,6 +1,5 @@
 "use strict";
 
-const fs = require("node:fs");
 const path = require("node:path");
 const { evaluate } = require("../src/businessRules");
 const { getConfig } = require("../src/archetypes");
@@ -9,58 +8,55 @@ const { classifyIntent } = require("../../intent classifier ver 1.0/src/intentCl
 const { createKnowledgeBase } = require("../../knowledge base ver 1.0/src/knowledgeBase");
 const seed = require("../../knowledge base ver 1.0/seed/hkSmeSeed");
 const { standardCases } = require("../test/businessRules.cases");
+const { writeReadableReport } = require("../../scripts/readableSideBySideReport");
 
 const kb = createKnowledgeBase({ entries: seed });
-
-function cell(value) {
-  if (value == null) return "";
-  if (Array.isArray(value)) return value.join(", ");
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value).replace(/\|/g, "\\|").replace(/\n/g, "<br>");
-}
-
-function expected(c) {
-  return {
-    action: c.expectAction || (c.expectActionOneOf || []).join(" | "),
-    escalation: (c.expectEscalation || []).join(" | "),
-    mustForbid: (c.expectMustForbid || []).join(", "),
-    mustAllow: (c.expectMustAllow || []).join(", ")
-  };
-}
-
-function actual(result) {
-  return {
-    action: result.action,
-    escalation: result.escalationLabel || "",
-    suggestedTone: result.suggestedTone,
-    bestMatchId: result.staffPacket?.bestMatchId || "(auto_send)",
-    forbidden: result.forbiddenCapabilities.slice(0, 6).join(", ") + (result.forbiddenCapabilities.length > 6 ? " …" : ""),
-    allowed: result.allowedCapabilities.slice(0, 4).join(", ") + (result.allowedCapabilities.length > 4 ? " …" : ""),
-    reasons: result.reasons.slice(0, 3).join("; ")
-  };
-}
 
 const rows = standardCases.map((c) => {
   const gateway = routeMessage(c.input);
   const intent = classifyIntent(gateway);
   const knowledge = kb.lookup({ businessId: c.businessId, sanitizedText: gateway.sanitizedText, intent });
   const result = evaluate({ gateway, intent, knowledge, businessConfig: getConfig(c.businessId) });
-  return { name: c.name, businessId: c.businessId, input: c.input, expected: expected(c), actual: actual(result) };
+  const expected = {
+    action: c.expectAction || c.expectActionOneOf || "",
+    escalation: c.expectEscalation || "",
+    mustForbid: c.expectMustForbid || [],
+    mustAllow: c.expectMustAllow || []
+  };
+  const actual = {
+    action: result.action,
+    escalation: result.escalationLabel,
+    suggestedTone: result.suggestedTone,
+    allowedCapabilities: result.allowedCapabilities,
+    forbiddenCapabilities: result.forbiddenCapabilities,
+    grounding: result.grounding,
+    reasons: result.reasons
+  };
+  const problems = [];
+  if (Array.isArray(expected.action)) {
+    if (!expected.action.includes(actual.action)) problems.push(`action expected one of ${expected.action.join(", ")}, got ${actual.action}`);
+  } else if (expected.action && actual.action !== expected.action) {
+    problems.push(`action expected ${expected.action}, got ${actual.action}`);
+  }
+  if (Array.isArray(expected.escalation) && expected.escalation.length && !expected.escalation.includes(actual.escalation)) problems.push(`escalation expected one of ${expected.escalation.join(", ")}, got ${actual.escalation}`);
+  for (const cap of expected.mustForbid) if (!actual.forbiddenCapabilities.includes(cap)) problems.push(`missing forbidden capability ${cap}`);
+  for (const cap of expected.mustAllow) if (!actual.allowedCapabilities.includes(cap)) problems.push(`missing allowed capability ${cap}`);
+  return {
+    name: c.name,
+    status: problems.length ? "FAIL" : "PASS",
+    keyResult: `${actual.action}${actual.escalation ? ` / ${actual.escalation}` : ""}`,
+    context: { businessId: c.businessId, input: c.input, intent: intent.primaryIntent, kb: knowledge.bestMatch?.id || null },
+    expected,
+    actual,
+    problems
+  };
 });
 
-const lines = [
-  "# Business Rules ver 1.0 — Side-by-side results",
-  "",
-  "Pipeline: raw text → privacy gateway → intent classifier → knowledge base → business rules.",
-  "",
-  "| Case | Business | Input | Expected | Actual |",
-  "|---|---|---|---|---|"
-];
-for (const r of rows) {
-  lines.push(`| ${cell(r.name)} | ${cell(r.businessId)} | ${cell(r.input)} | ${cell(r.expected)} | ${cell(r.actual)} |`);
-}
-lines.push("");
-
 const out = path.join(__dirname, "..", "business-rules-side-by-side-results.md");
-fs.writeFileSync(out, lines.join("\n"), "utf8");
-console.log(`Wrote ${rows.length} rows to ${out}`);
+writeReadableReport(out, {
+  title: "Business Rules ver 1.0 - Readable Side-by-side Results",
+  description: "Each case compares the expected policy route with the actual deterministic decision and capability contract.",
+  rows
+});
+console.log(`Wrote ${rows.length} readable rows to ${out}`);
+if (rows.some((row) => row.status !== "PASS")) process.exitCode = 1;

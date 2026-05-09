@@ -1,28 +1,46 @@
 "use strict";
 
-const fs = require("node:fs");
 const path = require("node:path");
 const { normalizeInbound } = require("../src/channelAdapter");
 const { standardCases } = require("../test/channelAdapter.cases");
+const { writeReadableReport } = require("../../scripts/readableSideBySideReport");
 
-function cell(value) {
-  if (value == null) return "";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value).replace(/\|/g, "\\|");
-}
-
-const lines = [
-  "# Channel Adapter ver 1.0 - Side-by-side results",
-  "",
-  "| Case | Expected | Actual |",
-  "|---|---|---|"
-];
-for (const c of standardCases) {
+const rows = standardCases.map((c) => {
   const result = normalizeInbound(c.input);
-  lines.push(`| ${cell(c.name)} | ${cell({ channel: c.expectChannel, text: c.expectText, sender: c.expectSender })} | ${cell({ channel: result.channel, text: result.rawText, sender: result.senderId, errors: result.errors })} |`);
-}
-lines.push("");
+  const expected = {
+    channel: c.expectChannel,
+    text: c.expectText,
+    sender: c.expectSender,
+    errors: c.expectErrors || []
+  };
+  const actual = {
+    channel: result.channel,
+    text: result.rawText,
+    sender: result.senderId,
+    errors: result.errors,
+    replyToken: result.replyToken
+  };
+  const problems = [];
+  if (actual.channel !== expected.channel) problems.push(`channel expected ${expected.channel}, got ${actual.channel}`);
+  if (actual.text !== expected.text) problems.push("normalized text mismatch");
+  if (actual.sender !== expected.sender) problems.push(`sender expected ${expected.sender}, got ${actual.sender}`);
+  if (JSON.stringify(actual.errors) !== JSON.stringify(expected.errors)) problems.push(`errors expected ${expected.errors.join(",")}, got ${actual.errors.join(",")}`);
+  return {
+    name: c.name,
+    status: problems.length ? "FAIL" : "PASS",
+    keyResult: `${actual.channel} / ${actual.sender}`,
+    context: { input: c.input },
+    expected,
+    actual,
+    problems
+  };
+});
 
 const out = path.join(__dirname, "..", "channel-adapter-side-by-side-results.md");
-fs.writeFileSync(out, lines.join("\n"), "utf8");
-console.log(`Wrote ${standardCases.length} rows to ${out}`);
+writeReadableReport(out, {
+  title: "Channel Adapter ver 1.0 - Readable Side-by-side Results",
+  description: "Each case compares the raw channel payload with the normalized inbound shape used by the pipeline.",
+  rows
+});
+console.log(`Wrote ${rows.length} readable rows to ${out}`);
+if (rows.some((row) => row.status !== "PASS")) process.exitCode = 1;

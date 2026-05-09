@@ -1,30 +1,48 @@
 "use strict";
 
-const fs = require("node:fs");
 const path = require("node:path");
 const { createStaffInbox } = require("../src/staffInbox");
 const { standardCases } = require("../test/staffInbox.cases");
+const { writeReadableReport } = require("../../scripts/readableSideBySideReport");
 
 const inbox = createStaffInbox();
 
-function cell(value) {
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value).replace(/\|/g, "\\|");
-}
-
-const lines = [
-  "# Staff Inbox ver 1.0 - Side-by-side results",
-  "",
-  "| Case | Expected | Actual |",
-  "|---|---|---|"
-];
-
-for (const c of standardCases) {
+const rows = standardCases.map((c) => {
   const item = inbox.submit(c);
-  lines.push(`| ${cell(c.name)} | ${cell({ priority: c.expectPriority, status: "open" })} | ${cell({ id: item.id, priority: item.priority, status: item.status, action: item.action })} |`);
-}
-lines.push("");
+  const expected = { priority: c.expectPriority, status: "open", businessId: c.normalizedMessage.businessId };
+  const actual = {
+    id: item.id,
+    priority: item.priority,
+    status: item.status,
+    action: item.action,
+    businessId: item.businessId,
+    channel: item.channel,
+    escalationLabel: item.escalationLabel
+  };
+  const problems = [];
+  if (actual.priority !== expected.priority) problems.push(`priority expected ${expected.priority}, got ${actual.priority}`);
+  if (actual.status !== expected.status) problems.push(`status expected ${expected.status}, got ${actual.status}`);
+  if (actual.businessId !== expected.businessId) problems.push(`businessId expected ${expected.businessId}, got ${actual.businessId}`);
+  return {
+    name: c.name,
+    status: problems.length ? "FAIL" : "PASS",
+    keyResult: `${actual.priority} / ${actual.action}`,
+    context: {
+      decision: c.decision,
+      safety: c.safety,
+      normalizedMessage: c.normalizedMessage
+    },
+    expected,
+    actual,
+    problems
+  };
+});
 
 const out = path.join(__dirname, "..", "staff-inbox-side-by-side-results.md");
-fs.writeFileSync(out, lines.join("\n"), "utf8");
-console.log(`Wrote ${standardCases.length} rows to ${out}`);
+writeReadableReport(out, {
+  title: "Staff Inbox ver 1.0 - Readable Side-by-side Results",
+  description: "Each case compares a held workflow item with the priority and queue state staff should see.",
+  rows
+});
+console.log(`Wrote ${rows.length} readable rows to ${out}`);
+if (rows.some((row) => row.status !== "PASS")) process.exitCode = 1;

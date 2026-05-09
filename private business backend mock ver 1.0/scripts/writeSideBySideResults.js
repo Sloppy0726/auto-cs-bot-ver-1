@@ -1,30 +1,40 @@
 "use strict";
 
-const fs = require("node:fs");
 const path = require("node:path");
 const { createBusinessBackend } = require("../src/businessBackendMock");
 const { standardCases } = require("../test/businessBackendMock.cases");
+const { writeReadableReport } = require("../../scripts/readableSideBySideReport");
 
 const backend = createBusinessBackend();
 
-function cell(value) {
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value).replace(/\|/g, "\\|");
-}
-
-const lines = [
-  "# Private Business Backend Mock ver 1.0 - Side-by-side results",
-  "",
-  "| Case | Expected | Actual |",
-  "|---|---|---|"
-];
-
-for (const c of standardCases) {
+const rows = standardCases.map((c) => {
   const result = backend[c.fn](c.query);
-  lines.push(`| ${cell(c.name)} | ${cell({ found: c.expectFound, available: c.expectAvailable })} | ${cell(result)} |`);
-}
-lines.push("");
+  const expected = { found: c.expectFound, available: c.expectAvailable };
+  const actual = {
+    found: result.found,
+    available: result.available,
+    facts: result.facts,
+    reason: result.reason
+  };
+  const problems = [];
+  if (actual.found !== expected.found) problems.push(`found expected ${expected.found}, got ${actual.found}`);
+  if (expected.available !== undefined && actual.available !== expected.available) problems.push(`available expected ${expected.available}, got ${actual.available}`);
+  return {
+    name: c.name,
+    status: problems.length ? "FAIL" : "PASS",
+    keyResult: `${c.fn}: found=${actual.found}${actual.available === undefined ? "" : ` available=${actual.available}`}`,
+    context: { fn: c.fn, query: c.query },
+    expected,
+    actual,
+    problems
+  };
+});
 
 const out = path.join(__dirname, "..", "private-business-backend-mock-side-by-side-results.md");
-fs.writeFileSync(out, lines.join("\n"), "utf8");
-console.log(`Wrote ${standardCases.length} rows to ${out}`);
+writeReadableReport(out, {
+  title: "Private Business Backend Mock ver 1.0 - Readable Side-by-side Results",
+  description: "Each case compares a controlled backend lookup with the minimal sanitized facts exposed to the AI workflow.",
+  rows
+});
+console.log(`Wrote ${rows.length} readable rows to ${out}`);
+if (rows.some((row) => row.status !== "PASS")) process.exitCode = 1;

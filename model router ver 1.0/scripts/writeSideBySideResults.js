@@ -1,28 +1,40 @@
 "use strict";
 
-const fs = require("node:fs");
 const path = require("node:path");
 const { routeModel } = require("../src/modelRouter");
 const { standardCases } = require("../test/modelRouter.cases");
+const { writeReadableReport } = require("../../scripts/readableSideBySideReport");
 
-function cell(value) {
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value).replace(/\|/g, "\\|");
-}
-
-const lines = [
-  "# Model Router ver 1.0 - Side-by-side results",
-  "",
-  "| Case | Expected | Actual |",
-  "|---|---|---|"
-];
-
-for (const c of standardCases) {
+const rows = standardCases.map((c) => {
   const result = routeModel({ decision: c.decision, intent: c.intent, gateway: c.gateway || {} });
-  lines.push(`| ${cell(c.name)} | ${cell({ model: c.expectModel, shouldCallLLM: c.expectShouldCall })} | ${cell(result)} |`);
-}
-lines.push("");
+  const expected = { model: c.expectModel, shouldCallLLM: c.expectShouldCall };
+  const actual = {
+    provider: result.provider,
+    model: result.model,
+    shouldCallLLM: result.shouldCallLLM,
+    promptCache: result.promptCache,
+    maxTokens: result.maxTokens,
+    reasons: result.reasons
+  };
+  const problems = [];
+  if (actual.model !== expected.model) problems.push(`model expected ${expected.model}, got ${actual.model}`);
+  if (actual.shouldCallLLM !== expected.shouldCallLLM) problems.push(`shouldCallLLM expected ${expected.shouldCallLLM}, got ${actual.shouldCallLLM}`);
+  return {
+    name: c.name,
+    status: problems.length ? "FAIL" : "PASS",
+    keyResult: `${actual.model} / call=${actual.shouldCallLLM}`,
+    context: { decision: c.decision, intent: c.intent, gateway: c.gateway || {} },
+    expected,
+    actual,
+    problems
+  };
+});
 
 const out = path.join(__dirname, "..", "model-router-side-by-side-results.md");
-fs.writeFileSync(out, lines.join("\n"), "utf8");
-console.log(`Wrote ${standardCases.length} rows to ${out}`);
+writeReadableReport(out, {
+  title: "Model Router ver 1.0 - Readable Side-by-side Results",
+  description: "Each case compares the deterministic model routing policy against the actual provider/model decision.",
+  rows
+});
+console.log(`Wrote ${rows.length} readable rows to ${out}`);
+if (rows.some((row) => row.status !== "PASS")) process.exitCode = 1;

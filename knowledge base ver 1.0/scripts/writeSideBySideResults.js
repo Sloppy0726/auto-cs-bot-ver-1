@@ -1,72 +1,60 @@
 "use strict";
 
-const fs = require("node:fs");
 const path = require("node:path");
 const { createKnowledgeBase } = require("../src/knowledgeBase");
 const { routeMessage } = require("../../privacy gateway ver 1.0/src/privacyGateway");
 const { classifyIntent } = require("../../intent classifier ver 1.0/src/intentClassifier");
 const { standardCases, seed } = require("../test/knowledgeBase.cases");
+const { writeReadableReport } = require("../../scripts/readableSideBySideReport");
 
 const kb = createKnowledgeBase({ entries: seed });
 
-function cell(value) {
-  if (value == null) return "";
-  if (Array.isArray(value)) return value.join(", ");
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value).replace(/\|/g, "\\|").replace(/\n/g, "<br>");
-}
-
-function expectedSummary(testCase) {
-  return {
-    bestMatchId: testCase.expectBestMatchId === null
-      ? "(none)"
-      : testCase.expectBestMatchId || (testCase.expectBestMatchAnyOf || []).join(" | "),
-    gap: testCase.expectGap ?? "",
-    handoff: testCase.expectHandoff ?? false,
-    backendBound: testCase.expectBackendBound ?? ""
+const rows = standardCases.map((c) => {
+  const gateway = routeMessage(c.input);
+  const intent = classifyIntent(gateway);
+  const result = kb.lookup({ businessId: c.businessId, sanitizedText: gateway.sanitizedText, intent });
+  const expected = {
+    bestMatchId: c.expectBestMatchId === null ? null : c.expectBestMatchId || c.expectBestMatchAnyOf || "",
+    gap: c.expectGap,
+    handoff: c.expectHandoff || false,
+    backendBound: c.expectBackendBound
   };
-}
-
-function actualSummary(result) {
-  return {
-    bestMatchId: result.bestMatch ? result.bestMatch.id : "(none)",
-    bestMatchScore: result.bestMatch ? result.bestMatch.score : "",
+  const actual = {
+    bestMatchId: result.bestMatch ? result.bestMatch.id : null,
+    score: result.bestMatch ? result.bestMatch.score : null,
     primaryIntent: result.primaryIntent,
     language: result.language,
     gap: result.gap,
     handoff: result.handoff,
     backendBound: result.backendBound,
     grounding: result.grounding,
-    answerPreview: result.bestMatch ? result.bestMatch.answer.slice(0, 80) : "",
-    suggestedClarification: result.suggestedClarification || ""
+    clarification: result.suggestedClarification || ""
   };
-}
-
-const rows = standardCases.map((c) => {
-  const gateway = routeMessage(c.input);
-  const intent = classifyIntent(gateway);
-  const result = kb.lookup({ businessId: c.businessId, sanitizedText: gateway.sanitizedText, intent });
+  const problems = [];
+  if (Array.isArray(expected.bestMatchId)) {
+    if (!expected.bestMatchId.includes(actual.bestMatchId)) problems.push(`bestMatchId expected one of ${expected.bestMatchId.join(", ")}, got ${actual.bestMatchId}`);
+  } else if (expected.bestMatchId !== "" && actual.bestMatchId !== expected.bestMatchId) {
+    problems.push(`bestMatchId expected ${expected.bestMatchId}, got ${actual.bestMatchId}`);
+  }
+  if (expected.gap !== undefined && actual.gap !== expected.gap) problems.push(`gap expected ${expected.gap}, got ${actual.gap}`);
+  if (actual.handoff !== expected.handoff) problems.push(`handoff expected ${expected.handoff}, got ${actual.handoff}`);
+  if (expected.backendBound !== undefined && actual.backendBound !== expected.backendBound) problems.push(`backendBound expected ${expected.backendBound}, got ${actual.backendBound}`);
   return {
     name: c.name,
-    input: c.input,
-    businessId: c.businessId,
-    expected: expectedSummary(c),
-    actual: actualSummary(result)
+    status: problems.length ? "FAIL" : "PASS",
+    keyResult: `${actual.bestMatchId || "gap"} / ${actual.primaryIntent}`,
+    context: { businessId: c.businessId, input: c.input, sanitizedText: gateway.sanitizedText },
+    expected,
+    actual,
+    problems
   };
 });
 
-const lines = [];
-lines.push("# Knowledge Base ver 1.0 — Side-by-side results");
-lines.push("");
-lines.push("Pipeline: raw text → privacy gateway → intent classifier → knowledge base.");
-lines.push("");
-lines.push("| Case | Business | Input | Expected | Actual |");
-lines.push("|---|---|---|---|---|");
-for (const row of rows) {
-  lines.push(`| ${cell(row.name)} | ${cell(row.businessId)} | ${cell(row.input)} | ${cell(row.expected)} | ${cell(row.actual)} |`);
-}
-lines.push("");
-
-const outPath = path.join(__dirname, "..", "knowledge-base-side-by-side-results.md");
-fs.writeFileSync(outPath, lines.join("\n"), "utf8");
-console.log(`Wrote ${rows.length} rows to ${outPath}`);
+const out = path.join(__dirname, "..", "knowledge-base-side-by-side-results.md");
+writeReadableReport(out, {
+  title: "Knowledge Base ver 1.0 - Readable Side-by-side Results",
+  description: "Each case compares sanitized customer text and classifier output with the approved KB match, gap, handoff, and backend-bound signals.",
+  rows
+});
+console.log(`Wrote ${rows.length} readable rows to ${out}`);
+if (rows.some((row) => row.status !== "PASS")) process.exitCode = 1;
