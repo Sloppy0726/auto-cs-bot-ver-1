@@ -38,7 +38,7 @@ const result = await pipeline.runMessage({
 
 ## Server
 
-`src/server.js` exposes `createWebhookServer()` using Node's built-in `http` module. It supports `POST /webhook`.
+`src/server.js` exposes `createWebhookServer()` using Node's built-in `http` module. It supports `POST /webhook`. Signed mode requires `x-webhook-timestamp` and `x-webhook-signature`; the signature is HMAC-SHA256 over `timestamp.rawBody`.
 
 ## Run
 
@@ -46,3 +46,14 @@ const result = await pipeline.runMessage({
 node "end-to-end pipeline ver 1.0/test/pipeline.test.js"
 node "end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js"
 ```
+
+## Changelog
+
+### 2026-05-10 02:26:31 HKT - Webhook Authentication Hardening
+
+- **Changed:** `createWebhookServer()` now verifies webhook signatures before parsing JSON or calling `pipeline.runMessage()`.
+- **Added:** HMAC-SHA256 signing support using `x-webhook-timestamp` and `x-webhook-signature` headers.
+- **Added:** 5-minute default replay protection for stale webhook timestamps.
+- **Added:** Constant-time comparison for webhook signatures.
+- **Changed:** Unexpected server errors now return `internal_server_error` instead of raw exception messages.
+- **Verified:** `end-to-end pipeline ver 1.0/test/server.test.js` covers signed, unsigned, tampered, and stale webhook cases.
