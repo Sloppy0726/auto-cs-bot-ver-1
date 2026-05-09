@@ -1,0 +1,917 @@
+From 9accf5d257909d4201e7a10a3c5301f9286821b5 Mon Sep 17 00:00:00 2001
+From: Book <book@BookdeMacBook-Air.local>
+Date: Sat, 9 May 2026 13:16:41 +0800
+Subject: [PATCH 03/13] feat: add AI draft engine v1.0
+
+---
+ AI draft engine ver 1.0/README.md             | 124 ++++++
+ .../ai-draft-engine-side-by-side-results.md   |  11 +
+ .../scripts/writeSideBySideResults.js         |  96 +++++
+ .../src/anthropicAdapter.js                   |  94 +++++
+ AI draft engine ver 1.0/src/draftEngine.js    | 364 ++++++++++++++++++
+ .../test/draftEngine.cases.js                 |  51 +++
+ .../test/draftEngine.test.js                  | 110 ++++++
+ 7 files changed, 850 insertions(+)
+ create mode 100644 AI draft engine ver 1.0/README.md
+ create mode 100644 AI draft engine ver 1.0/ai-draft-engine-side-by-side-results.md
+ create mode 100644 AI draft engine ver 1.0/scripts/writeSideBySideResults.js
+ create mode 100644 AI draft engine ver 1.0/src/anthropicAdapter.js
+ create mode 100644 AI draft engine ver 1.0/src/draftEngine.js
+ create mode 100644 AI draft engine ver 1.0/test/draftEngine.cases.js
+ create mode 100644 AI draft engine ver 1.0/test/draftEngine.test.js
+
+diff --git a/AI draft engine ver 1.0/README.md b/AI draft engine ver 1.0/README.md
+new file mode 100644
+index 0000000..d9f15bc
+--- /dev/null
++++ b/AI draft engine ver 1.0/README.md	
+@@ -0,0 +1,124 @@
++# AI Draft Engine ver 1.0
++
++Grounded draft generator for the Hong Kong AI Customer Support SaaS.
++
++The draft engine sits after the business rules module. It consumes the typed decision contract and produces either a customer reply candidate, a clarification, a staff-only handoff summary, or a quarantine result. It does not make policy decisions; it only obeys the decision it receives.
++
++## Why this matters for HK SMEs
++
++| Competitor pattern | What goes wrong for HK SMEs | Draft Engine v1.0 answer |
++|---|---|---|
++| Raw LLM replies directly to customers | Model invents prices, confirms slots, or gives risky advice | `auto_send` quotes the approved KB answer verbatim; risky branches go to staff |
++| Policy hidden inside a prompt | One jailbreak or model drift can override policy | The prompt is built from `allowedCapabilities` and `forbiddenCapabilities` from typed JS rules |
++| Human handoff with no context | Staff wastes time reconstructing the issue | `handoff` creates a staff-facing Cantonese summary, never a customer reply |
++| Online-only test flow | Tests become slow, flaky, and costly | Default LLM adapter is an offline stub; real Anthropic adapter is injected |
++
++Pillars covered: **#5 AI draft engine**, partial **#6 safety contract**, partial **#9 model router seed**.
++
++## Folder layout
++
++```
++AI draft engine ver 1.0/
++├── src/draftEngine.js              # generateDraft({ decision, knowledge, intent, gateway }, options)
++├── src/anthropicAdapter.js         # optional real adapter, reads ANTHROPIC_API_KEY
++├── test/draftEngine.cases.js
++├── test/draftEngine.test.js
++├── scripts/writeSideBySideResults.js
++└── README.md
++```
++
++## Main API
++
++```js
++const { generateDraft } = require("./src/draftEngine");
++
++const draft = await generateDraft({
++  decision,    // output of business rules evaluate()
++  knowledge,   // output of KB lookup()
++  intent,      // output of classifyIntent()
++  gateway      // output of routeMessage()
++});
++```
++
++Output:
++
++```js
++{
++  text: "我哋每日12:00-15:00 lunch...",
++  action: "auto_send",
++  citations: ["restaurant_hours"],
++  tone: "friendly_local",
++  llmUsed: false,
++  reasons: ["auto_send: returned approved KB answer verbatim"],
++  staffNote: null
++}
++```
++
++## Five branches
++
++| Decision action | Draft behavior |
++|---|---|
++| `auto_send` | Returns `knowledge.bestMatch.answer` verbatim. No LLM call. Citations come from `grounding`. |
++| `staff_review` | Calls the injected LLM adapter with a sandwich prompt: capabilities, forbidden list, approved KB source, tone, customer context, final self-check. Produces 1-2 Cantonese draft candidates for staff review only. |
++| `clarify` | Returns `decision.clarificationText` verbatim. No LLM call. |
++| `handoff` | Calls the injected LLM adapter with a strict staff-only prompt and returns a Cantonese internal summary. |
++| `block` | Returns `text: null` plus a quarantine note for staff. No LLM call. |
++
++## LLM adapter
++
++Default adapter:
++
++```js
++async (prompt) => ({ text: "[stub] " + prompt.slice(0, 80) })
++```
++
++Real adapter:
++
++```js
++const { createAnthropicAdapter } = require("./src/anthropicAdapter");
++
++const draft = await generateDraft(input, {
++  llmAdapter: createAnthropicAdapter()
++});
++```
++
++`src/anthropicAdapter.js` reads `ANTHROPIC_API_KEY` from the environment. It chooses:
++
++| Case | Model |
++|---|---|
++| simple draft work | `claude-haiku-4-5-20251001` |
++| handoff, high-risk, complaint, sensitive, child, payment/order/reschedule | `claude-sonnet-4-6` |
++
++The adapter sets `cache_control` on the system message because the capability/tone policy repeats heavily across tenant traffic.
++
++## Integration
++
++```
++privacy gateway -> intent classifier -> knowledge base -> business rules -> AI draft engine -> [safety checker v1.0]
++                                                        |
++                                                        +-> staff inbox / handoff
++```
++
++The draft engine only consumes sanitized text from the gateway. It never receives raw customer text.
++
++## HK-specific guards
++
++1. **Approved-only facts** - staff-review prompts name the approved KB answer as the only factual source.
++2. **No direct confirmation** - generated text is withheld if it appears to confirm bookings, refunds, payments, shipments, delivery ETAs, medical advice, or treatment results when those capabilities are forbidden.
++3. **Staff-only handoff** - handoff prompts explicitly forbid customer-facing replies and ask for an internal Cantonese summary.
++4. **Offline by default** - tests and side-by-side reports do not call a paid model.
++5. **Tone follows archetype** - `luxury_beauty`, `friendly_local`, `casual_ig`, `education`, and `polite_professional` are inherited from the rules decision.
++
++## Run
++
++```bash
++node "AI draft engine ver 1.0/test/draftEngine.test.js"
++node "AI draft engine ver 1.0/scripts/writeSideBySideResults.js"
++```
++
++## Roadmap
++
++- v1.1: structured draft output with separate `drafts[]`, `warnings[]`, and `citations[]`.
++- v1.2: tenant-specific prompt templates and tone overrides.
++- v1.3: richer model-router handoff to choose model by cost, latency, language, and escalation risk.
++- v2.0: use Safety Checker v1.0 as a required post-generation gate before any staff inbox or auto-send path.
+diff --git a/AI draft engine ver 1.0/ai-draft-engine-side-by-side-results.md b/AI draft engine ver 1.0/ai-draft-engine-side-by-side-results.md
+new file mode 100644
+index 0000000..047a7c5
+--- /dev/null
++++ b/AI draft engine ver 1.0/ai-draft-engine-side-by-side-results.md	
+@@ -0,0 +1,11 @@
++# AI Draft Engine ver 1.0 - Side-by-side results
++
++Pipeline: raw text -> privacy gateway -> intent classifier -> knowledge base -> business rules -> AI draft engine.
++
++| Case | Business | Input | Expected | Actual |
++|---|---|---|---|---|
++| restaurant hours auto_send returns approved KB answer | restaurant_demo | 你哋幾點開門？ | {"action":"auto_send","tone":"friendly_local","llmUsed":false} | {"action":"auto_send","tone":"friendly_local","llmUsed":false,"citations":["restaurant_hours"],"staffNote":"","textPreview":"我哋每日12:00–15:00 lunch，18:00–22:30 dinner，星期一休息。","reasons":"bestScore=1.2; intentConfidence=0.88; autoSendIntents allows hours_location"} |
++| beauty pricing staff_review calls injected LLM with KB-only source | beauty_demo | facial幾錢？ | {"action":"staff_review","tone":"luxury_beauty","llmUsed":true} | {"action":"staff_review","tone":"luxury_beauty","llmUsed":true,"citations":["beauty_pricing_facial"],"staffNote":"Draft candidate for staff review only.","textPreview":"草稿一：Signature facial單次$680，5次package $2,980，首次trial $380。\n草稿二：多謝你查詢，我哋會按以上已核准資料回覆，並由同事覆核後再發出。","reasons":"config.reviewIntents includes pricing; staff_review: generated 1-2 Cantonese draft candidates"} |
++| restaurant parking clarify returns deterministic clarification | restaurant_demo | 你哋有冇泊車優惠？ | {"action":"clarify","tone":"friendly_local","llmUsed":false} | {"action":"clarify","tone":"friendly_local","llmUsed":false,"citations":[],"staffNote":"","textPreview":"唔好意思，可以講多少少你想了解邊個服務嘅價錢？","reasons":"kb.gap=true; clarify: returned deterministic clarification text verbatim"} |
++| education child data handoff produces staff-facing summary | edu_demo | 我個小朋友幼稚園叫XXX，出生日期係... | {"action":"handoff","tone":"education","llmUsed":true} | {"action":"handoff","tone":"education","llmUsed":true,"citations":[],"staffNote":"Staff-only handoff summary. Do not send to customer.","textPreview":"【員工交接】\n意圖：child_data\n客人想要：Customer mentions child-related personal data.\n升級原因：child_data\n建議下一步：由同事喺受控系統查看紀錄後回覆。","reasons":"kb.handoff=true; intent=child_data; gateway high risk"} |
++| privacy block returns null draft and quarantine note | beauty_demo | 信用卡 4111 1111 1111 1111 預留位 | {"action":"block","tone":"luxury_beauty","llmUsed":false} | {"action":"block","tone":"luxury_beauty","llmUsed":false,"citations":[],"staffNote":"Quarantine: privacy gateway blocked this message. Review only inside controlled staff tools; do not send it to any LLM.","textPreview":"","reasons":"gateway.route=block_and_handoff; block: no draft generated"} |
+diff --git a/AI draft engine ver 1.0/scripts/writeSideBySideResults.js b/AI draft engine ver 1.0/scripts/writeSideBySideResults.js
+new file mode 100644
+index 0000000..9ba1c7e
+--- /dev/null
++++ b/AI draft engine ver 1.0/scripts/writeSideBySideResults.js	
+@@ -0,0 +1,96 @@
++"use strict";
++
++const fs = require("node:fs");
++const path = require("node:path");
++const { generateDraft } = require("../src/draftEngine");
++const { routeMessage } = require("../../privacy gateway ver 1.0/src/privacyGateway");
++const { classifyIntent } = require("../../intent classifier ver 1.0/src/intentClassifier");
++const { createKnowledgeBase } = require("../../knowledge base ver 1.0/src/knowledgeBase");
++const seed = require("../../knowledge base ver 1.0/seed/hkSmeSeed");
++const { evaluate } = require("../../business rules ver 1.0/src/businessRules");
++const { getConfig } = require("../../business rules ver 1.0/src/archetypes");
++const { standardCases } = require("../test/draftEngine.cases");
++
++const kb = createKnowledgeBase({ entries: seed });
++
++function cell(value) {
++  if (value == null) return "";
++  if (Array.isArray(value)) return value.join(", ");
++  if (typeof value === "object") return JSON.stringify(value);
++  return String(value).replace(/\|/g, "\\|").replace(/\n/g, "<br>");
++}
++
++function preview(text) {
++  if (!text) return "";
++  return text.length > 120 ? `${text.slice(0, 117)}...` : text;
++}
++
++function buildPipeline(c) {
++  const gateway = routeMessage(c.input);
++  const intent = classifyIntent(gateway);
++  const knowledge = kb.lookup({ businessId: c.businessId, sanitizedText: gateway.sanitizedText, intent });
++  const decision = evaluate({ gateway, intent, knowledge, businessConfig: getConfig(c.businessId) });
++  return { gateway, intent, knowledge, decision };
++}
++
++async function reportAdapter(prompt, context) {
++  if (context.decision.action === "handoff") {
++    return {
++      text: "【員工交接】\n意圖：" + (context.intent.primaryIntent || "general") +
++        "\n客人想要：" + (context.intent.customerGoal || "需要真人跟進") +
++        "\n升級原因：" + (context.decision.escalationLabel || "manual_review") +
++        "\n建議下一步：由同事喺受控系統查看紀錄後回覆。"
++    };
++  }
++  const answer = context.knowledge.bestMatch?.answer || "資料未足，建議先問客人補充。";
++  return { text: `草稿一：${answer}\n草稿二：多謝你查詢，我哋會按以上已核准資料回覆，並由同事覆核後再發出。` };
++}
++
++async function main() {
++  const rows = [];
++  for (const c of standardCases) {
++    const pipeline = buildPipeline(c);
++    const result = await generateDraft(pipeline, { llmAdapter: reportAdapter });
++    rows.push({
++      name: c.name,
++      businessId: c.businessId,
++      input: c.input,
++      expected: {
++        action: c.expectAction,
++        tone: c.expectTone,
++        llmUsed: c.expectLlmUsed
++      },
++      actual: {
++        action: result.action,
++        tone: result.tone,
++        llmUsed: result.llmUsed,
++        citations: result.citations,
++        staffNote: result.staffNote || "",
++        textPreview: preview(result.text),
++        reasons: result.reasons.slice(0, 3).join("; ")
++      }
++    });
++  }
++
++  const lines = [
++    "# AI Draft Engine ver 1.0 - Side-by-side results",
++    "",
++    "Pipeline: raw text -> privacy gateway -> intent classifier -> knowledge base -> business rules -> AI draft engine.",
++    "",
++    "| Case | Business | Input | Expected | Actual |",
++    "|---|---|---|---|---|"
++  ];
++  for (const row of rows) {
++    lines.push(`| ${cell(row.name)} | ${cell(row.businessId)} | ${cell(row.input)} | ${cell(row.expected)} | ${cell(row.actual)} |`);
++  }
++  lines.push("");
++
++  const out = path.join(__dirname, "..", "ai-draft-engine-side-by-side-results.md");
++  fs.writeFileSync(out, lines.join("\n"), "utf8");
++  console.log(`Wrote ${rows.length} rows to ${out}`);
++}
++
++main().catch((error) => {
++  console.error(error);
++  process.exitCode = 1;
++});
+diff --git a/AI draft engine ver 1.0/src/anthropicAdapter.js b/AI draft engine ver 1.0/src/anthropicAdapter.js
+new file mode 100644
+index 0000000..2ea3d33
+--- /dev/null
++++ b/AI draft engine ver 1.0/src/anthropicAdapter.js	
+@@ -0,0 +1,94 @@
++"use strict";
++
++const DEFAULT_MODELS = Object.freeze({
++  cheap: "claude-haiku-4-5-20251001",
++  complex: "claude-sonnet-4-6"
++});
++
++const COMPLEX_INTENTS = Object.freeze([
++  "complaint",
++  "sensitive_health",
++  "child_data",
++  "human_request",
++  "payment",
++  "order_status",
++  "reschedule"
++]);
++
++function createAnthropicAdapter(config = {}) {
++  return async function anthropicAdapter(prompt, context = {}) {
++    const apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY;
++    if (!apiKey) {
++      throw new Error("ANTHROPIC_API_KEY is required to use the Anthropic adapter.");
++    }
++    if (typeof fetch !== "function") {
++      throw new Error("This Node.js runtime does not expose global fetch.");
++    }
++
++    const model = config.model || chooseModel(context);
++    const systemPrompt = context.systemPrompt || config.systemPrompt || "You are a grounded customer-support draft engine.";
++    const userPrompt = context.userPrompt || String(prompt || "");
++
++    const response = await fetch(config.url || "https://api.anthropic.com/v1/messages", {
++      method: "POST",
++      headers: {
++        "content-type": "application/json",
++        "x-api-key": apiKey,
++        "anthropic-version": config.apiVersion || "2023-06-01"
++      },
++      body: JSON.stringify({
++        model,
++        max_tokens: config.maxTokens || 700,
++        system: [
++          {
++            type: "text",
++            text: systemPrompt,
++            cache_control: { type: "ephemeral" }
++          }
++        ],
++        messages: [
++          {
++            role: "user",
++            content: [{ type: "text", text: userPrompt }]
++          }
++        ]
++      })
++    });
++
++    const json = await response.json().catch(() => ({}));
++    if (!response.ok) {
++      const message = json.error?.message || response.statusText || "Anthropic API request failed";
++      throw new Error(message);
++    }
++
++    return {
++      text: extractText(json),
++      model,
++      raw: json
++    };
++  };
++}
++
++function chooseModel(context = {}) {
++  const decision = context.decision || {};
++  const intent = context.intent || {};
++  const intentName = intent.primaryIntent || "";
++  if (decision.action === "handoff" || intent.riskLevel === "high" || COMPLEX_INTENTS.includes(intentName)) {
++    return DEFAULT_MODELS.complex;
++  }
++  return DEFAULT_MODELS.cheap;
++}
++
++function extractText(json) {
++  return (json.content || [])
++    .filter((block) => block && block.type === "text")
++    .map((block) => block.text || "")
++    .join("");
++}
++
++module.exports = {
++  DEFAULT_MODELS,
++  createAnthropicAdapter,
++  chooseModel,
++  _internal: { extractText, COMPLEX_INTENTS }
++};
+diff --git a/AI draft engine ver 1.0/src/draftEngine.js b/AI draft engine ver 1.0/src/draftEngine.js
+new file mode 100644
+index 0000000..f639185
+--- /dev/null
++++ b/AI draft engine ver 1.0/src/draftEngine.js	
+@@ -0,0 +1,364 @@
++"use strict";
++
++// AI Draft Engine ver 1.0
++// Turns the business-rules decision contract into either a grounded customer
++// reply candidate or a staff-only handoff note. It never sees raw text.
++
++const ACTIONS = Object.freeze({
++  AUTO_SEND: "auto_send",
++  STAFF_REVIEW: "staff_review",
++  CLARIFY: "clarify",
++  HANDOFF: "handoff",
++  BLOCK: "block"
++});
++
++const TONE_PROFILES = Object.freeze({
++  polite_professional: "Polite, concise, professional Hong Kong customer service Cantonese.",
++  friendly_local: "Warm local HK Cantonese, practical and helpful without sounding scripted.",
++  luxury_beauty: "Calm, premium beauty-clinic Cantonese. Reassuring, but never medical or outcome-promising.",
++  casual_ig: "Short, friendly IG-shop Cantonese with light English only where natural.",
++  education: "Clear, parent-friendly Cantonese. Responsible, patient, and never promising child outcomes.",
++  restaurant: "Friendly local restaurant Cantonese, concise and practical."
++});
++
++const FORBIDDEN_SURFACES = Object.freeze({
++  confirm_booking: [
++    /已(?:經)?確認.*(?:預約|booking|appointment|留位)/i,
++    /(?:booking|appointment|slot).*(?:confirmed|is confirmed)/i,
++    /(?:幫你|已經).*book(?:咗|好)/i,
++    /已(?:經)?留位/i
++  ],
++  promise_slot_availability: [
++    /一定有位/i,
++    /保證有位/i,
++    /guaranteed.*(?:slot|booking|table)/i
++  ],
++  confirm_new_slot: [
++    /已(?:經)?幫你改/i,
++    /(?:reschedule|new slot).*(?:confirmed|is confirmed)/i
++  ],
++  confirm_shipment: [
++    /已(?:經)?出貨/i,
++    /寄出(?:咗|左)/i,
++    /(?:order|parcel).*(?:shipped|dispatched)/i
++  ],
++  state_delivery_eta: [
++    /一定.*(?:到|送到)/i,
++    /(?:will|guaranteed to).*(?:arrive|deliver)/i
++  ],
++  confirm_payment_received: [
++    /已(?:經)?收到.*(?:付款|款項|錢)/i,
++    /payment received/i
++  ],
++  decide_refund: [
++    /(?:可以|會|安排|批准).*(?:退款|退錢)/i,
++    /(?:refund approved|we will refund|can refund)/i
++  ],
++  approve_chargeback: [
++    /chargeback approved/i,
++    /批准.*chargeback/i
++  ],
++  give_medical_advice: [
++    /medical advice/i,
++    /建議你(?:食|用藥|停藥)/i,
++    /你應該(?:食|用).*(?:藥|medicine)/i
++  ],
++  promise_treatment_result: [
++    /一定見效/i,
++    /保證見效/i,
++    /(?:guaranteed|100%).*(?:result|effective)/i
++  ],
++  diagnose: [
++    /診斷/i,
++    /diagnosis/i,
++    /你(?:係|是).*(?:病|敏感|發炎)/i
++  ],
++  give_legal_advice: [
++    /legal advice/i,
++    /法律意見/i
++  ],
++  give_financial_advice: [
++    /financial advice/i,
++    /投資建議/i
++  ],
++  leak_pii: [
++    /[A-Z]\d{6}\([0-9A]\)/i,
++    /\b(?:\d[ -]?){13,19}\b/,
++    /<HKID>|<CREDIT_CARD>|<PHONE>|<EMAIL>/i
++  ]
++});
++
++async function defaultLlmAdapter(prompt) {
++  return { text: `[stub] ${String(prompt).slice(0, 80)}` };
++}
++
++async function generateDraft(input, options = {}) {
++  const { decision = {}, knowledge = {}, intent = {}, gateway = {} } = input || {};
++  const action = decision.action;
++  const llmAdapter = options.llmAdapter || defaultLlmAdapter;
++  const tone = pickTone(decision, knowledge);
++  const citations = citationsFor(decision, knowledge);
++  const reasons = [...(decision.reasons || [])];
++
++  if (action === ACTIONS.AUTO_SEND) {
++    const text = knowledge.bestMatch?.answer || null;
++    const guard = validateAgainstForbidden(text, decision.forbiddenCapabilities);
++    if (!guard.ok) {
++      return buildResult({
++        text: null,
++        action,
++        citations,
++        tone,
++        llmUsed: false,
++        staffNote: "Approved-answer draft was withheld because it looked like a forbidden capability.",
++        reasons: [...reasons, `draft blocked by ${guard.capability}`]
++      });
++    }
++    return buildResult({
++      text,
++      action,
++      citations,
++      tone,
++      llmUsed: false,
++      reasons: [...reasons, "auto_send: returned approved KB answer verbatim"]
++    });
++  }
++
++  if (action === ACTIONS.CLARIFY) {
++    return buildResult({
++      text: decision.clarificationText || null,
++      action,
++      citations: [],
++      tone,
++      llmUsed: false,
++      reasons: [...reasons, "clarify: returned deterministic clarification text verbatim"]
++    });
++  }
++
++  if (action === ACTIONS.BLOCK) {
++    return buildResult({
++      text: null,
++      action,
++      citations: [],
++      tone,
++      llmUsed: false,
++      staffNote: "Quarantine: privacy gateway blocked this message. Review only inside controlled staff tools; do not send it to any LLM.",
++      reasons: [...reasons, "block: no draft generated"]
++    });
++  }
++
++  if (action === ACTIONS.HANDOFF) {
++    const prompt = buildHandoffPrompt({ decision, knowledge, intent, gateway, tone });
++    const text = await callLlm(llmAdapter, prompt.fullPrompt, {
++      action,
++      decision,
++      knowledge,
++      intent,
++      gateway,
++      systemPrompt: prompt.systemPrompt,
++      userPrompt: prompt.userPrompt,
++      cacheSystem: true
++    });
++    const guard = validateAgainstForbidden(text, decision.forbiddenCapabilities);
++    return buildResult({
++      text: guard.ok ? text : null,
++      action,
++      citations,
++      tone,
++      llmUsed: true,
++      staffNote: guard.ok ? "Staff-only handoff summary. Do not send to customer." : "Generated handoff summary was withheld by the capability guard.",
++      reasons: [
++        ...reasons,
++        "handoff: generated staff-facing summary",
++        !guard.ok && `draft blocked by ${guard.capability}`
++      ].filter(Boolean)
++    });
++  }
++
++  if (action === ACTIONS.STAFF_REVIEW) {
++    const prompt = buildStaffReviewPrompt({ decision, knowledge, intent, gateway, tone });
++    const text = await callLlm(llmAdapter, prompt.fullPrompt, {
++      action,
++      decision,
++      knowledge,
++      intent,
++      gateway,
++      systemPrompt: prompt.systemPrompt,
++      userPrompt: prompt.userPrompt,
++      cacheSystem: true
++    });
++    const guard = validateAgainstForbidden(text, decision.forbiddenCapabilities);
++    return buildResult({
++      text: guard.ok ? text : null,
++      action,
++      citations,
++      tone,
++      llmUsed: true,
++      staffNote: guard.ok ? "Draft candidate for staff review only." : "Generated draft was withheld by the capability guard.",
++      reasons: [
++        ...reasons,
++        "staff_review: generated 1-2 Cantonese draft candidates",
++        !guard.ok && `draft blocked by ${guard.capability}`
++      ].filter(Boolean)
++    });
++  }
++
++  return buildResult({
++    text: null,
++    action: action || "unknown",
++    citations: [],
++    tone,
++    llmUsed: false,
++    staffNote: "Unknown decision action. No draft generated.",
++    reasons: [...reasons, "unknown action"]
++  });
++}
++
++function buildStaffReviewPrompt({ decision, knowledge, intent, gateway, tone }) {
++  const sourceAnswer = knowledge.bestMatch?.answer || "(No approved answer matched. Ask one short clarifying question instead of inventing facts.)";
++  const toneProfile = TONE_PROFILES[tone] || TONE_PROFILES.polite_professional;
++  const systemPrompt = [
++    "You are the AI Draft Engine for a privacy-first HK SME customer support SaaS.",
++    "Write only draft candidates for staff review. The staff decides whether to send, edit, or reject.",
++    `Allowed capabilities:\n${bulletList(decision.allowedCapabilities)}`,
++    `Forbidden capabilities:\n${bulletList(decision.forbiddenCapabilities)}`,
++    `Only approved factual source:\n${sourceAnswer}`,
++    `Tone profile (${tone}): ${toneProfile}`,
++    "If the source does not contain a fact, do not add that fact. If facts are missing, ask one concise clarifying question.",
++    "Never confirm bookings, refunds, payments, delivery ETAs, treatment outcomes, medical advice, legal advice, or anything listed as forbidden."
++  ].join("\n\n");
++
++  const userPrompt = [
++    "Write 1-2 concise Cantonese customer reply drafts for staff to review.",
++    `Sanitized customer message: ${gateway.sanitizedText || ""}`,
++    `Intent: ${intent.primaryIntent || "general"} (confidence: ${formatMaybe(intent.confidence)})`,
++    `Customer goal: ${intent.customerGoal || ""}`,
++    `Decision reason: ${decision.reason || ""}`,
++    `Required citations: ${citationsFor(decision, knowledge).join(", ") || "(none)"}`
++  ].join("\n");
++
++  return sandwich(systemPrompt, userPrompt);
++}
++
++function buildHandoffPrompt({ decision, knowledge, intent, gateway, tone }) {
++  const toneProfile = TONE_PROFILES[tone] || TONE_PROFILES.polite_professional;
++  const packet = decision.staffPacket || {};
++  const systemPrompt = [
++    "你係員工專用交接摘要引擎。只可以寫內部摘要，唔可以寫客人回覆。",
++    "Use Cantonese/Traditional Chinese. Do not address the customer directly.",
++    `Allowed capabilities:\n${bulletList(decision.allowedCapabilities)}`,
++    `Forbidden capabilities:\n${bulletList(decision.forbiddenCapabilities)}`,
++    `Tone profile for internal note (${tone}): ${toneProfile}`,
++    "Summarise the customer's goal, escalation reason, what they are asking for, and the safest next staff action.",
++    "Never promise refunds, bookings, medical advice, legal advice, payment status, shipment status, or treatment results."
++  ].join("\n\n");
++
++  const userPrompt = [
++    "Create a staff-facing handoff summary in this shape:",
++    "【員工交接】",
++    "意圖：...",
++    "客人想要：...",
++    "升級原因：...",
++    "建議下一步：...",
++    `Sanitized customer message: ${gateway.sanitizedText || ""}`,
++    `Intent: ${intent.primaryIntent || packet.primaryIntent || "general"}`,
++    `Customer goal: ${intent.customerGoal || packet.customerGoal || ""}`,
++    `Escalation label: ${decision.escalationLabel || packet.escalationLabel || ""}`,
++    `Best approved answer, if any: ${knowledge.bestMatch?.answer || packet.bestMatchAnswer || ""}`
++  ].join("\n");
++
++  return sandwich(systemPrompt, userPrompt);
++}
++
++function sandwich(systemPrompt, userPrompt) {
++  const finalGuard = [
++    "Final self-check before writing:",
++    "1. Use only allowed capabilities.",
++    "2. Do not include any forbidden-capability language.",
++    "3. Do not leak PII or unsanitized customer data."
++  ].join("\n");
++
++  return {
++    systemPrompt,
++    userPrompt,
++    fullPrompt: `${systemPrompt}\n\n---\n\n${userPrompt}\n\n---\n\n${finalGuard}`
++  };
++}
++
++async function callLlm(adapter, prompt, context) {
++  const result = await adapter(prompt, context);
++  if (typeof result === "string") return result;
++  if (result && typeof result.text === "string") return result.text;
++  return "";
++}
++
++function validateAgainstForbidden(text, forbiddenCapabilities = []) {
++  if (text == null || text === "") return { ok: true };
++  const haystack = String(text);
++  const lower = haystack.toLowerCase();
++
++  for (const capability of forbiddenCapabilities || []) {
++    const exact = String(capability || "");
++    if (!exact) continue;
++    if (lower.includes(exact.toLowerCase())) {
++      return { ok: false, capability, pattern: "literal capability" };
++    }
++    const spaced = exact.replace(/_/g, " ");
++    if (spaced !== exact && lower.includes(spaced.toLowerCase())) {
++      return { ok: false, capability, pattern: "literal capability phrase" };
++    }
++    for (const pattern of FORBIDDEN_SURFACES[capability] || []) {
++      if (pattern.test(haystack)) {
++        return { ok: false, capability, pattern: String(pattern) };
++      }
++    }
++  }
++
++  return { ok: true };
++}
++
++function buildResult({ text, action, citations, tone, llmUsed, reasons, staffNote }) {
++  return {
++    text,
++    action,
++    citations: citations || [],
++    tone,
++    llmUsed: Boolean(llmUsed),
++    reasons: (reasons || []).filter(Boolean),
++    staffNote: staffNote || null
++  };
++}
++
++function citationsFor(decision, knowledge) {
++  return unique([...(decision.grounding || []), ...(knowledge.grounding || [])]);
++}
++
++function pickTone(decision, knowledge) {
++  return decision.suggestedTone || knowledge.bestMatch?.tone || "polite_professional";
++}
++
++function bulletList(items = []) {
++  if (!items || items.length === 0) return "- (none)";
++  return items.map((item) => `- ${item}`).join("\n");
++}
++
++function formatMaybe(value) {
++  return typeof value === "number" ? String(value) : "unknown";
++}
++
++function unique(items) {
++  return Array.from(new Set(items.filter(Boolean)));
++}
++
++module.exports = {
++  ACTIONS,
++  TONE_PROFILES,
++  defaultLlmAdapter,
++  generateDraft,
++  _internal: {
++    buildStaffReviewPrompt,
++    buildHandoffPrompt,
++    validateAgainstForbidden,
++    FORBIDDEN_SURFACES
++  }
++};
+diff --git a/AI draft engine ver 1.0/test/draftEngine.cases.js b/AI draft engine ver 1.0/test/draftEngine.cases.js
+new file mode 100644
+index 0000000..558d9c5
+--- /dev/null
++++ b/AI draft engine ver 1.0/test/draftEngine.cases.js	
+@@ -0,0 +1,51 @@
++"use strict";
++
++const standardCases = [
++  {
++    name: "restaurant hours auto_send returns approved KB answer",
++    businessId: "restaurant_demo",
++    input: "你哋幾點開門？",
++    expectAction: "auto_send",
++    expectTone: "friendly_local",
++    expectLlmUsed: false,
++    expectCitation: "restaurant_hours"
++  },
++  {
++    name: "beauty pricing staff_review calls injected LLM with KB-only source",
++    businessId: "beauty_demo",
++    input: "facial幾錢？",
++    expectAction: "staff_review",
++    expectTone: "luxury_beauty",
++    expectLlmUsed: true,
++    llmText: "草稿一：多謝你查詢，基礎面部護理單次 HK$680，首次體驗價 HK$380。詳情建議由同事覆核後再回覆你。",
++    expectPromptContains: ["Only approved factual source", "Signature facial單次$680", "give_medical_advice"]
++  },
++  {
++    name: "restaurant parking clarify returns deterministic clarification",
++    businessId: "restaurant_demo",
++    input: "你哋有冇泊車優惠？",
++    expectAction: "clarify",
++    expectTone: "friendly_local",
++    expectLlmUsed: false
++  },
++  {
++    name: "education child data handoff produces staff-facing summary",
++    businessId: "edu_demo",
++    input: "我個小朋友幼稚園叫XXX，出生日期係...",
++    expectAction: "handoff",
++    expectTone: "education",
++    expectLlmUsed: true,
++    llmText: "【員工交接】\n意圖：child_data\n客人想要：涉及小朋友資料，需要真人跟進。\n升級原因：child_data\n建議下一步：由同事喺受控系統查看紀錄後回覆。",
++    expectPromptContains: ["員工專用交接摘要", "唔可以寫客人回覆"]
++  },
++  {
++    name: "privacy block returns null draft and quarantine note",
++    businessId: "beauty_demo",
++    input: "信用卡 4111 1111 1111 1111 預留位",
++    expectAction: "block",
++    expectTone: "luxury_beauty",
++    expectLlmUsed: false
++  }
++];
++
++module.exports = { standardCases };
+diff --git a/AI draft engine ver 1.0/test/draftEngine.test.js b/AI draft engine ver 1.0/test/draftEngine.test.js
+new file mode 100644
+index 0000000..1da0fa2
+--- /dev/null
++++ b/AI draft engine ver 1.0/test/draftEngine.test.js	
+@@ -0,0 +1,110 @@
++"use strict";
++
++const assert = require("node:assert/strict");
++const { generateDraft, _internal } = require("../src/draftEngine");
++const { chooseModel, DEFAULT_MODELS } = require("../src/anthropicAdapter");
++const { routeMessage } = require("../../privacy gateway ver 1.0/src/privacyGateway");
++const { classifyIntent } = require("../../intent classifier ver 1.0/src/intentClassifier");
++const { createKnowledgeBase } = require("../../knowledge base ver 1.0/src/knowledgeBase");
++const seed = require("../../knowledge base ver 1.0/seed/hkSmeSeed");
++const { evaluate } = require("../../business rules ver 1.0/src/businessRules");
++const { getConfig } = require("../../business rules ver 1.0/src/archetypes");
++const { standardCases } = require("./draftEngine.cases");
++
++const kb = createKnowledgeBase({ entries: seed });
++
++function buildPipeline(testCase) {
++  const gateway = routeMessage(testCase.input);
++  const intent = classifyIntent(gateway);
++  const knowledge = kb.lookup({ businessId: testCase.businessId, sanitizedText: gateway.sanitizedText, intent });
++  const decision = evaluate({ gateway, intent, knowledge, businessConfig: getConfig(testCase.businessId) });
++  return { gateway, intent, knowledge, decision };
++}
++
++async function runCase(testCase) {
++  const pipeline = buildPipeline(testCase);
++  const calls = [];
++  const adapter = testCase.expectLlmUsed
++    ? async (prompt, context) => {
++      calls.push({ prompt, context });
++      return { text: testCase.llmText };
++    }
++    : async () => {
++      throw new Error(`${testCase.name}: LLM adapter should not be called`);
++    };
++
++  const result = await generateDraft(pipeline, { llmAdapter: adapter });
++  const label = testCase.name;
++
++  assert.equal(pipeline.decision.action, testCase.expectAction, `${label}: upstream action mismatch`);
++  assert.equal(result.action, testCase.expectAction, `${label}: draft action mismatch`);
++  assert.equal(result.tone, testCase.expectTone, `${label}: tone mismatch`);
++  assert.equal(result.llmUsed, testCase.expectLlmUsed, `${label}: llmUsed mismatch`);
++
++  if (testCase.expectCitation) {
++    assert.ok(result.citations.includes(testCase.expectCitation), `${label}: missing citation`);
++  }
++  if (testCase.expectAction === "auto_send") {
++    assert.equal(result.text, pipeline.knowledge.bestMatch.answer, `${label}: auto_send must quote KB verbatim`);
++  }
++  if (testCase.expectAction === "clarify") {
++    assert.equal(result.text, pipeline.decision.clarificationText, `${label}: clarify must return decision text verbatim`);
++  }
++  if (testCase.expectAction === "block") {
++    assert.equal(result.text, null, `${label}: block must not generate text`);
++    assert.match(result.staffNote, /Quarantine/, `${label}: block must include quarantine note`);
++  }
++  if (testCase.expectLlmUsed) {
++    assert.equal(calls.length, 1, `${label}: expected one LLM call`);
++    for (const snippet of testCase.expectPromptContains || []) {
++      assert.ok(calls[0].prompt.includes(snippet) || calls[0].context.systemPrompt.includes(snippet), `${label}: prompt missing ${snippet}`);
++    }
++  } else {
++    assert.equal(calls.length, 0, `${label}: expected no LLM call`);
++  }
++
++  assert.ok(Array.isArray(result.reasons), `${label}: reasons must be an array`);
++}
++
++async function run() {
++  for (const testCase of standardCases) {
++    await runCase(testCase);
++  }
++
++  const beautyPricing = buildPipeline({ businessId: "beauty_demo", input: "facial幾錢？" });
++  const defaultResult = await generateDraft(beautyPricing);
++  assert.equal(defaultResult.action, "staff_review", "default stub case should be staff_review");
++  assert.equal(defaultResult.llmUsed, true, "default stub should mark LLM used for staff_review");
++  assert.ok(defaultResult.text.startsWith("[stub] "), "default LLM adapter should return stub text");
++
++  const beautyBooking = buildPipeline({ businessId: "beauty_demo", input: "想book今晚個facial有冇位" });
++  const guarded = await generateDraft(beautyBooking, {
++    llmAdapter: async () => ({ text: "已確認預約今晚8點，客人可以直接嚟。" })
++  });
++  assert.equal(beautyBooking.decision.action, "staff_review", "booking should route to staff review");
++  assert.equal(guarded.text, null, "forbidden booking confirmation must be withheld");
++  assert.ok(guarded.reasons.some((reason) => reason.includes("confirm_booking")), "guard should name confirm_booking");
++
++  assert.equal(
++    _internal.validateAgainstForbidden("會退款畀你", ["decide_refund"]).ok,
++    false,
++    "refund-decision surface should be blocked"
++  );
++  assert.equal(
++    chooseModel({ decision: { action: "staff_review" }, intent: { primaryIntent: "hours_location", riskLevel: "low" } }),
++    DEFAULT_MODELS.cheap,
++    "simple staff_review should choose cheap model"
++  );
++  assert.equal(
++    chooseModel({ decision: { action: "handoff" }, intent: { primaryIntent: "complaint", riskLevel: "high" } }),
++    DEFAULT_MODELS.complex,
++    "handoff/complaint should choose complex model"
++  );
++
++  console.log(`draftEngine: ${standardCases.length + 5} tests passed`);
++}
++
++run().catch((error) => {
++  console.error(error);
++  process.exitCode = 1;
++});
+-- 
+2.50.1 (Apple Git-155)
+

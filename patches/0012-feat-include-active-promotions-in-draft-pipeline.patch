@@ -1,0 +1,354 @@
+From ac9b47bec4bbfd2d5fe802f1751459b6e5b863b4 Mon Sep 17 00:00:00 2001
+From: Book <book@BookdeMacBook-Air.local>
+Date: Sat, 9 May 2026 13:23:23 +0800
+Subject: [PATCH 12/13] feat: include active promotions in draft pipeline
+
+---
+ AI draft engine ver 1.0/src/draftEngine.js    | 31 ++++++++++++++-----
+ .../test/draftEngine.test.js                  | 25 ++++++++++++++-
+ ...nd-to-end-pipeline-side-by-side-results.md |  9 +++---
+ .../scripts/writeSideBySideResults.js         |  5 ++-
+ end-to-end pipeline ver 1.0/src/pipeline.js   | 21 ++++++++++---
+ .../test/pipeline.cases.js                    |  7 +++++
+ .../test/pipeline.test.js                     |  7 +++++
+ staff inbox ver 1.0/src/staffInbox.js         |  2 ++
+ 8 files changed, 90 insertions(+), 17 deletions(-)
+
+diff --git a/AI draft engine ver 1.0/src/draftEngine.js b/AI draft engine ver 1.0/src/draftEngine.js
+index f639185..45c806a 100644
+--- a/AI draft engine ver 1.0/src/draftEngine.js	
++++ b/AI draft engine ver 1.0/src/draftEngine.js	
+@@ -93,7 +93,7 @@ async function defaultLlmAdapter(prompt) {
+ }
+ 
+ async function generateDraft(input, options = {}) {
+-  const { decision = {}, knowledge = {}, intent = {}, gateway = {} } = input || {};
++  const { decision = {}, knowledge = {}, intent = {}, gateway = {}, promotions = null } = input || {};
+   const action = decision.action;
+   const llmAdapter = options.llmAdapter || defaultLlmAdapter;
+   const tone = pickTone(decision, knowledge);
+@@ -148,11 +148,12 @@ async function generateDraft(input, options = {}) {
+   }
+ 
+   if (action === ACTIONS.HANDOFF) {
+-    const prompt = buildHandoffPrompt({ decision, knowledge, intent, gateway, tone });
++    const prompt = buildHandoffPrompt({ decision, knowledge, intent, gateway, promotions, tone });
+     const text = await callLlm(llmAdapter, prompt.fullPrompt, {
+       action,
+       decision,
+       knowledge,
++      promotions,
+       intent,
+       gateway,
+       systemPrompt: prompt.systemPrompt,
+@@ -176,11 +177,12 @@ async function generateDraft(input, options = {}) {
+   }
+ 
+   if (action === ACTIONS.STAFF_REVIEW) {
+-    const prompt = buildStaffReviewPrompt({ decision, knowledge, intent, gateway, tone });
++    const prompt = buildStaffReviewPrompt({ decision, knowledge, intent, gateway, promotions, tone });
+     const text = await callLlm(llmAdapter, prompt.fullPrompt, {
+       action,
+       decision,
+       knowledge,
++      promotions,
+       intent,
+       gateway,
+       systemPrompt: prompt.systemPrompt,
+@@ -214,17 +216,19 @@ async function generateDraft(input, options = {}) {
+   });
+ }
+ 
+-function buildStaffReviewPrompt({ decision, knowledge, intent, gateway, tone }) {
++function buildStaffReviewPrompt({ decision, knowledge, intent, gateway, promotions, tone }) {
+   const sourceAnswer = knowledge.bestMatch?.answer || "(No approved answer matched. Ask one short clarifying question instead of inventing facts.)";
+   const toneProfile = TONE_PROFILES[tone] || TONE_PROFILES.polite_professional;
++  const promotionContext = formatPromotionContext(promotions);
+   const systemPrompt = [
+     "You are the AI Draft Engine for a privacy-first HK SME customer support SaaS.",
+     "Write only draft candidates for staff review. The staff decides whether to send, edit, or reject.",
+     `Allowed capabilities:\n${bulletList(decision.allowedCapabilities)}`,
+     `Forbidden capabilities:\n${bulletList(decision.forbiddenCapabilities)}`,
+     `Only approved factual source:\n${sourceAnswer}`,
++    `Active time-bound promotions, checked in Hong Kong time:\n${promotionContext}`,
+     `Tone profile (${tone}): ${toneProfile}`,
+-    "If the source does not contain a fact, do not add that fact. If facts are missing, ask one concise clarifying question.",
++    "If the source or active promotion context does not contain a fact, do not add that fact. If facts are missing, ask one concise clarifying question.",
+     "Never confirm bookings, refunds, payments, delivery ETAs, treatment outcomes, medical advice, legal advice, or anything listed as forbidden."
+   ].join("\n\n");
+ 
+@@ -234,13 +238,14 @@ function buildStaffReviewPrompt({ decision, knowledge, intent, gateway, tone })
+     `Intent: ${intent.primaryIntent || "general"} (confidence: ${formatMaybe(intent.confidence)})`,
+     `Customer goal: ${intent.customerGoal || ""}`,
+     `Decision reason: ${decision.reason || ""}`,
++    `Promotion grounding: ${(promotions?.grounding || []).join(", ") || "(none)"}`,
+     `Required citations: ${citationsFor(decision, knowledge).join(", ") || "(none)"}`
+   ].join("\n");
+ 
+   return sandwich(systemPrompt, userPrompt);
+ }
+ 
+-function buildHandoffPrompt({ decision, knowledge, intent, gateway, tone }) {
++function buildHandoffPrompt({ decision, knowledge, intent, gateway, promotions, tone }) {
+   const toneProfile = TONE_PROFILES[tone] || TONE_PROFILES.polite_professional;
+   const packet = decision.staffPacket || {};
+   const systemPrompt = [
+@@ -264,7 +269,8 @@ function buildHandoffPrompt({ decision, knowledge, intent, gateway, tone }) {
+     `Intent: ${intent.primaryIntent || packet.primaryIntent || "general"}`,
+     `Customer goal: ${intent.customerGoal || packet.customerGoal || ""}`,
+     `Escalation label: ${decision.escalationLabel || packet.escalationLabel || ""}`,
+-    `Best approved answer, if any: ${knowledge.bestMatch?.answer || packet.bestMatchAnswer || ""}`
++    `Best approved answer, if any: ${knowledge.bestMatch?.answer || packet.bestMatchAnswer || ""}`,
++    `Active promotions, if any: ${formatPromotionContext(promotions).replace(/\n/g, " | ")}`
+   ].join("\n");
+ 
+   return sandwich(systemPrompt, userPrompt);
+@@ -346,6 +352,16 @@ function formatMaybe(value) {
+   return typeof value === "number" ? String(value) : "unknown";
+ }
+ 
++function formatPromotionContext(promotions) {
++  const active = promotions?.activePromotions || [];
++  if (active.length === 0) return "- (none)";
++  return active.map((promo) => {
++    const expiry = promo.expiresOn ? ` expires ${promo.expiresOn} HK time` : " no expiry set";
++    const instruction = promo.staffInstruction ? ` Staff note: ${promo.staffInstruction}` : "";
++    return `- ${promo.title}: ${promo.summary} (${expiry}).${instruction}`;
++  }).join("\n");
++}
++
+ function unique(items) {
+   return Array.from(new Set(items.filter(Boolean)));
+ }
+@@ -359,6 +375,7 @@ module.exports = {
+     buildStaffReviewPrompt,
+     buildHandoffPrompt,
+     validateAgainstForbidden,
++    formatPromotionContext,
+     FORBIDDEN_SURFACES
+   }
+ };
+diff --git a/AI draft engine ver 1.0/test/draftEngine.test.js b/AI draft engine ver 1.0/test/draftEngine.test.js
+index 1da0fa2..3f084a6 100644
+--- a/AI draft engine ver 1.0/test/draftEngine.test.js	
++++ b/AI draft engine ver 1.0/test/draftEngine.test.js	
+@@ -77,6 +77,29 @@ async function run() {
+   assert.equal(defaultResult.llmUsed, true, "default stub should mark LLM used for staff_review");
+   assert.ok(defaultResult.text.startsWith("[stub] "), "default LLM adapter should return stub text");
+ 
++  const promoCalls = [];
++  await generateDraft({
++    ...beautyPricing,
++    promotions: {
++      activePromotions: [{
++        id: "beauty_may_small_face_trial",
++        title: "小顏管理五月體驗優惠",
++        summary: "小顏管理五月首次體驗 HK$480，原價 HK$880。",
++        expiresOn: "2026-05-31",
++        staffInstruction: "唔好承諾一定瘦面。"
++      }],
++      grounding: ["beauty_may_small_face_trial"]
++    }
++  }, {
++    llmAdapter: async (prompt, context) => {
++      promoCalls.push({ prompt, context });
++      return { text: "草稿：五月體驗優惠可由同事覆核後回覆。" };
++    }
++  });
++  assert.ok(promoCalls[0].prompt.includes("Active time-bound promotions"), "prompt should include promotion section");
++  assert.ok(promoCalls[0].prompt.includes("小顏管理五月體驗優惠"), "prompt should include active promotion title");
++  assert.equal(promoCalls[0].context.promotions.grounding[0], "beauty_may_small_face_trial", "context should carry promotion grounding");
++
+   const beautyBooking = buildPipeline({ businessId: "beauty_demo", input: "想book今晚個facial有冇位" });
+   const guarded = await generateDraft(beautyBooking, {
+     llmAdapter: async () => ({ text: "已確認預約今晚8點，客人可以直接嚟。" })
+@@ -101,7 +124,7 @@ async function run() {
+     "handoff/complaint should choose complex model"
+   );
+ 
+-  console.log(`draftEngine: ${standardCases.length + 5} tests passed`);
++  console.log(`draftEngine: ${standardCases.length + 8} tests passed`);
+ }
+ 
+ run().catch((error) => {
+diff --git a/end-to-end pipeline ver 1.0/end-to-end-pipeline-side-by-side-results.md b/end-to-end pipeline ver 1.0/end-to-end-pipeline-side-by-side-results.md
+index a78df05..3656427 100644
+--- a/end-to-end pipeline ver 1.0/end-to-end-pipeline-side-by-side-results.md	
++++ b/end-to-end pipeline ver 1.0/end-to-end-pipeline-side-by-side-results.md	
+@@ -4,7 +4,8 @@ Pipeline: channel -> privacy -> intent -> KB -> rules -> backend mock -> model r
+ 
+ | Case | Expected | Actual |
+ |---|---|---|
+-| restaurant hours goes ready_to_send | {"finalStatus":"ready_to_send","action":"auto_send"} | {"finalStatus":"ready_to_send","action":"auto_send","safety":"pass","outbound":"ready_to_send","staffItemId":null} |
+-| beauty pricing goes staff review | {"finalStatus":"staff_review","action":"staff_review"} | {"finalStatus":"staff_review","action":"staff_review","safety":"revise","outbound":"held","staffItemId":"staff_0001"} |
+-| restaurant parking clarify can send | {"finalStatus":"ready_to_send","action":"clarify"} | {"finalStatus":"ready_to_send","action":"clarify","safety":"pass","outbound":"ready_to_send","staffItemId":null} |
+-| complaint goes staff review handoff | {"finalStatus":"staff_review","action":"handoff"} | {"finalStatus":"staff_review","action":"handoff","safety":"revise","outbound":"held","staffItemId":"staff_0002"} |
++| restaurant hours goes ready_to_send | {"finalStatus":"ready_to_send","action":"auto_send","promotion":""} | {"finalStatus":"ready_to_send","action":"auto_send","safety":"pass","promotion":"","outbound":"ready_to_send","staffItemId":null} |
++| beauty pricing goes staff review | {"finalStatus":"staff_review","action":"staff_review","promotion":""} | {"finalStatus":"staff_review","action":"staff_review","safety":"revise","promotion":"beauty_may_small_face_trial","outbound":"held","staffItemId":"staff_0001"} |
++| beauty small-face promo is read before staff draft | {"finalStatus":"staff_review","action":"staff_review","promotion":"beauty_may_small_face_trial"} | {"finalStatus":"staff_review","action":"staff_review","safety":"revise","promotion":"beauty_may_small_face_trial","outbound":"held","staffItemId":"staff_0002"} |
++| restaurant parking clarify can send | {"finalStatus":"ready_to_send","action":"clarify","promotion":""} | {"finalStatus":"ready_to_send","action":"clarify","safety":"pass","promotion":"","outbound":"ready_to_send","staffItemId":null} |
++| complaint goes staff review handoff | {"finalStatus":"staff_review","action":"handoff","promotion":""} | {"finalStatus":"staff_review","action":"handoff","safety":"revise","promotion":"","outbound":"held","staffItemId":"staff_0003"} |
+diff --git a/end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js b/end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js
+index 7d7edc7..cfc951e 100644
+--- a/end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js	
++++ b/end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js	
+@@ -13,8 +13,11 @@ function cell(value) {
+ 
+ async function main() {
+   const pipeline = createPipeline({
++    nowFn: () => new Date("2026-05-09T00:00:00.000Z"),
+     llmAdapter: async (prompt, context) => {
+       if (context.decision.action === "handoff") return { text: "【員工交接】\n意圖：" + context.intent.primaryIntent + "\n建議下一步：由同事跟進。" };
++      const promo = context.promotions?.bestPromotion;
++      if (promo) return { text: `${context.knowledge.bestMatch?.answer || ""}\n優惠：${promo.summary}`.trim() };
+       return { text: context.knowledge.bestMatch?.answer || "請問你想了解邊方面？" };
+     }
+   });
+@@ -28,7 +31,7 @@ async function main() {
+   ];
+   for (const c of standardCases) {
+     const result = await pipeline.runMessage(c.input);
+-    lines.push(`| ${cell(c.name)} | ${cell({ finalStatus: c.expectStatus, action: c.expectAction })} | ${cell({ finalStatus: result.finalStatus, action: result.decision.action, safety: result.safety.verdict, outbound: result.outbound?.status, staffItemId: result.staffItem?.id || null })} |`);
++    lines.push(`| ${cell(c.name)} | ${cell({ finalStatus: c.expectStatus, action: c.expectAction, promotion: c.expectPromotion || "" })} | ${cell({ finalStatus: result.finalStatus, action: result.decision.action, safety: result.safety.verdict, promotion: result.promotions?.bestPromotion?.id || "", outbound: result.outbound?.status, staffItemId: result.staffItem?.id || null })} |`);
+   }
+   lines.push("");
+ 
+diff --git a/end-to-end pipeline ver 1.0/src/pipeline.js b/end-to-end pipeline ver 1.0/src/pipeline.js
+index a2531a6..34c9939 100644
+--- a/end-to-end pipeline ver 1.0/src/pipeline.js	
++++ b/end-to-end pipeline ver 1.0/src/pipeline.js	
+@@ -15,20 +15,25 @@ const { routeModel } = require("../../model router ver 1.0/src/modelRouter");
+ const { checkDraft } = require("../../safety checker ver 1.0/src/safetyChecker");
+ const { createBusinessBackend } = require("../../private business backend mock ver 1.0/src/businessBackendMock");
+ const { createStaffInbox } = require("../../staff inbox ver 1.0/src/staffInbox");
++const { createPromotionStore } = require("../../google drive promo sync ver 1.0/src/promoSync");
++const promoSeed = require("../../google drive promo sync ver 1.0/seed/promoSeed");
+ 
+ function createPipeline(config = {}) {
+   const kb = config.knowledgeBase || createKnowledgeBase({ entries: config.seed || seed });
+   const backend = config.backend || createBusinessBackend();
+   const inbox = config.staffInbox || createStaffInbox();
++  const promotionStore = config.promotionStore || createPromotionStore({ entries: config.promotionEntries || promoSeed });
+   const llmAdapter = config.llmAdapter;
++  const nowFn = config.nowFn || (() => new Date());
+ 
+   return {
+     async runMessage(input) {
+-      return runMessage(input, { kb, backend, inbox, llmAdapter, config });
++      return runMessage(input, { kb, backend, inbox, promotionStore, llmAdapter, nowFn, config });
+     },
+     inbox,
+     backend,
+-    kb
++    kb,
++    promotionStore
+   };
+ }
+ 
+@@ -47,6 +52,12 @@ async function runMessage(input = {}, deps = {}) {
+   const gateway = routeMessage(normalizedMessage.rawText);
+   const intent = await classifyIntent(gateway);
+   const knowledge = deps.kb.lookup({ businessId: normalizedMessage.businessId, sanitizedText: gateway.sanitizedText, intent });
++  const promotions = deps.promotionStore.lookup({
++    businessId: normalizedMessage.businessId,
++    sanitizedText: gateway.sanitizedText,
++    intent,
++    now: deps.nowFn()
++  });
+   const businessConfig = getConfig(normalizedMessage.businessId);
+   const decision = evaluate({ gateway, intent, knowledge, businessConfig });
+   const backendFacts = deps.backend.getMinimalFacts({
+@@ -55,12 +66,12 @@ async function runMessage(input = {}, deps = {}) {
+     query: inferBackendQuery({ normalizedMessage, intent })
+   });
+   const modelRoute = routeModel({ decision, intent, gateway });
+-  const draft = await generateDraft({ decision, knowledge, intent, gateway }, { llmAdapter: deps.llmAdapter });
++  const draft = await generateDraft({ decision, knowledge, intent, gateway, promotions }, { llmAdapter: deps.llmAdapter });
+   const safety = checkDraft({ draft, decision, knowledge, intent, gateway });
+ 
+   let staffItem = null;
+   if (!safety.safeToSend || !["auto_send", "clarify"].includes(draft.action)) {
+-    staffItem = deps.inbox.submit({ decision, draft, safety, normalizedMessage, backendFacts });
++    staffItem = deps.inbox.submit({ decision, draft, safety, normalizedMessage, backendFacts, promotions });
+   }
+ 
+   const outbound = buildOutboundMessage({ normalizedMessage, draft, safety, staffItem });
+@@ -71,6 +82,7 @@ async function runMessage(input = {}, deps = {}) {
+     gateway,
+     intent,
+     knowledge,
++    promotions,
+     decision,
+     backendFacts,
+     modelRoute,
+@@ -110,6 +122,7 @@ function result(payload) {
+     gateway: payload.gateway || null,
+     intent: payload.intent || null,
+     knowledge: payload.knowledge || null,
++    promotions: payload.promotions || null,
+     decision: payload.decision || null,
+     backendFacts: payload.backendFacts || null,
+     modelRoute: payload.modelRoute || null,
+diff --git a/end-to-end pipeline ver 1.0/test/pipeline.cases.js b/end-to-end pipeline ver 1.0/test/pipeline.cases.js
+index c79dfdd..50b005f 100644
+--- a/end-to-end pipeline ver 1.0/test/pipeline.cases.js	
++++ b/end-to-end pipeline ver 1.0/test/pipeline.cases.js	
+@@ -13,6 +13,13 @@ const standardCases = [
+     expectStatus: "staff_review",
+     expectAction: "staff_review"
+   },
++  {
++    name: "beauty small-face promo is read before staff draft",
++    input: { channel: "whatsapp", businessId: "beauty_demo", from: "u-small-face", text: "想了解小顏項目同點收費" },
++    expectStatus: "staff_review",
++    expectAction: "staff_review",
++    expectPromotion: "beauty_may_small_face_trial"
++  },
+   {
+     name: "restaurant parking clarify can send",
+     input: { channel: "website", businessId: "restaurant_demo", sessionId: "s3", text: "你哋有冇泊車優惠？" },
+diff --git a/end-to-end pipeline ver 1.0/test/pipeline.test.js b/end-to-end pipeline ver 1.0/test/pipeline.test.js
+index 812e6eb..70f9bf5 100644
+--- a/end-to-end pipeline ver 1.0/test/pipeline.test.js	
++++ b/end-to-end pipeline ver 1.0/test/pipeline.test.js	
+@@ -6,10 +6,13 @@ const { standardCases } = require("./pipeline.cases");
+ 
+ async function run() {
+   const pipeline = createPipeline({
++    nowFn: () => new Date("2026-05-09T00:00:00.000Z"),
+     llmAdapter: async (prompt, context) => {
+       if (context.decision.action === "handoff") {
+         return { text: "【員工交接】\n意圖：" + context.intent.primaryIntent + "\n建議下一步：由同事跟進。" };
+       }
++      const promo = context.promotions?.bestPromotion;
++      if (promo) return { text: `${context.knowledge.bestMatch?.answer || ""}\n優惠：${promo.summary}`.trim() };
+       return { text: context.knowledge.bestMatch?.answer || "請問你想了解邊方面？" };
+     }
+   });
+@@ -24,6 +27,10 @@ async function run() {
+     } else {
+       assert.ok(result.staffItem, `${c.name}: staff item missing`);
+     }
++    if (c.expectPromotion) {
++      assert.equal(result.promotions.bestPromotion?.id, c.expectPromotion, `${c.name}: promotion mismatch`);
++      assert.equal(result.staffItem.promotions.bestPromotion.id, c.expectPromotion, `${c.name}: staff item promotion mismatch`);
++    }
+   }
+ 
+   assert.ok(pipeline.inbox.list().length >= 2, "staff inbox should collect held items");
+diff --git a/staff inbox ver 1.0/src/staffInbox.js b/staff inbox ver 1.0/src/staffInbox.js
+index 06ede6f..b0553e2 100644
+--- a/staff inbox ver 1.0/src/staffInbox.js	
++++ b/staff inbox ver 1.0/src/staffInbox.js	
+@@ -67,6 +67,8 @@ function createItem(input, index) {
+     safeToSend: Boolean(safety.safeToSend),
+     escalationLabel: decision.escalationLabel || null,
+     staffPacket: decision.staffPacket || null,
++    backendFacts: input.backendFacts || null,
++    promotions: input.promotions || null,
+     reasons: [...(decision.reasons || []), ...(safety.reasons || [])],
+     history: [{ status: STATUSES.OPEN, actor: "system", at: timestamp() }],
+     createdAt: timestamp(),
+-- 
+2.50.1 (Apple Git-155)
+

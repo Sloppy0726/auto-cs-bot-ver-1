@@ -1,0 +1,829 @@
+From de35705c1a94a29099d97eb90d202aa883970ff9 Mon Sep 17 00:00:00 2001
+From: Book <book@BookdeMacBook-Air.local>
+Date: Sat, 9 May 2026 13:16:29 +0800
+Subject: [PATCH 02/13] feat: add business rules v1.0
+
+---
+ business rules ver 1.0/README.md              | 136 ++++++++
+ .../business-rules-side-by-side-results.md    |  18 +
+ .../scripts/writeSideBySideResults.js         |  66 ++++
+ business rules ver 1.0/src/archetypes.js      |  64 ++++
+ business rules ver 1.0/src/businessRules.js   | 308 ++++++++++++++++++
+ .../test/businessRules.cases.js               |  93 ++++++
+ .../test/businessRules.test.js                |  77 +++++
+ 7 files changed, 762 insertions(+)
+ create mode 100644 business rules ver 1.0/README.md
+ create mode 100644 business rules ver 1.0/business-rules-side-by-side-results.md
+ create mode 100644 business rules ver 1.0/scripts/writeSideBySideResults.js
+ create mode 100644 business rules ver 1.0/src/archetypes.js
+ create mode 100644 business rules ver 1.0/src/businessRules.js
+ create mode 100644 business rules ver 1.0/test/businessRules.cases.js
+ create mode 100644 business rules ver 1.0/test/businessRules.test.js
+
+diff --git a/business rules ver 1.0/README.md b/business rules ver 1.0/README.md
+new file mode 100644
+index 0000000..0e72314
+--- /dev/null
++++ b/business rules ver 1.0/README.md	
+@@ -0,0 +1,136 @@
++# Business Rules ver 1.0
++
++Deterministic policy gate. Sits between the knowledge base and the AI draft engine. **No LLM. No I/O.** Pure JS rules running on the output of the upstream modules.
++
++## Why this matters for HK SMEs
++
++| Competitor pattern | Failure mode | Our answer |
++|---|---|---|
++| Intercom Fin / SleekFlow AI agent — policy lives in the prompt | One model upgrade or one prompt-injection and "do not confirm bookings" gets ignored | Policy lives in **typed JS rules**. The LLM is sandwiched: rules decide *what is allowed* before generation, safety checker re-validates after. |
++| Tidio FAQ bot — auto-replies anything that vaguely matches | Wrong price quoted, customer screenshots it on Threads | Six-tier rule order. `auto_send` requires score ≥ 0.7 AND confidence ≥ 0.7 AND no risk AND archetype opt-in AND no number-promise trip. Default is `staff_review`, never silent auto-send. |
++| Gorgias macros — hard-coded replies, no policy awareness | Misses HK-specific guards (deposit, no-medical-claim, refund decisions) | `policyRef` + archetype `policies` derive `forbiddenCapabilities` per message. |
++
++Pillars covered: **#4 Business rules engine**, partial **#6 (capability contract → safety checker)**, partial **#10 (angry-tone bump, ask-staff-before-promise mode, deposit/refund guards)**.
++
++## Folder layout
++
++```
++business rules ver 1.0/
++├── src/businessRules.js      # evaluate({ gateway, intent, knowledge, businessConfig }) → decision
++├── src/archetypes.js         # 5 HK SME archetype defaults + getConfig(businessId)
++├── test/businessRules.cases.js
++├── test/businessRules.test.js
++├── scripts/writeSideBySideResults.js
++└── README.md
++```
++
++## Five output actions (the only verbs)
++
++| Action | Meaning |
++|---|---|
++| `auto_send` | Approved KB hit, all guards pass — pipeline can send to customer immediately |
++| `staff_review` | Generate the draft, route to staff inbox for approve/edit/reject |
++| `clarify` | Don't generate a free-form reply; ask one templated clarification question |
++| `handoff` | Mandatory human takeover, never goes through the LLM |
++| `block` | Privacy gateway blocked — never touches the LLM, raw quarantined for staff |
++
++## Six-tier rule order (first match wins)
++
++1. **Hard block** — gateway `block_and_handoff` or `shouldCallLLM=false`.
++2. **Mandatory handoff** — KB handoff, intent ∈ {complaint, sensitive_health, child_data, human_request}, angry/refund pattern in text, or gateway high-risk.
++3. **Clarify** — KB gap on a non-`general` intent, or intent confidence < 0.5.
++4. **Forced review** — `backendBound`, sensitive `policyRef` matched on the business config, gateway `review_before_llm`, or archetype `reviewIntents` lists this intent.
++5. **Auto-send** — score ≥ 0.7, confidence ≥ 0.7, low risk, intent in `autoSendIntents`, AND if `askStaffBeforePromise` is on, no `$`/digit in the answer.
++6. **Default** — `staff_review`. Conservative by design.
++
++## Capability contract (the real differentiator)
++
++Every decision returns:
++
++```js
++allowedCapabilities: ["quote_kb_verbatim", "cite_entry:beauty_pricing_facial",
++                      "ask_one_clarifying_question", "use_tone:luxury_beauty"],
++forbiddenCapabilities: ["invent_prices", "give_medical_advice",
++                        "promise_treatment_result", "decide_refund",
++                        "confirm_booking", "leak_pii", "give_legal_advice", ...]
++```
++
++`forbiddenCapabilities` is derived from:
++- `ALWAYS_FORBIDDEN` — invent_prices, leak_pii, give_legal_advice, give_financial_advice, invent_business_facts
++- intent table — booking → confirm_booking, payment → decide_refund, etc.
++- policy table — `no_medical_claim` → give_medical_advice, promise_treatment_result, diagnose
++- backend-bound flag — booking/order/payment intents lose all `confirm_*` capabilities
++
++The Safety Checker (next module) will re-validate the LLM draft against this contract.
++
++## Archetype configs (`src/archetypes.js`)
++
++| Archetype | Auto-send intents | Review intents | Policies | Ask-staff-before-promise |
++|---|---|---|---|---|
++| `beauty_clinic` | hours_location | pricing, service_info, aftercare | no_medical_claim, deposit_required, no_refund_decision | **yes** |
++| `restaurant` | hours_location, service_info | pricing | no_refund_decision | no |
++| `ig_shop` | service_info, hours_location | pricing, order_status | no_refund_decision | no |
++| `education` | hours_location | pricing, service_info | no_refund_decision | **yes** |
++| `general_sme` | hours_location | pricing, service_info | — | **yes** |
++
++Override per business via `getConfig(businessId, overrides)` or by passing `businessConfig` directly into `evaluate()`.
++
++## Main API
++
++```js
++const { evaluate } = require("./src/businessRules");
++const { getConfig } = require("./src/archetypes");
++
++const decision = evaluate({
++  gateway,            // output of routeMessage()
++  intent,             // output of classifyIntent(gateway)
++  knowledge,          // output of kb.lookup({ businessId, sanitizedText, intent })
++  businessConfig: getConfig("beauty_demo")   // optional; defaults are auto-loaded
++});
++
++// decision = {
++//   action: "staff_review",
++//   reason: "Policy or backend dependency requires staff review before sending.",
++//   escalationLabel: null,
++//   suggestedTone: "luxury_beauty",
++//   businessId: "beauty_demo",
++//   archetype: "beauty_clinic",
++//   allowedCapabilities: [...],
++//   forbiddenCapabilities: [...],
++//   grounding: ["beauty_booking_policy"],
++//   clarificationText: null,
++//   staffPacket: { ... },
++//   reasons: ["knowledge.backendBound=true", "policyRef=deposit_required"]
++// }
++```
++
++## How it connects
++
++```
++gateway ─► intent ─► knowledge base ─► business rules ─► [AI draft engine v1.0]
++                                            │
++                                            └─► staffPacket ─► [staff inbox v1.0]
++```
++
++The decision object is the **single source of truth** that the AI draft engine and the staff inbox consume. The draft engine reads `allowedCapabilities`/`forbiddenCapabilities` to constrain its prompt. The staff inbox reads `staffPacket` to render the review card.
++
++## HK-specific guards baked in
++
++- **Angry-tone bump** — `搞錯|嬲|不滿|退錢|退款|chargeback|refund|complaint|angry|furious` in the message → forces `handoff` with `escalationLabel: "angry_customer"`, even if KB has a clean match.
++- **Ask-staff-before-promise mode** — when archetype enables it, any `$` or digit in the answer downgrades `auto_send` → `staff_review`. Keeps clinic/education businesses from auto-quoting prices.
++- **Backend-bound is non-negotiable** — booking/reschedule/order_status/payment intents *cannot* `auto_send`. Hard-coded.
++- **Defence in depth** — KB already hands off complaint/medical/child; rules engine re-checks. Gateway already blocks credit cards; rules engine re-checks. Two independent layers, both deterministic.
++
++## Run
++
++```bash
++node "business rules ver 1.0/test/businessRules.test.js"
++node "business rules ver 1.0/scripts/writeSideBySideResults.js"
++```
++
++## Roadmap
++
++- v1.1: customer-history flags (returning vs first-time), public holiday awareness.
++- v1.2: per-business owner-overridable JSON rules (`overridePolicies`, `overrideAutoSendIntents`) loaded from DB.
++- v1.3: FAQ-gap counters fed back to the boss dashboard.
++- v2.0: multi-brand routing — `getConfig({ tenantId, brandId })`.
+diff --git a/business rules ver 1.0/business-rules-side-by-side-results.md b/business rules ver 1.0/business-rules-side-by-side-results.md
+new file mode 100644
+index 0000000..e42672a
+--- /dev/null
++++ b/business rules ver 1.0/business-rules-side-by-side-results.md	
+@@ -0,0 +1,18 @@
++# Business Rules ver 1.0 — Side-by-side results
++
++Pipeline: raw text → privacy gateway → intent classifier → knowledge base → business rules.
++
++| Case | Business | Input | Expected | Actual |
++|---|---|---|---|---|
++| beauty hours: archetype allows hours_location auto_send (no $/digits in answer? — has 11:00, so trips ask-staff-before-promise → review) | beauty_demo | Causeway Bay店今晚幾點收工？ | {"action":"staff_review","escalation":"","mustForbid":"invent_prices, give_medical_advice, promise_treatment_result","mustAllow":""} | {"action":"staff_review","escalation":"","suggestedTone":"luxury_beauty","bestMatchId":"beauty_hours","forbidden":"invent_prices, invent_business_facts, give_legal_advice, give_financial_advice, leak_pii, give_medical_advice …","allowed":"use_tone:luxury_beauty, quote_kb_verbatim, cite_entry:beauty_hours, ask_one_clarifying_question","reasons":"askStaffBeforePromise tripped on number/$ in answer"} |
++| restaurant hours: archetype allows + no digit-trip mode → auto_send | restaurant_demo | 你哋幾點開門？ | {"action":"auto_send","escalation":"","mustForbid":"invent_prices","mustAllow":"quote_kb_verbatim"} | {"action":"auto_send","escalation":"","suggestedTone":"friendly_local","bestMatchId":"(auto_send)","forbidden":"invent_prices, invent_business_facts, give_legal_advice, give_financial_advice, leak_pii, decide_refund …","allowed":"use_tone:friendly_local, quote_kb_verbatim, cite_entry:restaurant_hours, ask_one_clarifying_question","reasons":"bestScore=1.2; intentConfidence=0.88; autoSendIntents allows hours_location"} |
++| beauty pricing: askStaffBeforePromise + reviewIntents → staff_review | beauty_demo | facial幾錢？ | {"action":"staff_review","escalation":"","mustForbid":"give_medical_advice, invent_prices","mustAllow":""} | {"action":"staff_review","escalation":"","suggestedTone":"luxury_beauty","bestMatchId":"beauty_pricing_facial","forbidden":"invent_prices, invent_business_facts, give_legal_advice, give_financial_advice, leak_pii, give_medical_advice …","allowed":"use_tone:luxury_beauty, quote_kb_verbatim, cite_entry:beauty_pricing_facial, ask_one_clarifying_question","reasons":"config.reviewIntents includes pricing"} |
++| beauty booking: backendBound → staff_review with confirm_booking forbidden | beauty_demo | 想book今晚個facial有冇位 | {"action":"staff_review","escalation":"","mustForbid":"confirm_booking, give_medical_advice","mustAllow":"propose_options_for_staff_to_confirm"} | {"action":"staff_review","escalation":"","suggestedTone":"luxury_beauty","bestMatchId":"beauty_booking_policy","forbidden":"invent_prices, invent_business_facts, give_legal_advice, give_financial_advice, leak_pii, confirm_booking …","allowed":"use_tone:luxury_beauty, quote_kb_verbatim, cite_entry:beauty_booking_policy, ask_one_clarifying_question …","reasons":"knowledge.backendBound=true; policyRef=deposit_required"} |
++| restaurant booking: backendBound → staff_review | restaurant_demo | 今晚8點有冇位？ | {"action":"staff_review","escalation":"","mustForbid":"confirm_booking","mustAllow":""} | {"action":"staff_review","escalation":"","suggestedTone":"friendly_local","bestMatchId":"restaurant_booking","forbidden":"invent_prices, invent_business_facts, give_legal_advice, give_financial_advice, leak_pii, confirm_booking …","allowed":"use_tone:friendly_local, quote_kb_verbatim, cite_entry:restaurant_booking, ask_one_clarifying_question …","reasons":"knowledge.backendBound=true"} |
++| complaint: angry refund → handoff with escalation | beauty_demo | 你哋搞錯我個booking，我要退錢。 | {"action":"handoff","escalation":"complaint | angry_customer","mustForbid":"","mustAllow":""} | {"action":"handoff","escalation":"complaint","suggestedTone":"luxury_beauty","bestMatchId":"(auto_send)","forbidden":"invent_prices, invent_business_facts, give_legal_advice, give_financial_advice, leak_pii, send_to_customer …","allowed":"write_handoff_summary_for_staff","reasons":"kb.handoff=true; intent=complaint; angry/refund signal in text"} |
++| sensitive health: pregnancy + laser → handoff | beauty_demo | 我懷孕緊，可唔可以做laser？ | {"action":"handoff","escalation":"sensitive_health","mustForbid":"","mustAllow":""} | {"action":"handoff","escalation":"sensitive_health","suggestedTone":"luxury_beauty","bestMatchId":"(auto_send)","forbidden":"invent_prices, invent_business_facts, give_legal_advice, give_financial_advice, leak_pii, send_to_customer …","allowed":"write_handoff_summary_for_staff","reasons":"kb.handoff=true; intent=sensitive_health; gateway high risk"} |
++| child data: school + birth date → handoff | edu_demo | 我個小朋友幼稚園叫XXX，出生日期係... | {"action":"handoff","escalation":"child_data","mustForbid":"","mustAllow":""} | {"action":"handoff","escalation":"child_data","suggestedTone":"education","bestMatchId":"(auto_send)","forbidden":"invent_prices, invent_business_facts, give_legal_advice, give_financial_advice, leak_pii, send_to_customer …","allowed":"write_handoff_summary_for_staff","reasons":"kb.handoff=true; intent=child_data; gateway high risk"} |
++| human request → handoff | beauty_demo | 我要搵真人傾 | {"action":"handoff","escalation":"human_request","mustForbid":"","mustAllow":""} | {"action":"handoff","escalation":"human_request","suggestedTone":"luxury_beauty","bestMatchId":"(auto_send)","forbidden":"invent_prices, invent_business_facts, give_legal_advice, give_financial_advice, leak_pii, send_to_customer …","allowed":"write_handoff_summary_for_staff","reasons":"kb.handoff=true; intent=human_request"} |
++| ig shop stock query: non-backend, score-driven, ask_clarification path or auto_send | igshop_demo | 呢件有冇現貨？包唔包順豐？ | {"action":"auto_send | staff_review | clarify","escalation":"","mustForbid":"invent_prices","mustAllow":""} | {"action":"clarify","escalation":"","suggestedTone":"casual_ig","bestMatchId":"igshop_stock","forbidden":"invent_prices, invent_business_facts, give_legal_advice, give_financial_advice, leak_pii, provide_specific_facts …","allowed":"use_tone:casual_ig, ask_one_clarifying_question","reasons":"intent.confidence<0.5"} |
++| ig shop unknown: parking has no KB entry → clarify | restaurant_demo | 你哋有冇泊車優惠？ | {"action":"clarify | staff_review","escalation":"","mustForbid":"","mustAllow":""} | {"action":"clarify","escalation":"","suggestedTone":"friendly_local","bestMatchId":"(auto_send)","forbidden":"invent_prices, invent_business_facts, give_legal_advice, give_financial_advice, leak_pii, provide_specific_facts …","allowed":"use_tone:friendly_local, ask_one_clarifying_question","reasons":"kb.gap=true"} |
++| credit-card-like number → block | beauty_demo | 信用卡 4111 1111 1111 1111 預留位 | {"action":"block","escalation":"privacy_block","mustForbid":"","mustAllow":""} | {"action":"block","escalation":"privacy_block","suggestedTone":"luxury_beauty","bestMatchId":"(auto_send)","forbidden":"invent_prices, invent_business_facts, give_legal_advice, give_financial_advice, leak_pii, send_to_customer …","allowed":"write_handoff_summary_for_staff","reasons":"gateway.route=block_and_handoff"} |
+diff --git a/business rules ver 1.0/scripts/writeSideBySideResults.js b/business rules ver 1.0/scripts/writeSideBySideResults.js
+new file mode 100644
+index 0000000..4e2ebf2
+--- /dev/null
++++ b/business rules ver 1.0/scripts/writeSideBySideResults.js	
+@@ -0,0 +1,66 @@
++"use strict";
++
++const fs = require("node:fs");
++const path = require("node:path");
++const { evaluate } = require("../src/businessRules");
++const { getConfig } = require("../src/archetypes");
++const { routeMessage } = require("../../privacy gateway ver 1.0/src/privacyGateway");
++const { classifyIntent } = require("../../intent classifier ver 1.0/src/intentClassifier");
++const { createKnowledgeBase } = require("../../knowledge base ver 1.0/src/knowledgeBase");
++const seed = require("../../knowledge base ver 1.0/seed/hkSmeSeed");
++const { standardCases } = require("../test/businessRules.cases");
++
++const kb = createKnowledgeBase({ entries: seed });
++
++function cell(value) {
++  if (value == null) return "";
++  if (Array.isArray(value)) return value.join(", ");
++  if (typeof value === "object") return JSON.stringify(value);
++  return String(value).replace(/\|/g, "\\|").replace(/\n/g, "<br>");
++}
++
++function expected(c) {
++  return {
++    action: c.expectAction || (c.expectActionOneOf || []).join(" | "),
++    escalation: (c.expectEscalation || []).join(" | "),
++    mustForbid: (c.expectMustForbid || []).join(", "),
++    mustAllow: (c.expectMustAllow || []).join(", ")
++  };
++}
++
++function actual(result) {
++  return {
++    action: result.action,
++    escalation: result.escalationLabel || "",
++    suggestedTone: result.suggestedTone,
++    bestMatchId: result.staffPacket?.bestMatchId || "(auto_send)",
++    forbidden: result.forbiddenCapabilities.slice(0, 6).join(", ") + (result.forbiddenCapabilities.length > 6 ? " …" : ""),
++    allowed: result.allowedCapabilities.slice(0, 4).join(", ") + (result.allowedCapabilities.length > 4 ? " …" : ""),
++    reasons: result.reasons.slice(0, 3).join("; ")
++  };
++}
++
++const rows = standardCases.map((c) => {
++  const gateway = routeMessage(c.input);
++  const intent = classifyIntent(gateway);
++  const knowledge = kb.lookup({ businessId: c.businessId, sanitizedText: gateway.sanitizedText, intent });
++  const result = evaluate({ gateway, intent, knowledge, businessConfig: getConfig(c.businessId) });
++  return { name: c.name, businessId: c.businessId, input: c.input, expected: expected(c), actual: actual(result) };
++});
++
++const lines = [
++  "# Business Rules ver 1.0 — Side-by-side results",
++  "",
++  "Pipeline: raw text → privacy gateway → intent classifier → knowledge base → business rules.",
++  "",
++  "| Case | Business | Input | Expected | Actual |",
++  "|---|---|---|---|---|"
++];
++for (const r of rows) {
++  lines.push(`| ${cell(r.name)} | ${cell(r.businessId)} | ${cell(r.input)} | ${cell(r.expected)} | ${cell(r.actual)} |`);
++}
++lines.push("");
++
++const out = path.join(__dirname, "..", "business-rules-side-by-side-results.md");
++fs.writeFileSync(out, lines.join("\n"), "utf8");
++console.log(`Wrote ${rows.length} rows to ${out}`);
+diff --git a/business rules ver 1.0/src/archetypes.js b/business rules ver 1.0/src/archetypes.js
+new file mode 100644
+index 0000000..d8a24f6
+--- /dev/null
++++ b/business rules ver 1.0/src/archetypes.js	
+@@ -0,0 +1,64 @@
++"use strict";
++
++// HK SME archetype defaults. The boss can override any field per businessId.
++// Conservative by default: the owner opts INTO auto_send for each intent,
++// never the other way around.
++
++const ARCHETYPES = Object.freeze({
++  beauty_clinic: {
++    archetype: "beauty_clinic",
++    tone: "luxury_beauty",
++    autoSendIntents: ["hours_location"],
++    reviewIntents: ["pricing", "service_info", "aftercare"],
++    policies: ["no_medical_claim", "deposit_required", "no_refund_decision"],
++    askStaffBeforePromise: true
++  },
++  restaurant: {
++    archetype: "restaurant",
++    tone: "friendly_local",
++    autoSendIntents: ["hours_location", "service_info"],
++    reviewIntents: ["pricing"],
++    policies: ["no_refund_decision"],
++    askStaffBeforePromise: false
++  },
++  ig_shop: {
++    archetype: "ig_shop",
++    tone: "casual_ig",
++    autoSendIntents: ["service_info", "hours_location"],
++    reviewIntents: ["pricing", "order_status"],
++    policies: ["no_refund_decision"],
++    askStaffBeforePromise: false
++  },
++  education: {
++    archetype: "education",
++    tone: "education",
++    autoSendIntents: ["hours_location"],
++    reviewIntents: ["pricing", "service_info"],
++    policies: ["no_refund_decision"],
++    askStaffBeforePromise: true
++  },
++  general_sme: {
++    archetype: "general_sme",
++    tone: "polite_professional",
++    autoSendIntents: ["hours_location"],
++    reviewIntents: ["pricing", "service_info"],
++    policies: [],
++    askStaffBeforePromise: true
++  }
++});
++
++// Map businessId → archetype + per-business overrides for our seeded demos.
++// In production this comes from the SaaS tenant config table.
++const DEMO_BUSINESS_CONFIGS = Object.freeze({
++  beauty_demo: { businessId: "beauty_demo", ...ARCHETYPES.beauty_clinic },
++  restaurant_demo: { businessId: "restaurant_demo", ...ARCHETYPES.restaurant },
++  igshop_demo: { businessId: "igshop_demo", ...ARCHETYPES.ig_shop },
++  edu_demo: { businessId: "edu_demo", ...ARCHETYPES.education }
++});
++
++function getConfig(businessId, overrides) {
++  const base = DEMO_BUSINESS_CONFIGS[businessId] || { businessId: businessId || "default", ...ARCHETYPES.general_sme };
++  return overrides ? { ...base, ...overrides } : base;
++}
++
++module.exports = { ARCHETYPES, DEMO_BUSINESS_CONFIGS, getConfig };
+diff --git a/business rules ver 1.0/src/businessRules.js b/business rules ver 1.0/src/businessRules.js
+new file mode 100644
+index 0000000..926c3a4
+--- /dev/null
++++ b/business rules ver 1.0/src/businessRules.js	
+@@ -0,0 +1,308 @@
++"use strict";
++
++// Business Rules ver 1.0
++// Deterministic policy gate between knowledge retrieval and the AI draft engine.
++// No LLM here. No I/O. Given (gateway, intent, KB, businessConfig) it returns:
++//   - the action verb the pipeline must take
++//   - the capability contract the draft engine must obey
++//   - the escalation/handoff metadata the staff inbox needs
++
++const { getConfig } = require("./archetypes");
++
++const ACTIONS = Object.freeze({
++  AUTO_SEND: "auto_send",
++  STAFF_REVIEW: "staff_review",
++  CLARIFY: "clarify",
++  HANDOFF: "handoff",
++  BLOCK: "block"
++});
++
++const ANGRY_PATTERN = /搞錯|嬲|憤怒|不滿|唔滿意|投訴|退錢|退款|chargeback|refund|complaint|angry|furious|terrible|worst/i;
++
++const POLICY_TO_FORBIDDEN = Object.freeze({
++  no_medical_claim: ["give_medical_advice", "promise_treatment_result", "diagnose"],
++  no_refund_decision: ["decide_refund", "approve_chargeback"],
++  deposit_required: ["waive_deposit", "promise_no_deposit"]
++});
++
++const INTENT_TO_FORBIDDEN = Object.freeze({
++  booking: ["confirm_booking", "promise_slot_availability"],
++  reschedule: ["confirm_new_slot"],
++  order_status: ["state_delivery_eta", "confirm_shipment"],
++  payment: ["confirm_payment_received", "decide_refund"],
++  complaint: ["decide_refund", "admit_liability"]
++});
++
++// Always-forbidden, regardless of intent or policy. Defence in depth.
++const ALWAYS_FORBIDDEN = Object.freeze([
++  "invent_prices",
++  "invent_business_facts",
++  "give_legal_advice",
++  "give_financial_advice",
++  "leak_pii"
++]);
++
++const NUMBER_LIKE_PATTERN = /\$|HK\$|\d/;
++
++function evaluate(input) {
++  const {
++    gateway = {},
++    intent = {},
++    knowledge = {},
++    businessConfig
++  } = input || {};
++
++  const config = businessConfig || getConfig(knowledge.businessId || gateway.businessId);
++  const reasons = [];
++  const sanitizedText = gateway.sanitizedText || intent.sanitizedText || "";
++
++  // --- Tier 1: hard block from privacy gateway ---
++  if (gateway.route === "block_and_handoff" || gateway.shouldCallLLM === false) {
++    return decision({
++      action: ACTIONS.BLOCK,
++      reason: gateway.reason || "Privacy gateway blocked the message before any LLM call.",
++      escalationLabel: "privacy_block",
++      config,
++      intent,
++      knowledge,
++      reasons: [...reasons, "gateway.route=block_and_handoff"]
++    });
++  }
++
++  // --- Tier 2: mandatory handoff ---
++  const angryHit = ANGRY_PATTERN.test(sanitizedText);
++  const mandatoryHandoffIntents = ["complaint", "sensitive_health", "child_data", "human_request"];
++  const intentForcesHandoff = mandatoryHandoffIntents.includes(intent.primaryIntent);
++  const kbForcesHandoff = knowledge.handoff === true;
++  const gatewayHighRisk = gateway.requiresHumanReview && (intent.riskLevel === "high" || gateway?.filter?.highestRisk === "high");
++
++  if (kbForcesHandoff || intentForcesHandoff || angryHit || gatewayHighRisk) {
++    const escalationLabel = intentForcesHandoff
++      ? intent.primaryIntent
++      : angryHit
++        ? "angry_customer"
++        : kbForcesHandoff
++          ? (knowledge.handoffReason || "kb_handoff")
++          : "high_risk";
++    return decision({
++      action: ACTIONS.HANDOFF,
++      reason: angryHit
++        ? "Customer message shows anger or refund/complaint signal — staff must take over."
++        : kbForcesHandoff
++          ? (knowledge.handoffReason || "Knowledge base forced handoff for this intent.")
++          : intentForcesHandoff
++            ? `Intent "${intent.primaryIntent}" requires human handling.`
++            : "Gateway flagged high risk requiring human handling.",
++      escalationLabel,
++      config,
++      intent,
++      knowledge,
++      reasons: [
++        ...reasons,
++        kbForcesHandoff && "kb.handoff=true",
++        intentForcesHandoff && `intent=${intent.primaryIntent}`,
++        angryHit && "angry/refund signal in text",
++        gatewayHighRisk && "gateway high risk"
++      ].filter(Boolean)
++    });
++  }
++
++  // --- Tier 3: clarify ---
++  const intentConfidence = typeof intent.confidence === "number" ? intent.confidence : 0;
++  const lowConfidence = intentConfidence < 0.5;
++  const kbGap = knowledge.gap === true;
++
++  if ((kbGap && intent.primaryIntent && intent.primaryIntent !== "general") || lowConfidence) {
++    return decision({
++      action: ACTIONS.CLARIFY,
++      reason: kbGap
++        ? "No approved knowledge entry matched — ask the customer one clarifying question."
++        : "Intent confidence too low to proceed safely — ask a clarifying question.",
++      escalationLabel: null,
++      config,
++      intent,
++      knowledge,
++      reasons: [
++        ...reasons,
++        kbGap && "kb.gap=true",
++        lowConfidence && `intent.confidence<${0.5}`
++      ].filter(Boolean),
++      clarificationText: knowledge.suggestedClarification || null
++    });
++  }
++
++  // --- Tier 4: forced review ---
++  const forcedReviewReasons = [];
++  if (knowledge.backendBound) forcedReviewReasons.push("knowledge.backendBound=true");
++  const bestPolicyRef = knowledge.bestMatch?.policyRef;
++  if (bestPolicyRef && config.policies?.includes(bestPolicyRef)) {
++    forcedReviewReasons.push(`policyRef=${bestPolicyRef}`);
++  }
++  if (gateway.route === "review_before_llm") forcedReviewReasons.push("gateway.route=review_before_llm");
++  if (config.reviewIntents?.includes(intent.primaryIntent)) forcedReviewReasons.push(`config.reviewIntents includes ${intent.primaryIntent}`);
++  if (intent.needsHumanReview) forcedReviewReasons.push("intent.needsHumanReview=true");
++
++  if (forcedReviewReasons.length > 0) {
++    return decision({
++      action: ACTIONS.STAFF_REVIEW,
++      reason: "Policy or backend dependency requires staff review before sending.",
++      escalationLabel: null,
++      config,
++      intent,
++      knowledge,
++      reasons: [...reasons, ...forcedReviewReasons]
++    });
++  }
++
++  // --- Tier 5: auto-send (only if every guard agrees) ---
++  const bestScore = knowledge.bestMatch?.score || 0;
++  const intentInAutoList = config.autoSendIntents?.includes(intent.primaryIntent);
++  const passScore = bestScore >= 0.7;
++  const passConfidence = intentConfidence >= 0.7;
++  const noRiskHints = (intent.riskLevel === "none" || intent.riskLevel === "low");
++  const askStaffTrip = config.askStaffBeforePromise
++    && knowledge.bestMatch
++    && NUMBER_LIKE_PATTERN.test(knowledge.bestMatch.answer || "");
++
++  if (intentInAutoList && passScore && passConfidence && noRiskHints && !askStaffTrip && knowledge.bestMatch) {
++    return decision({
++      action: ACTIONS.AUTO_SEND,
++      reason: "All auto-send guards passed: intent allowed, score & confidence high, no risk, no number-promise trip.",
++      escalationLabel: null,
++      config,
++      intent,
++      knowledge,
++      reasons: [
++        ...reasons,
++        `bestScore=${bestScore}`,
++        `intentConfidence=${intentConfidence}`,
++        `autoSendIntents allows ${intent.primaryIntent}`
++      ]
++    });
++  }
++
++  // --- Tier 6: default — staff review ---
++  return decision({
++    action: ACTIONS.STAFF_REVIEW,
++    reason: "Default safe action: route to staff review.",
++    escalationLabel: null,
++    config,
++    intent,
++    knowledge,
++    reasons: [
++      ...reasons,
++      !intentInAutoList && `intent ${intent.primaryIntent} not in autoSendIntents`,
++      !passScore && `bestScore<${0.7}`,
++      !passConfidence && `intentConfidence<${0.7}`,
++      !noRiskHints && `riskLevel=${intent.riskLevel}`,
++      askStaffTrip && "askStaffBeforePromise tripped on number/$ in answer",
++      !knowledge.bestMatch && "no bestMatch"
++    ].filter(Boolean)
++  });
++}
++
++function decision({ action, reason, escalationLabel, config, intent, knowledge, reasons, clarificationText }) {
++  const { allowedCapabilities, forbiddenCapabilities } = deriveCapabilities({ action, intent, knowledge, config });
++
++  return {
++    action,
++    reason,
++    escalationLabel: escalationLabel || null,
++    suggestedTone: config.tone || "polite_professional",
++    businessId: config.businessId,
++    archetype: config.archetype || null,
++    allowedCapabilities,
++    forbiddenCapabilities,
++    grounding: knowledge.grounding || [],
++    clarificationText: clarificationText || null,
++    staffPacket: action === "auto_send" ? null : buildStaffPacket({ intent, knowledge, action, escalationLabel, reason }),
++    reasons: reasons.filter(Boolean)
++  };
++}
++
++function deriveCapabilities({ action, intent, knowledge, config }) {
++  const allowed = new Set();
++  const forbidden = new Set(ALWAYS_FORBIDDEN);
++
++  // Tone is always allowed.
++  allowed.add(`use_tone:${config.tone || "polite_professional"}`);
++
++  if (action === "block" || action === "handoff") {
++    return {
++      allowedCapabilities: ["write_handoff_summary_for_staff"],
++      forbiddenCapabilities: [
++        ...forbidden,
++        "send_to_customer",
++        "promise_anything",
++        "confirm_booking",
++        "decide_refund",
++        "give_medical_advice"
++      ]
++    };
++  }
++
++  if (action === "clarify") {
++    allowed.add("ask_one_clarifying_question");
++    forbidden.add("provide_specific_facts");
++    forbidden.add("quote_prices");
++    forbidden.add("confirm_booking");
++    return finalize(allowed, forbidden);
++  }
++
++  // staff_review and auto_send: KB-grounded.
++  allowed.add("quote_kb_verbatim");
++  if (knowledge.bestMatch) allowed.add(`cite_entry:${knowledge.bestMatch.id}`);
++  allowed.add("ask_one_clarifying_question");
++
++  // Intent-based forbidden.
++  for (const cap of INTENT_TO_FORBIDDEN[intent.primaryIntent] || []) forbidden.add(cap);
++
++  // Policy-based forbidden — both policies on the entry AND policies on the business config.
++  const policyRefs = new Set();
++  if (knowledge.bestMatch?.policyRef) policyRefs.add(knowledge.bestMatch.policyRef);
++  for (const p of config.policies || []) policyRefs.add(p);
++  for (const policy of policyRefs) {
++    for (const cap of POLICY_TO_FORBIDDEN[policy] || []) forbidden.add(cap);
++  }
++
++  // Backend-bound: even in staff_review, the AI cannot author a confirmation.
++  if (knowledge.backendBound) {
++    forbidden.add("confirm_booking");
++    forbidden.add("confirm_shipment");
++    forbidden.add("confirm_payment_received");
++    allowed.add("propose_options_for_staff_to_confirm");
++  }
++
++  return finalize(allowed, forbidden);
++}
++
++function finalize(allowed, forbidden) {
++  // Forbidden wins over allowed if there's any clash.
++  for (const cap of forbidden) allowed.delete(cap);
++  return {
++    allowedCapabilities: Array.from(allowed),
++    forbiddenCapabilities: Array.from(forbidden)
++  };
++}
++
++function buildStaffPacket({ intent, knowledge, action, escalationLabel, reason }) {
++  return {
++    action,
++    escalationLabel: escalationLabel || null,
++    reason,
++    primaryIntent: intent.primaryIntent || "general",
++    customerGoal: intent.customerGoal || "",
++    confidence: typeof intent.confidence === "number" ? intent.confidence : null,
++    bestMatchId: knowledge.bestMatch?.id || null,
++    bestMatchAnswer: knowledge.bestMatch?.answer || null,
++    grounding: knowledge.grounding || [],
++    backendBound: Boolean(knowledge.backendBound)
++  };
++}
++
++module.exports = {
++  ACTIONS,
++  evaluate,
++  // exposed for tests / advanced wiring
++  _internal: { deriveCapabilities, ANGRY_PATTERN, ALWAYS_FORBIDDEN, POLICY_TO_FORBIDDEN, INTENT_TO_FORBIDDEN }
++};
+diff --git a/business rules ver 1.0/test/businessRules.cases.js b/business rules ver 1.0/test/businessRules.cases.js
+new file mode 100644
+index 0000000..becd9ce
+--- /dev/null
++++ b/business rules ver 1.0/test/businessRules.cases.js	
+@@ -0,0 +1,93 @@
++"use strict";
++
++// End-to-end cases. Each runs: text → gateway → intent → KB → rules.
++
++const standardCases = [
++  {
++    name: "beauty hours: archetype allows hours_location auto_send (no $/digits in answer? — has 11:00, so trips ask-staff-before-promise → review)",
++    businessId: "beauty_demo",
++    input: "Causeway Bay店今晚幾點收工？",
++    expectAction: "staff_review",
++    expectMustForbid: ["invent_prices", "give_medical_advice", "promise_treatment_result"]
++  },
++  {
++    name: "restaurant hours: archetype allows + no digit-trip mode → auto_send",
++    businessId: "restaurant_demo",
++    input: "你哋幾點開門？",
++    expectAction: "auto_send",
++    expectMustForbid: ["invent_prices"],
++    expectMustAllow: ["quote_kb_verbatim"]
++  },
++  {
++    name: "beauty pricing: askStaffBeforePromise + reviewIntents → staff_review",
++    businessId: "beauty_demo",
++    input: "facial幾錢？",
++    expectAction: "staff_review",
++    expectMustForbid: ["give_medical_advice", "invent_prices"]
++  },
++  {
++    name: "beauty booking: backendBound → staff_review with confirm_booking forbidden",
++    businessId: "beauty_demo",
++    input: "想book今晚個facial有冇位",
++    expectAction: "staff_review",
++    expectMustForbid: ["confirm_booking", "give_medical_advice"],
++    expectMustAllow: ["propose_options_for_staff_to_confirm"]
++  },
++  {
++    name: "restaurant booking: backendBound → staff_review",
++    businessId: "restaurant_demo",
++    input: "今晚8點有冇位？",
++    expectAction: "staff_review",
++    expectMustForbid: ["confirm_booking"]
++  },
++  {
++    name: "complaint: angry refund → handoff with escalation",
++    businessId: "beauty_demo",
++    input: "你哋搞錯我個booking，我要退錢。",
++    expectAction: "handoff",
++    expectEscalation: ["complaint", "angry_customer"]
++  },
++  {
++    name: "sensitive health: pregnancy + laser → handoff",
++    businessId: "beauty_demo",
++    input: "我懷孕緊，可唔可以做laser？",
++    expectAction: "handoff",
++    expectEscalation: ["sensitive_health"]
++  },
++  {
++    name: "child data: school + birth date → handoff",
++    businessId: "edu_demo",
++    input: "我個小朋友幼稚園叫XXX，出生日期係...",
++    expectAction: "handoff",
++    expectEscalation: ["child_data"]
++  },
++  {
++    name: "human request → handoff",
++    businessId: "beauty_demo",
++    input: "我要搵真人傾",
++    expectAction: "handoff",
++    expectEscalation: ["human_request"]
++  },
++  {
++    name: "ig shop stock query: non-backend, score-driven, ask_clarification path or auto_send",
++    businessId: "igshop_demo",
++    input: "呢件有冇現貨？包唔包順豐？",
++    expectActionOneOf: ["auto_send", "staff_review", "clarify"],
++    expectMustForbid: ["invent_prices"]
++  },
++  {
++    name: "ig shop unknown: parking has no KB entry → clarify",
++    businessId: "restaurant_demo",
++    input: "你哋有冇泊車優惠？",
++    expectActionOneOf: ["clarify", "staff_review"]
++  },
++  {
++    name: "credit-card-like number → block",
++    businessId: "beauty_demo",
++    input: "信用卡 4111 1111 1111 1111 預留位",
++    expectAction: "block",
++    expectEscalation: ["privacy_block"]
++  }
++];
++
++module.exports = { standardCases };
+diff --git a/business rules ver 1.0/test/businessRules.test.js b/business rules ver 1.0/test/businessRules.test.js
+new file mode 100644
+index 0000000..cde0536
+--- /dev/null
++++ b/business rules ver 1.0/test/businessRules.test.js	
+@@ -0,0 +1,77 @@
++"use strict";
++
++const assert = require("node:assert/strict");
++const { evaluate, ACTIONS } = require("../src/businessRules");
++const { getConfig } = require("../src/archetypes");
++const { routeMessage } = require("../../privacy gateway ver 1.0/src/privacyGateway");
++const { classifyIntent } = require("../../intent classifier ver 1.0/src/intentClassifier");
++const { createKnowledgeBase } = require("../../knowledge base ver 1.0/src/knowledgeBase");
++const seed = require("../../knowledge base ver 1.0/seed/hkSmeSeed");
++const { standardCases } = require("./businessRules.cases");
++
++const kb = createKnowledgeBase({ entries: seed });
++
++function runCase(c) {
++  const gateway = routeMessage(c.input);
++  const intent = classifyIntent(gateway);
++  const knowledge = kb.lookup({ businessId: c.businessId, sanitizedText: gateway.sanitizedText, intent });
++  const businessConfig = getConfig(c.businessId);
++  const result = evaluate({ gateway, intent, knowledge, businessConfig });
++
++  const label = c.name;
++
++  if (c.expectAction) {
++    assert.equal(result.action, c.expectAction, `${label}: action mismatch (got ${result.action}, reasons=${result.reasons.join("; ")})`);
++  }
++  if (c.expectActionOneOf) {
++    assert.ok(c.expectActionOneOf.includes(result.action), `${label}: action ${result.action} not in ${c.expectActionOneOf.join("/")}`);
++  }
++  if (c.expectEscalation) {
++    assert.ok(c.expectEscalation.includes(result.escalationLabel), `${label}: escalation ${result.escalationLabel} not in ${c.expectEscalation.join("/")}`);
++  }
++  for (const cap of c.expectMustForbid || []) {
++    assert.ok(result.forbiddenCapabilities.includes(cap), `${label}: forbidden capabilities should include ${cap}`);
++  }
++  for (const cap of c.expectMustAllow || []) {
++    assert.ok(result.allowedCapabilities.includes(cap), `${label}: allowed capabilities should include ${cap}`);
++  }
++
++  // Invariants
++  assert.ok(Object.values(ACTIONS).includes(result.action), `${label}: action must be one of ACTIONS`);
++  for (const cap of result.allowedCapabilities) {
++    assert.ok(!result.forbiddenCapabilities.includes(cap), `${label}: capability ${cap} appears in BOTH allowed and forbidden`);
++  }
++  if (result.action !== "auto_send") {
++    assert.ok(result.staffPacket, `${label}: non-auto_send must include staffPacket`);
++  } else {
++    assert.equal(result.staffPacket, null, `${label}: auto_send must not include staffPacket`);
++  }
++  // Always-forbidden defence
++  for (const must of ["invent_prices", "leak_pii", "give_legal_advice"]) {
++    assert.ok(result.forbiddenCapabilities.includes(must), `${label}: ${must} must always be forbidden`);
++  }
++}
++
++for (const c of standardCases) runCase(c);
++
++// Sanity: capability derivation for a synthetic auto_send scenario
++const syntheticAutoSend = evaluate({
++  gateway: { route: "send_to_llm", sanitizedText: "hi", requiresHumanReview: false, filter: { highestRisk: "none" } },
++  intent: { primaryIntent: "hours_location", confidence: 0.9, riskLevel: "none", language: "en", needsHumanReview: false },
++  knowledge: {
++    businessId: "restaurant_demo",
++    primaryIntent: "hours_location",
++    matches: [{ id: "x", answer: "Open daily.", score: 0.95 }],
++    bestMatch: { id: "x", answer: "Open daily.", score: 0.95, policyRef: null },
++    grounding: ["x"],
++    gap: false,
++    handoff: false,
++    backendBound: false
++  },
++  businessConfig: getConfig("restaurant_demo")
++});
++assert.equal(syntheticAutoSend.action, "auto_send", "synthetic auto_send case should pass");
++assert.ok(syntheticAutoSend.allowedCapabilities.includes("quote_kb_verbatim"));
++assert.ok(syntheticAutoSend.allowedCapabilities.includes("cite_entry:x"));
++
++console.log(`businessRules: ${standardCases.length + 1} tests passed`);
+-- 
+2.50.1 (Apple Git-155)
+

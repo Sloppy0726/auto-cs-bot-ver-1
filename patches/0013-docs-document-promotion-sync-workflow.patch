@@ -1,0 +1,197 @@
+From e7d516f202ea0c2a6e45b2087ec5bce86a34205b Mon Sep 17 00:00:00 2001
+From: Book <book@BookdeMacBook-Air.local>
+Date: Sat, 9 May 2026 13:23:27 +0800
+Subject: [PATCH 13/13] docs: document promotion sync workflow
+
+---
+ AI draft engine ver 1.0/README.md     |  4 ++
+ HANDOFF.md                            | 79 +++++++++++++++++++++++++++
+ README.md                             | 20 ++++---
+ end-to-end pipeline ver 1.0/README.md |  3 +
+ 4 files changed, 98 insertions(+), 8 deletions(-)
+
+diff --git a/AI draft engine ver 1.0/README.md b/AI draft engine ver 1.0/README.md
+index d9f15bc..0ccb392 100644
+--- a/AI draft engine ver 1.0/README.md	
++++ b/AI draft engine ver 1.0/README.md	
+@@ -91,6 +91,10 @@ const draft = await generateDraft(input, {
+ 
+ The adapter sets `cache_control` on the system message because the capability/tone policy repeats heavily across tenant traffic.
+ 
++## Promotion Context
++
++When the pipeline provides `promotions`, the staff-review and handoff prompts include active time-bound promotions that were checked in Hong Kong time. The draft engine treats them as approved contextual facts, but still does not auto-send pricing or treatment claims for conservative archetypes such as `beauty_clinic`.
++
+ ## Integration
+ 
+ ```
+diff --git a/HANDOFF.md b/HANDOFF.md
+index a780aa2..1572b9a 100644
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -420,3 +420,82 @@ node "end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js"
+    - `feat: AI draft engine v1.0`
+    - `feat: complete support workflow skeleton`
+ 3. After review, wire real environment concerns: tenant storage, real channel credentials, Anthropic key, staff inbox UI, webhook auth, deployment.
++
++---
++
++## Session 4 notes — Google Drive promotion sync + Hong Kong time expiry
++
++User asked for a 24/7-style agent behavior: every day, read a Google Drive folder containing current offers / Instagram promotions, understand expiry dates, and use those facts before answering. All dates must follow Hong Kong time, UTC+8, not server locale or another region.
++
++### What changed
++
++- Added `google drive promo sync ver 1.0/`.
++  - `src/hkTime.js` provides HK-time helpers:
++    - `hkDateKey()`
++    - `isWithinHkDateRange()`
++    - `nextDailyRunAtHongKong()`
++  - `src/promoSync.js` provides:
++    - `createPromotionStore()`
++    - `createPromoSync({ driveClient, store, folderId, businessId, syncTimeHk })`
++    - `parseDrivePromoDocument()`
++    - `lookupPromotions()`
++  - `seed/promoSeed.js` includes demo active promotions:
++    - `beauty_may_small_face_trial`
++    - `igshop_sf_locker_may`
++  - Tests use a mock `driveClient`; no real Google Drive network/API call yet.
++- Updated `AI draft engine ver 1.0`.
++  - Staff-review and handoff prompts now include active time-bound promotions when the pipeline passes `promotions`.
++  - Promotion context includes title, summary, HK expiry date, and staff instruction.
++- Updated `end-to-end pipeline ver 1.0`.
++  - Pipeline creates a promotion store by default using promo seed data.
++  - Each message now looks up active promotions using `Asia/Hong_Kong` / UTC+8 before draft generation.
++  - Pipeline result now includes `promotions`.
++- Updated `staff inbox ver 1.0`.
++  - Staff items now keep `backendFacts` and `promotions` so staff can see which offer context influenced the draft.
++- Updated root `README.md`, AI draft README, and pipeline README.
++
++### Google Drive promo document format
++
++Google Drive docs can use blocks like:
++
++```text
++Title: 小顏管理五月體驗優惠
++Keywords: 小顏, 小顏管理, 面部輪廓, 收費, 優惠
++Intents: pricing, service_info
++Summary: 小顏管理五月首次體驗 HK$480，原價 HK$880。主要針對面部線條、浮腫感同輪廓保養，效果因人而異。
++StaffInstruction: 可以提五月體驗價，但要提醒客人先做面部狀態評估，唔好承諾一定瘦面。
++StartsOn: 2026-05-01
++ExpiresOn: 2026-05-31
++Approved: true
++```
++
++Multiple promo blocks can be separated by `---`.
++
++### Test status after Session 4
++
++All tests pass:
++
++```bash
++node "privacy filter ver 1.0/test/privacyFilter.test.js"                 # 500 passed
++node "privacy gateway ver 1.0/test/privacyGateway.test.js"               # 205 passed
++node "intent classifier ver 1.0/test/intentClassifier.test.js"            # 103 passed
++node "knowledge base ver 1.0/test/knowledgeBase.test.js"                 # 12 passed
++node "business rules ver 1.0/test/businessRules.test.js"                 # 13 passed
++node "google drive promo sync ver 1.0/test/promoSync.test.js"            # 8 passed
++node "AI draft engine ver 1.0/test/draftEngine.test.js"                  # 13 passed
++node "safety checker ver 1.0/test/safetyChecker.test.js"                 # 7 passed
++node "channel adapter ver 1.0/test/channelAdapter.test.js"               # 5 passed
++node "model router ver 1.0/test/modelRouter.test.js"                     # 5 passed
++node "private business backend mock ver 1.0/test/businessBackendMock.test.js" # 5 passed
++node "staff inbox ver 1.0/test/staffInbox.test.js"                       # 7 passed
++node "end-to-end pipeline ver 1.0/test/pipeline.test.js"                 # 6 passed
++```
++
++Total after Session 4: **889 tests passing**.
++
++### Known limitations after Session 4
++
++1. `google drive promo sync ver 1.0` has a dependency-injected `driveClient` and offline tests. Production still needs a real Google Drive connector/client.
++2. Daily sync scheduling is expressed in code via `runDue()` / `nextDailyRunAtHongKong()`. Production still needs a worker/cron runner to call it daily.
++3. Promotion store is in memory by default. Production should persist synced promotions per tenant.
++4. The pipeline reads active promotions before drafting, but conservative business rules still prevent automatic sending for beauty pricing/treatment claims. This is intentional.
+diff --git a/README.md b/README.md
+index 16575ef..2cdb112 100644
+--- a/README.md
++++ b/README.md
+@@ -14,6 +14,7 @@ customer channel
+   -> privacy gateway
+   -> intent classifier
+   -> knowledge base
++  -> Google Drive promo sync context
+   -> business rules
+   -> private business backend mock
+   -> model router
+@@ -22,7 +23,7 @@ customer channel
+   -> send reply or staff inbox
+ ```
+ 
+-Current test total: **877 passing**.
++Current test total: **889 passing**.
+ 
+ No npm dependencies are required. Everything is plain Node.js stdlib.
+ 
+@@ -35,13 +36,14 @@ No npm dependencies are required. Everything is plain Node.js stdlib.
+ | 3 | `intent classifier ver 1.0` | Classifies Cantonese / English / mixed enquiries into stable intents. |
+ | 4 | `knowledge base ver 1.0` | Approved-only business answers and grounding IDs. |
+ | 5 | `business rules ver 1.0` | Deterministic policy gate and capability contract. |
+-| 6 | `AI draft engine ver 1.0` | Produces grounded drafts or staff-only summaries. |
+-| 7 | `safety checker ver 1.0` | Re-validates drafts before anything can be sent. |
+-| 8 | `channel adapter ver 1.0` | Normalizes WhatsApp / IG / FB / website payloads and builds outbound payloads. |
+-| 9 | `model router ver 1.0` | Chooses no-LLM / Haiku / Sonnet by action and risk. |
+-| 10 | `private business backend mock ver 1.0` | Mock booking, order, stock, and payment facts. |
+-| 11 | `staff inbox ver 1.0` | In-memory review / handoff queue. |
+-| 12 | `end-to-end pipeline ver 1.0` | Orchestrates the whole local workflow. |
++| 6 | `google drive promo sync ver 1.0` | Daily Google Drive promotion sync with Hong Kong time expiry checks. |
++| 7 | `AI draft engine ver 1.0` | Produces grounded drafts or staff-only summaries. |
++| 8 | `safety checker ver 1.0` | Re-validates drafts before anything can be sent. |
++| 9 | `channel adapter ver 1.0` | Normalizes WhatsApp / IG / FB / website payloads and builds outbound payloads. |
++| 10 | `model router ver 1.0` | Chooses no-LLM / Haiku / Sonnet by action and risk. |
++| 11 | `private business backend mock ver 1.0` | Mock booking, order, stock, and payment facts. |
++| 12 | `staff inbox ver 1.0` | In-memory review / handoff queue. |
++| 13 | `end-to-end pipeline ver 1.0` | Orchestrates the whole local workflow. |
+ 
+ ## Local Run
+ 
+@@ -101,6 +103,7 @@ node "privacy gateway ver 1.0/test/privacyGateway.test.js"
+ node "intent classifier ver 1.0/test/intentClassifier.test.js"
+ node "knowledge base ver 1.0/test/knowledgeBase.test.js"
+ node "business rules ver 1.0/test/businessRules.test.js"
++node "google drive promo sync ver 1.0/test/promoSync.test.js"
+ node "AI draft engine ver 1.0/test/draftEngine.test.js"
+ node "safety checker ver 1.0/test/safetyChecker.test.js"
+ node "channel adapter ver 1.0/test/channelAdapter.test.js"
+@@ -133,6 +136,7 @@ The generated markdown report lives at the module root.
+ 
+ - Privacy gateway runs before any LLM call.
+ - Business policy lives in typed JS rules, not only prompts.
++- Google Drive promotion expiry is checked using `Asia/Hong_Kong` / UTC+8 only.
+ - `auto_send` must quote approved KB text exactly.
+ - Staff review is required for pricing, backend-bound actions, handoff, safety violations, and privacy blocks.
+ - Current channel/server/backend/staff inbox pieces are local skeletons, not production integrations.
+diff --git a/end-to-end pipeline ver 1.0/README.md b/end-to-end pipeline ver 1.0/README.md
+index de20a3c..87d4f31 100644
+--- a/end-to-end pipeline ver 1.0/README.md	
++++ b/end-to-end pipeline ver 1.0/README.md	
+@@ -9,6 +9,7 @@ channel adapter
+   -> privacy gateway
+   -> intent classifier
+   -> knowledge base
++  -> Google Drive promo sync context
+   -> business rules
+   -> private backend mock
+   -> model router
+@@ -19,6 +20,8 @@ channel adapter
+ 
+ This follows the architecture diagram: privacy runs before any model, business rules constrain generation, safety checks drafts before send, and private backend facts stay controlled.
+ 
++Promotion context is checked using Hong Kong time (`Asia/Hong_Kong`, UTC+8). Active Google Drive promotions are passed into the draft engine and staff inbox before a reply is generated.
++
+ ## Main API
+ 
+ ```js
+-- 
+2.50.1 (Apple Git-155)
+

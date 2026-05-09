@@ -1,0 +1,411 @@
+From 13bf34047bde58504b744a8330156c8334026bf3 Mon Sep 17 00:00:00 2001
+From: Book <book@BookdeMacBook-Air.local>
+Date: Sat, 9 May 2026 13:17:01 +0800
+Subject: [PATCH 09/13] feat: add end-to-end pipeline v1.0
+
+---
+ end-to-end pipeline ver 1.0/README.md         |  45 ++++++
+ ...nd-to-end-pipeline-side-by-side-results.md |  10 ++
+ .../scripts/writeSideBySideResults.js         |  43 ++++++
+ end-to-end pipeline ver 1.0/src/pipeline.js   | 128 ++++++++++++++++++
+ end-to-end pipeline ver 1.0/src/server.js     |  52 +++++++
+ .../test/pipeline.cases.js                    |  30 ++++
+ .../test/pipeline.test.js                     |  36 +++++
+ 7 files changed, 344 insertions(+)
+ create mode 100644 end-to-end pipeline ver 1.0/README.md
+ create mode 100644 end-to-end pipeline ver 1.0/end-to-end-pipeline-side-by-side-results.md
+ create mode 100644 end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js
+ create mode 100644 end-to-end pipeline ver 1.0/src/pipeline.js
+ create mode 100644 end-to-end pipeline ver 1.0/src/server.js
+ create mode 100644 end-to-end pipeline ver 1.0/test/pipeline.cases.js
+ create mode 100644 end-to-end pipeline ver 1.0/test/pipeline.test.js
+
+diff --git a/end-to-end pipeline ver 1.0/README.md b/end-to-end pipeline ver 1.0/README.md
+new file mode 100644
+index 0000000..de20a3c
+--- /dev/null
++++ b/end-to-end pipeline ver 1.0/README.md	
+@@ -0,0 +1,45 @@
++# End-to-end Pipeline ver 1.0
++
++Orchestrates the workflow from channel payload to outbound reply or staff inbox item.
++
++## Workflow
++
++```
++channel adapter
++  -> privacy gateway
++  -> intent classifier
++  -> knowledge base
++  -> business rules
++  -> private backend mock
++  -> model router
++  -> AI draft engine
++  -> safety checker
++  -> outbound payload or staff inbox
++```
++
++This follows the architecture diagram: privacy runs before any model, business rules constrain generation, safety checks drafts before send, and private backend facts stay controlled.
++
++## Main API
++
++```js
++const { createPipeline } = require("./src/pipeline");
++
++const pipeline = createPipeline({ llmAdapter });
++const result = await pipeline.runMessage({
++  channel: "website",
++  businessId: "restaurant_demo",
++  sessionId: "s1",
++  text: "你哋幾點開門？"
++});
++```
++
++## Server
++
++`src/server.js` exposes `createWebhookServer()` using Node's built-in `http` module. It supports `POST /webhook`.
++
++## Run
++
++```bash
++node "end-to-end pipeline ver 1.0/test/pipeline.test.js"
++node "end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js"
++```
+diff --git a/end-to-end pipeline ver 1.0/end-to-end-pipeline-side-by-side-results.md b/end-to-end pipeline ver 1.0/end-to-end-pipeline-side-by-side-results.md
+new file mode 100644
+index 0000000..a78df05
+--- /dev/null
++++ b/end-to-end pipeline ver 1.0/end-to-end-pipeline-side-by-side-results.md	
+@@ -0,0 +1,10 @@
++# End-to-end Pipeline ver 1.0 - Side-by-side results
++
++Pipeline: channel -> privacy -> intent -> KB -> rules -> backend mock -> model route -> draft -> safety -> outbound/staff inbox.
++
++| Case | Expected | Actual |
++|---|---|---|
++| restaurant hours goes ready_to_send | {"finalStatus":"ready_to_send","action":"auto_send"} | {"finalStatus":"ready_to_send","action":"auto_send","safety":"pass","outbound":"ready_to_send","staffItemId":null} |
++| beauty pricing goes staff review | {"finalStatus":"staff_review","action":"staff_review"} | {"finalStatus":"staff_review","action":"staff_review","safety":"revise","outbound":"held","staffItemId":"staff_0001"} |
++| restaurant parking clarify can send | {"finalStatus":"ready_to_send","action":"clarify"} | {"finalStatus":"ready_to_send","action":"clarify","safety":"pass","outbound":"ready_to_send","staffItemId":null} |
++| complaint goes staff review handoff | {"finalStatus":"staff_review","action":"handoff"} | {"finalStatus":"staff_review","action":"handoff","safety":"revise","outbound":"held","staffItemId":"staff_0002"} |
+diff --git a/end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js b/end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js
+new file mode 100644
+index 0000000..7d7edc7
+--- /dev/null
++++ b/end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js	
+@@ -0,0 +1,43 @@
++"use strict";
++
++const fs = require("node:fs");
++const path = require("node:path");
++const { createPipeline } = require("../src/pipeline");
++const { standardCases } = require("../test/pipeline.cases");
++
++function cell(value) {
++  if (value == null) return "";
++  if (typeof value === "object") return JSON.stringify(value);
++  return String(value).replace(/\|/g, "\\|").replace(/\n/g, "<br>");
++}
++
++async function main() {
++  const pipeline = createPipeline({
++    llmAdapter: async (prompt, context) => {
++      if (context.decision.action === "handoff") return { text: "【員工交接】\n意圖：" + context.intent.primaryIntent + "\n建議下一步：由同事跟進。" };
++      return { text: context.knowledge.bestMatch?.answer || "請問你想了解邊方面？" };
++    }
++  });
++  const lines = [
++    "# End-to-end Pipeline ver 1.0 - Side-by-side results",
++    "",
++    "Pipeline: channel -> privacy -> intent -> KB -> rules -> backend mock -> model route -> draft -> safety -> outbound/staff inbox.",
++    "",
++    "| Case | Expected | Actual |",
++    "|---|---|---|"
++  ];
++  for (const c of standardCases) {
++    const result = await pipeline.runMessage(c.input);
++    lines.push(`| ${cell(c.name)} | ${cell({ finalStatus: c.expectStatus, action: c.expectAction })} | ${cell({ finalStatus: result.finalStatus, action: result.decision.action, safety: result.safety.verdict, outbound: result.outbound?.status, staffItemId: result.staffItem?.id || null })} |`);
++  }
++  lines.push("");
++
++  const out = path.join(__dirname, "..", "end-to-end-pipeline-side-by-side-results.md");
++  fs.writeFileSync(out, lines.join("\n"), "utf8");
++  console.log(`Wrote ${standardCases.length} rows to ${out}`);
++}
++
++main().catch((error) => {
++  console.error(error);
++  process.exitCode = 1;
++});
+diff --git a/end-to-end pipeline ver 1.0/src/pipeline.js b/end-to-end pipeline ver 1.0/src/pipeline.js
+new file mode 100644
+index 0000000..a2531a6
+--- /dev/null
++++ b/end-to-end pipeline ver 1.0/src/pipeline.js	
+@@ -0,0 +1,128 @@
++"use strict";
++
++// End-to-end Pipeline ver 1.0
++// Orchestrates the workflow from channel payload to reply/staff item.
++
++const { normalizeInbound, buildOutboundMessage } = require("../../channel adapter ver 1.0/src/channelAdapter");
++const { routeMessage } = require("../../privacy gateway ver 1.0/src/privacyGateway");
++const { classifyIntent } = require("../../intent classifier ver 1.0/src/intentClassifier");
++const { createKnowledgeBase } = require("../../knowledge base ver 1.0/src/knowledgeBase");
++const seed = require("../../knowledge base ver 1.0/seed/hkSmeSeed");
++const { evaluate } = require("../../business rules ver 1.0/src/businessRules");
++const { getConfig } = require("../../business rules ver 1.0/src/archetypes");
++const { generateDraft } = require("../../AI draft engine ver 1.0/src/draftEngine");
++const { routeModel } = require("../../model router ver 1.0/src/modelRouter");
++const { checkDraft } = require("../../safety checker ver 1.0/src/safetyChecker");
++const { createBusinessBackend } = require("../../private business backend mock ver 1.0/src/businessBackendMock");
++const { createStaffInbox } = require("../../staff inbox ver 1.0/src/staffInbox");
++
++function createPipeline(config = {}) {
++  const kb = config.knowledgeBase || createKnowledgeBase({ entries: config.seed || seed });
++  const backend = config.backend || createBusinessBackend();
++  const inbox = config.staffInbox || createStaffInbox();
++  const llmAdapter = config.llmAdapter;
++
++  return {
++    async runMessage(input) {
++      return runMessage(input, { kb, backend, inbox, llmAdapter, config });
++    },
++    inbox,
++    backend,
++    kb
++  };
++}
++
++async function runMessage(input = {}, deps = {}) {
++  const normalizedMessage = normalizeInbound(input);
++  if (normalizedMessage.errors.length > 0) {
++    const staffItem = deps.inbox?.submit({
++      decision: { action: "handoff", businessId: normalizedMessage.businessId, escalationLabel: "channel_payload_error", reasons: normalizedMessage.errors },
++      draft: { action: "handoff", text: null },
++      safety: { verdict: "revise", safeToSend: false, reasons: normalizedMessage.errors },
++      normalizedMessage
++    }) || null;
++    return result({ normalizedMessage, staffItem, finalStatus: "staff_review", errors: normalizedMessage.errors });
++  }
++
++  const gateway = routeMessage(normalizedMessage.rawText);
++  const intent = await classifyIntent(gateway);
++  const knowledge = deps.kb.lookup({ businessId: normalizedMessage.businessId, sanitizedText: gateway.sanitizedText, intent });
++  const businessConfig = getConfig(normalizedMessage.businessId);
++  const decision = evaluate({ gateway, intent, knowledge, businessConfig });
++  const backendFacts = deps.backend.getMinimalFacts({
++    businessId: normalizedMessage.businessId,
++    intent,
++    query: inferBackendQuery({ normalizedMessage, intent })
++  });
++  const modelRoute = routeModel({ decision, intent, gateway });
++  const draft = await generateDraft({ decision, knowledge, intent, gateway }, { llmAdapter: deps.llmAdapter });
++  const safety = checkDraft({ draft, decision, knowledge, intent, gateway });
++
++  let staffItem = null;
++  if (!safety.safeToSend || !["auto_send", "clarify"].includes(draft.action)) {
++    staffItem = deps.inbox.submit({ decision, draft, safety, normalizedMessage, backendFacts });
++  }
++
++  const outbound = buildOutboundMessage({ normalizedMessage, draft, safety, staffItem });
++  const finalStatus = outbound.status === "ready_to_send" ? "ready_to_send" : "staff_review";
++
++  return result({
++    normalizedMessage,
++    gateway,
++    intent,
++    knowledge,
++    decision,
++    backendFacts,
++    modelRoute,
++    draft,
++    safety,
++    staffItem,
++    outbound,
++    finalStatus,
++    errors: []
++  });
++}
++
++function inferBackendQuery({ normalizedMessage, intent }) {
++  const text = normalizedMessage.rawText || "";
++  const query = { businessId: normalizedMessage.businessId };
++  const date = text.includes("今晚") ? "2026-05-09" : null;
++  const timeMatch = text.match(/(\d{1,2})(?::(\d{2}))?\s*(?:點|:)?/);
++  if (date) query.date = date;
++  if (timeMatch) {
++    const hour = timeMatch[1].padStart(2, "0");
++    const minute = timeMatch[2] || "00";
++    query.time = `${hour}:${minute}`;
++  }
++  if (/facial|面部|護理/i.test(text)) query.service = "facial";
++  const orderMatch = text.match(/\b(?:IG)?\d{4,}\b/i);
++  if (orderMatch) query.orderId = orderMatch[0].toUpperCase().startsWith("IG") ? orderMatch[0].toUpperCase() : `IG${orderMatch[0]}`;
++  const skuMatch = text.match(/\b[A-Z]{2,}-[A-Z0-9-]+\b/i);
++  if (skuMatch) query.sku = skuMatch[0].toUpperCase();
++  if (intent.primaryIntent === "service_info" && /tee|t-shirt/i.test(text)) query.sku = query.sku || "TEE-BLK-M";
++  return query;
++}
++
++function result(payload) {
++  return {
++    finalStatus: payload.finalStatus,
++    normalizedMessage: payload.normalizedMessage || null,
++    gateway: payload.gateway || null,
++    intent: payload.intent || null,
++    knowledge: payload.knowledge || null,
++    decision: payload.decision || null,
++    backendFacts: payload.backendFacts || null,
++    modelRoute: payload.modelRoute || null,
++    draft: payload.draft || null,
++    safety: payload.safety || null,
++    staffItem: payload.staffItem || null,
++    outbound: payload.outbound || null,
++    errors: payload.errors || []
++  };
++}
++
++module.exports = {
++  createPipeline,
++  runMessage,
++  _internal: { inferBackendQuery }
++};
+diff --git a/end-to-end pipeline ver 1.0/src/server.js b/end-to-end pipeline ver 1.0/src/server.js
+new file mode 100644
+index 0000000..8263369
+--- /dev/null
++++ b/end-to-end pipeline ver 1.0/src/server.js	
+@@ -0,0 +1,52 @@
++"use strict";
++
++const http = require("node:http");
++const { createPipeline } = require("./pipeline");
++
++function createWebhookServer(config = {}) {
++  const pipeline = config.pipeline || createPipeline(config);
++  return http.createServer(async (req, res) => {
++    if (req.method !== "POST" || req.url !== "/webhook") {
++      writeJson(res, 404, { error: "not_found" });
++      return;
++    }
++
++    try {
++      const payload = await readJson(req);
++      const result = await pipeline.runMessage(payload);
++      writeJson(res, 200, {
++        finalStatus: result.finalStatus,
++        outbound: result.outbound,
++        staffItemId: result.staffItem?.id || null,
++        action: result.decision?.action || null
++      });
++    } catch (error) {
++      writeJson(res, 500, { error: error.message });
++    }
++  });
++}
++
++function readJson(req) {
++  return new Promise((resolve, reject) => {
++    let body = "";
++    req.on("data", (chunk) => {
++      body += chunk;
++      if (body.length > 1_000_000) reject(new Error("request_too_large"));
++    });
++    req.on("end", () => {
++      try {
++        resolve(body ? JSON.parse(body) : {});
++      } catch (error) {
++        reject(error);
++      }
++    });
++    req.on("error", reject);
++  });
++}
++
++function writeJson(res, statusCode, payload) {
++  res.writeHead(statusCode, { "content-type": "application/json" });
++  res.end(JSON.stringify(payload));
++}
++
++module.exports = { createWebhookServer, _internal: { readJson, writeJson } };
+diff --git a/end-to-end pipeline ver 1.0/test/pipeline.cases.js b/end-to-end pipeline ver 1.0/test/pipeline.cases.js
+new file mode 100644
+index 0000000..c79dfdd
+--- /dev/null
++++ b/end-to-end pipeline ver 1.0/test/pipeline.cases.js	
+@@ -0,0 +1,30 @@
++"use strict";
++
++const standardCases = [
++  {
++    name: "restaurant hours goes ready_to_send",
++    input: { channel: "website", businessId: "restaurant_demo", sessionId: "s1", text: "你哋幾點開門？" },
++    expectStatus: "ready_to_send",
++    expectAction: "auto_send"
++  },
++  {
++    name: "beauty pricing goes staff review",
++    input: { channel: "website", businessId: "beauty_demo", sessionId: "s2", text: "facial幾錢？" },
++    expectStatus: "staff_review",
++    expectAction: "staff_review"
++  },
++  {
++    name: "restaurant parking clarify can send",
++    input: { channel: "website", businessId: "restaurant_demo", sessionId: "s3", text: "你哋有冇泊車優惠？" },
++    expectStatus: "ready_to_send",
++    expectAction: "clarify"
++  },
++  {
++    name: "complaint goes staff review handoff",
++    input: { channel: "website", businessId: "beauty_demo", sessionId: "s4", text: "你哋搞錯我個booking，我要退錢。" },
++    expectStatus: "staff_review",
++    expectAction: "handoff"
++  }
++];
++
++module.exports = { standardCases };
+diff --git a/end-to-end pipeline ver 1.0/test/pipeline.test.js b/end-to-end pipeline ver 1.0/test/pipeline.test.js
+new file mode 100644
+index 0000000..812e6eb
+--- /dev/null
++++ b/end-to-end pipeline ver 1.0/test/pipeline.test.js	
+@@ -0,0 +1,36 @@
++"use strict";
++
++const assert = require("node:assert/strict");
++const { createPipeline } = require("../src/pipeline");
++const { standardCases } = require("./pipeline.cases");
++
++async function run() {
++  const pipeline = createPipeline({
++    llmAdapter: async (prompt, context) => {
++      if (context.decision.action === "handoff") {
++        return { text: "【員工交接】\n意圖：" + context.intent.primaryIntent + "\n建議下一步：由同事跟進。" };
++      }
++      return { text: context.knowledge.bestMatch?.answer || "請問你想了解邊方面？" };
++    }
++  });
++
++  for (const c of standardCases) {
++    const result = await pipeline.runMessage(c.input);
++    assert.equal(result.finalStatus, c.expectStatus, `${c.name}: finalStatus mismatch`);
++    assert.equal(result.decision.action, c.expectAction, `${c.name}: action mismatch`);
++    if (c.expectStatus === "ready_to_send") {
++      assert.equal(result.outbound.status, "ready_to_send", `${c.name}: outbound mismatch`);
++      assert.ok(result.safety.safeToSend, `${c.name}: safety should allow send`);
++    } else {
++      assert.ok(result.staffItem, `${c.name}: staff item missing`);
++    }
++  }
++
++  assert.ok(pipeline.inbox.list().length >= 2, "staff inbox should collect held items");
++  console.log(`pipeline: ${standardCases.length + 1} tests passed`);
++}
++
++run().catch((error) => {
++  console.error(error);
++  process.exitCode = 1;
++});
+-- 
+2.50.1 (Apple Git-155)
+

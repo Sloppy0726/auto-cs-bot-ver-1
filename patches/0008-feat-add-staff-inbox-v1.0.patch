@@ -1,0 +1,313 @@
+From 40db10669f9d72577d7fe2aa76615c972ce956b3 Mon Sep 17 00:00:00 2001
+From: Book <book@BookdeMacBook-Air.local>
+Date: Sat, 9 May 2026 13:16:58 +0800
+Subject: [PATCH 08/13] feat: add staff inbox v1.0
+
+---
+ staff inbox ver 1.0/README.md                 |  33 +++++
+ .../scripts/writeSideBySideResults.js         |  30 +++++
+ staff inbox ver 1.0/src/staffInbox.js         | 123 ++++++++++++++++++
+ .../staff-inbox-side-by-side-results.md       |   7 +
+ staff inbox ver 1.0/test/staffInbox.cases.js  |  30 +++++
+ staff inbox ver 1.0/test/staffInbox.test.js   |  31 +++++
+ 6 files changed, 254 insertions(+)
+ create mode 100644 staff inbox ver 1.0/README.md
+ create mode 100644 staff inbox ver 1.0/scripts/writeSideBySideResults.js
+ create mode 100644 staff inbox ver 1.0/src/staffInbox.js
+ create mode 100644 staff inbox ver 1.0/staff-inbox-side-by-side-results.md
+ create mode 100644 staff inbox ver 1.0/test/staffInbox.cases.js
+ create mode 100644 staff inbox ver 1.0/test/staffInbox.test.js
+
+diff --git a/staff inbox ver 1.0/README.md b/staff inbox ver 1.0/README.md
+new file mode 100644
+index 0000000..76deb8b
+--- /dev/null
++++ b/staff inbox ver 1.0/README.md	
+@@ -0,0 +1,33 @@
++# Staff Inbox ver 1.0
++
++In-memory staff queue for messages that cannot be sent automatically: staff review drafts, human handoff, and privacy blocks.
++
++## Main API
++
++```js
++const { createStaffInbox } = require("./src/staffInbox");
++
++const inbox = createStaffInbox();
++const item = inbox.submit({ decision, draft, safety, normalizedMessage });
++inbox.list({ status: "open" });
++inbox.approve(item.id, "staff_name");
++inbox.edit(item.id, "edited draft", "staff_name");
++inbox.reject(item.id, "reason", "staff_name");
++inbox.takeOver(item.id, "staff_name");
++```
++
++## Priorities
++
++| Input | Priority |
++|---|---|
++| privacy block / safety block | `critical` |
++| handoff / escalation label | `high` |
++| staff review | `medium` |
++| other | `low` |
++
++## Run
++
++```bash
++node "staff inbox ver 1.0/test/staffInbox.test.js"
++node "staff inbox ver 1.0/scripts/writeSideBySideResults.js"
++```
+diff --git a/staff inbox ver 1.0/scripts/writeSideBySideResults.js b/staff inbox ver 1.0/scripts/writeSideBySideResults.js
+new file mode 100644
+index 0000000..ff45b06
+--- /dev/null
++++ b/staff inbox ver 1.0/scripts/writeSideBySideResults.js	
+@@ -0,0 +1,30 @@
++"use strict";
++
++const fs = require("node:fs");
++const path = require("node:path");
++const { createStaffInbox } = require("../src/staffInbox");
++const { standardCases } = require("../test/staffInbox.cases");
++
++const inbox = createStaffInbox();
++
++function cell(value) {
++  if (typeof value === "object") return JSON.stringify(value);
++  return String(value).replace(/\|/g, "\\|");
++}
++
++const lines = [
++  "# Staff Inbox ver 1.0 - Side-by-side results",
++  "",
++  "| Case | Expected | Actual |",
++  "|---|---|---|"
++];
++
++for (const c of standardCases) {
++  const item = inbox.submit(c);
++  lines.push(`| ${cell(c.name)} | ${cell({ priority: c.expectPriority, status: "open" })} | ${cell({ id: item.id, priority: item.priority, status: item.status, action: item.action })} |`);
++}
++lines.push("");
++
++const out = path.join(__dirname, "..", "staff-inbox-side-by-side-results.md");
++fs.writeFileSync(out, lines.join("\n"), "utf8");
++console.log(`Wrote ${standardCases.length} rows to ${out}`);
+diff --git a/staff inbox ver 1.0/src/staffInbox.js b/staff inbox ver 1.0/src/staffInbox.js
+new file mode 100644
+index 0000000..06ede6f
+--- /dev/null
++++ b/staff inbox ver 1.0/src/staffInbox.js	
+@@ -0,0 +1,123 @@
++"use strict";
++
++// Staff Inbox ver 1.0
++// In-memory queue for review, handoff, and blocked-message items.
++
++const STATUSES = Object.freeze({
++  OPEN: "open",
++  APPROVED: "approved",
++  EDITED: "edited",
++  REJECTED: "rejected",
++  TAKEN_OVER: "taken_over",
++  CLOSED: "closed"
++});
++
++function createStaffInbox(config = {}) {
++  const items = new Map();
++  for (const item of config.items || []) {
++    items.set(item.id, normalizeItem(item));
++  }
++
++  return {
++    submit(input) {
++      const item = createItem(input || {}, items.size + 1);
++      items.set(item.id, item);
++      return item;
++    },
++    list(filter = {}) {
++      return Array.from(items.values()).filter((item) => matches(filter, item));
++    },
++    get(id) {
++      return items.get(id) || null;
++    },
++    approve(id, actor = "staff") {
++      return transition(items, id, STATUSES.APPROVED, { actor });
++    },
++    edit(id, editedText, actor = "staff") {
++      return transition(items, id, STATUSES.EDITED, { actor, editedText });
++    },
++    reject(id, reason, actor = "staff") {
++      return transition(items, id, STATUSES.REJECTED, { actor, reason });
++    },
++    takeOver(id, actor = "staff") {
++      return transition(items, id, STATUSES.TAKEN_OVER, { actor });
++    }
++  };
++}
++
++function createItem(input, index) {
++  const decision = input.decision || {};
++  const draft = input.draft || {};
++  const safety = input.safety || {};
++  const normalizedMessage = input.normalizedMessage || {};
++  const id = input.id || `staff_${String(index).padStart(4, "0")}`;
++  const action = decision.action || draft.action || "staff_review";
++
++  return normalizeItem({
++    id,
++    status: STATUSES.OPEN,
++    priority: priorityFor({ decision, safety }),
++    action,
++    businessId: decision.businessId || normalizedMessage.businessId || "default",
++    channel: normalizedMessage.channel || "unknown",
++    senderId: normalizedMessage.senderId || "unknown_sender",
++    customerText: normalizedMessage.rawText || input.customerText || "",
++    draftText: draft.text || null,
++    safetyVerdict: safety.verdict || null,
++    safeToSend: Boolean(safety.safeToSend),
++    escalationLabel: decision.escalationLabel || null,
++    staffPacket: decision.staffPacket || null,
++    reasons: [...(decision.reasons || []), ...(safety.reasons || [])],
++    history: [{ status: STATUSES.OPEN, actor: "system", at: timestamp() }],
++    createdAt: timestamp(),
++    updatedAt: timestamp()
++  });
++}
++
++function transition(items, id, status, meta) {
++  const item = items.get(id);
++  if (!item) return null;
++  const updated = {
++    ...item,
++    status,
++    draftText: meta.editedText || item.draftText,
++    updatedAt: timestamp(),
++    history: [
++      ...item.history,
++      { status, actor: meta.actor || "staff", reason: meta.reason || null, at: timestamp() }
++    ]
++  };
++  items.set(id, updated);
++  return updated;
++}
++
++function priorityFor({ decision, safety }) {
++  if (decision.action === "block" || safety.verdict === "block") return "critical";
++  if (decision.action === "handoff" || decision.escalationLabel) return "high";
++  if (decision.action === "staff_review") return "medium";
++  return "low";
++}
++
++function matches(filter, item) {
++  if (filter.status && item.status !== filter.status) return false;
++  if (filter.businessId && item.businessId !== filter.businessId) return false;
++  if (filter.priority && item.priority !== filter.priority) return false;
++  return true;
++}
++
++function normalizeItem(item) {
++  return {
++    ...item,
++    history: Array.isArray(item.history) ? item.history : []
++  };
++}
++
++function timestamp() {
++  return new Date(0).toISOString();
++}
++
++module.exports = {
++  STATUSES,
++  createStaffInbox,
++  _internal: { priorityFor, matches }
++};
+diff --git a/staff inbox ver 1.0/staff-inbox-side-by-side-results.md b/staff inbox ver 1.0/staff-inbox-side-by-side-results.md
+new file mode 100644
+index 0000000..7b7968c
+--- /dev/null
++++ b/staff inbox ver 1.0/staff-inbox-side-by-side-results.md	
+@@ -0,0 +1,7 @@
++# Staff Inbox ver 1.0 - Side-by-side results
++
++| Case | Expected | Actual |
++|---|---|---|
++| staff review becomes medium priority open item | {"priority":"medium","status":"open"} | {"id":"staff_0001","priority":"medium","status":"open","action":"staff_review"} |
++| handoff becomes high priority | {"priority":"high","status":"open"} | {"id":"staff_0002","priority":"high","status":"open","action":"handoff"} |
++| block becomes critical priority | {"priority":"critical","status":"open"} | {"id":"staff_0003","priority":"critical","status":"open","action":"block"} |
+diff --git a/staff inbox ver 1.0/test/staffInbox.cases.js b/staff inbox ver 1.0/test/staffInbox.cases.js
+new file mode 100644
+index 0000000..a712502
+--- /dev/null
++++ b/staff inbox ver 1.0/test/staffInbox.cases.js	
+@@ -0,0 +1,30 @@
++"use strict";
++
++const standardCases = [
++  {
++    name: "staff review becomes medium priority open item",
++    decision: { action: "staff_review", businessId: "beauty_demo", reasons: ["policyRef=deposit_required"], staffPacket: { primaryIntent: "booking" } },
++    draft: { action: "staff_review", text: "草稿" },
++    safety: { verdict: "revise", safeToSend: false, reasons: ["staff only"] },
++    normalizedMessage: { channel: "whatsapp", senderId: "u1", rawText: "想book", businessId: "beauty_demo" },
++    expectPriority: "medium"
++  },
++  {
++    name: "handoff becomes high priority",
++    decision: { action: "handoff", businessId: "beauty_demo", escalationLabel: "complaint", reasons: [] },
++    draft: { action: "handoff", text: "【員工交接】" },
++    safety: { verdict: "revise", safeToSend: false, reasons: [] },
++    normalizedMessage: { channel: "website", senderId: "s1", rawText: "投訴", businessId: "beauty_demo" },
++    expectPriority: "high"
++  },
++  {
++    name: "block becomes critical priority",
++    decision: { action: "block", businessId: "beauty_demo", reasons: [] },
++    draft: { action: "block", text: null },
++    safety: { verdict: "block", safeToSend: false, reasons: [] },
++    normalizedMessage: { channel: "website", senderId: "s2", rawText: "card", businessId: "beauty_demo" },
++    expectPriority: "critical"
++  }
++];
++
++module.exports = { standardCases };
+diff --git a/staff inbox ver 1.0/test/staffInbox.test.js b/staff inbox ver 1.0/test/staffInbox.test.js
+new file mode 100644
+index 0000000..b1552ff
+--- /dev/null
++++ b/staff inbox ver 1.0/test/staffInbox.test.js	
+@@ -0,0 +1,31 @@
++"use strict";
++
++const assert = require("node:assert/strict");
++const { createStaffInbox, STATUSES } = require("../src/staffInbox");
++const { standardCases } = require("./staffInbox.cases");
++
++const inbox = createStaffInbox();
++const ids = [];
++
++for (const c of standardCases) {
++  const item = inbox.submit(c);
++  ids.push(item.id);
++  assert.equal(item.status, STATUSES.OPEN, `${c.name}: status mismatch`);
++  assert.equal(item.priority, c.expectPriority, `${c.name}: priority mismatch`);
++  assert.equal(item.businessId, c.normalizedMessage.businessId, `${c.name}: businessId mismatch`);
++}
++
++assert.equal(inbox.list().length, standardCases.length, "list should include submitted items");
++assert.equal(inbox.list({ priority: "high" }).length, 1, "priority filter should work");
++
++const approved = inbox.approve(ids[0], "alice");
++assert.equal(approved.status, STATUSES.APPROVED, "approve should transition status");
++assert.equal(approved.history.at(-1).actor, "alice", "approve should record actor");
++
++const edited = inbox.edit(ids[1], "updated draft", "bob");
++assert.equal(edited.status, STATUSES.EDITED, "edit should transition status");
++assert.equal(edited.draftText, "updated draft", "edit should update draft text");
++
++assert.equal(inbox.get("missing"), null, "missing item should return null");
++
++console.log(`staffInbox: ${standardCases.length + 4} tests passed`);
+-- 
+2.50.1 (Apple Git-155)
+
