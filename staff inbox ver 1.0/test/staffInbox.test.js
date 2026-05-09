@@ -37,4 +37,19 @@ const liveInbox = createStaffInbox();
 const liveItem = liveInbox.submit(standardCases[0]);
 assert.notEqual(liveItem.createdAt, "1970-01-01T00:00:00.000Z", "default clock should not use Unix epoch");
 
-console.log(`staffInbox: ${standardCases.length + 6} tests passed`);
+const sanitizedInbox = createStaffInbox({ nowFn: () => new Date("2026-05-09T12:00:00.000Z") });
+const sanitizedItem = sanitizedInbox.submit({
+  decision: { action: "handoff", businessId: "beauty_demo" },
+  draft: { action: "handoff", text: "staff only" },
+  safety: { verdict: "revise", safeToSend: false, reasons: [] },
+  normalizedMessage: {
+    businessId: "beauty_demo",
+    channel: "website",
+    senderId: "sensitive-customer",
+    rawText: "電話 9123 4567",
+    sanitizedText: "電話 [PHONE_1]"
+  }
+});
+assert.equal(sanitizedItem.customerText, "電話 [PHONE_1]", "staff inbox should store sanitized text instead of rawText by default");
+
+console.log(`staffInbox: ${standardCases.length + 7} tests passed`);

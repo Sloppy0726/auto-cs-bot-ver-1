@@ -62,7 +62,7 @@ function createItem(input, index, nowFn = () => new Date()) {
     businessId: decision.businessId || normalizedMessage.businessId || "default",
     channel: normalizedMessage.channel || "unknown",
     senderId: normalizedMessage.senderId || "unknown_sender",
-    customerText: normalizedMessage.rawText || input.customerText || "",
+    customerText: input.customerText || normalizedMessage.sanitizedText || "",
     draftText: draft.text || null,
     safetyVerdict: safety.verdict || null,
     safeToSend: Boolean(safety.safeToSend),

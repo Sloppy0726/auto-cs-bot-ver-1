@@ -501,4 +501,13 @@ for (const testCase of cases) {
   assert.ok(result.reason.length > 0, testCase.name);
 }
 
-console.log(`privacyGateway: ${cases.length} tests passed`);
+const redactedDefault = routeMessage("電話 9123 4567 email carmen@example.hk");
+assert.equal(redactedDefault.originalText, undefined, "gateway should not expose originalText by default");
+assert.equal(redactedDefault.filter.findings[0].value, undefined, "gateway findings should not expose raw values by default");
+assert.deepEqual(redactedDefault.filter.findings.map((item) => item.type).sort(), ["email", "hong_kong_phone"].sort(), "gateway should preserve finding types after redaction");
+
+const sensitiveOptIn = routeMessage("電話 9123 4567", { includeSensitive: true });
+assert.equal(sensitiveOptIn.originalText, "電話 9123 4567", "includeSensitive should expose originalText for controlled staff tools");
+assert.equal(sensitiveOptIn.filter.findings[0].value, "9123 4567", "includeSensitive should expose finding values for controlled staff tools");
+
+console.log(`privacyGateway: ${cases.length + 2} tests passed`);

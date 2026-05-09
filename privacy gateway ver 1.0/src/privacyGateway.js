@@ -12,21 +12,27 @@ function routeMessage(input, options = {}) {
   const filterResult = filterForLLM(input, options.filterOptions);
   const policy = buildPolicy(filterResult, options);
 
-  return {
+  const output = {
     route: policy.route,
     reason: policy.reason,
-    originalText: filterResult.originalText,
     sanitizedText: filterResult.sanitizedText,
     shouldCallLLM: policy.route !== ROUTES.BLOCK_AND_HANDOFF,
     requiresHumanReview: policy.route !== ROUTES.SEND_TO_LLM,
     filter: {
-      findings: filterResult.findings,
+      findings: redactFindings(filterResult.findings),
       hints: filterResult.hints,
       highestRisk: filterResult.highestRisk,
       shouldSendToLLM: filterResult.shouldSendToLLM,
       needsHumanReview: filterResult.needsHumanReview
     }
   };
+
+  if (options.includeSensitive === true) {
+    output.originalText = filterResult.originalText;
+    output.filter.findings = filterResult.findings;
+  }
+
+  return output;
 }
 
 function buildPolicy(filterResult, options) {
@@ -78,6 +84,10 @@ function buildPolicy(filterResult, options) {
   };
 }
 
+function redactFindings(findings = []) {
+  return findings.map(({ value, ...finding }) => finding);
+}
+
 function hasFinding(filterResult, type) {
   return filterResult.findings.some((finding) => finding.type === type);
 }
@@ -88,5 +98,6 @@ function hasHighRiskHint(filterResult) {
 
 module.exports = {
   ROUTES,
-  routeMessage
+  routeMessage,
+  _internal: { redactFindings }
 };

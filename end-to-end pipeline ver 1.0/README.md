@@ -49,6 +49,13 @@ node "end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js"
 
 ## Changelog
 
+### 2026-05-10 03:03:22 HKT - Data Exposure Reduction
+
+- **Changed:** Default privacy gateway output no longer exposes raw `originalText` or detector `value` fields.
+- **Added:** `includeSensitive: true` opt-in for controlled staff/debug tools that need raw privacy findings.
+- **Changed:** Staff inbox submissions from the pipeline store sanitized customer text by default.
+- **Verified:** `privacyGateway.test.js`, `staffInbox.test.js`, `pipeline.test.js`, and `draftEngine.test.js` passed after the change.
+
 ### 2026-05-10 02:45:32 HKT - Tenant-Bound Webhook Authorization
 
 - **Changed:** Signed webhook credentials can now be bound to a specific `businessId` using per-business `webhookSecrets`.

@@ -72,7 +72,7 @@ async function runMessage(input = {}, deps = {}) {
 
   let staffItem = null;
   if (!safety.safeToSend || !["auto_send", "clarify"].includes(draft.action)) {
-    staffItem = deps.inbox.submit({ decision, draft, safety, normalizedMessage, backendFacts, promotions });
+    staffItem = deps.inbox.submit({ decision, draft, safety, normalizedMessage, customerText: gateway.sanitizedText, backendFacts, promotions });
   }
 
   const outbound = buildOutboundMessage({ normalizedMessage, draft, safety, staffItem });

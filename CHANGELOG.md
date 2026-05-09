@@ -4,6 +4,13 @@
 
 ### Security
 
+#### 2026-05-10 03:03:22 HKT - Data Exposure Reduction
+
+- **Security fix:** Removed raw `originalText` and detector `value` fields from default privacy gateway output so ordinary pipeline results do not carry sensitive customer data.
+- **Controlled opt-in:** Added `includeSensitive: true` for controlled staff/debug tools that explicitly need raw text and finding values.
+- **Staff inbox hardening:** Staff inbox items now prefer sanitized customer text, preventing raw phone/email/HKID/payment-like content from being stored by default.
+- **Tests:** Added coverage for redacted gateway output, sensitive opt-in behavior, and sanitized staff inbox storage.
+
 #### 2026-05-10 02:45:32 HKT - Tenant-Bound Webhook Authorization
 
 - **Security fix:** Bound signed webhook credentials to an authorized `businessId` so request bodies can no longer choose another tenant/business context.
