@@ -14,13 +14,14 @@ const STATUSES = Object.freeze({
 
 function createStaffInbox(config = {}) {
   const items = new Map();
+  const nowFn = config.nowFn || (() => new Date());
   for (const item of config.items || []) {
     items.set(item.id, normalizeItem(item));
   }
 
   return {
     submit(input) {
-      const item = createItem(input || {}, items.size + 1);
+      const item = createItem(input || {}, items.size + 1, nowFn);
       items.set(item.id, item);
       return item;
     },
@@ -31,21 +32,21 @@ function createStaffInbox(config = {}) {
       return items.get(id) || null;
     },
     approve(id, actor = "staff") {
-      return transition(items, id, STATUSES.APPROVED, { actor });
+      return transition(items, id, STATUSES.APPROVED, { actor }, nowFn);
     },
     edit(id, editedText, actor = "staff") {
-      return transition(items, id, STATUSES.EDITED, { actor, editedText });
+      return transition(items, id, STATUSES.EDITED, { actor, editedText }, nowFn);
     },
     reject(id, reason, actor = "staff") {
-      return transition(items, id, STATUSES.REJECTED, { actor, reason });
+      return transition(items, id, STATUSES.REJECTED, { actor, reason }, nowFn);
     },
     takeOver(id, actor = "staff") {
-      return transition(items, id, STATUSES.TAKEN_OVER, { actor });
+      return transition(items, id, STATUSES.TAKEN_OVER, { actor }, nowFn);
     }
   };
 }
 
-function createItem(input, index) {
+function createItem(input, index, nowFn = () => new Date()) {
   const decision = input.decision || {};
   const draft = input.draft || {};
   const safety = input.safety || {};
@@ -70,23 +71,23 @@ function createItem(input, index) {
     backendFacts: input.backendFacts || null,
     promotions: input.promotions || null,
     reasons: [...(decision.reasons || []), ...(safety.reasons || [])],
-    history: [{ status: STATUSES.OPEN, actor: "system", at: timestamp() }],
-    createdAt: timestamp(),
-    updatedAt: timestamp()
+    history: [{ status: STATUSES.OPEN, actor: "system", at: timestamp(nowFn) }],
+    createdAt: timestamp(nowFn),
+    updatedAt: timestamp(nowFn)
   });
 }
 
-function transition(items, id, status, meta) {
+function transition(items, id, status, meta, nowFn = () => new Date()) {
   const item = items.get(id);
   if (!item) return null;
   const updated = {
     ...item,
     status,
     draftText: meta.editedText || item.draftText,
-    updatedAt: timestamp(),
+    updatedAt: timestamp(nowFn),
     history: [
       ...item.history,
-      { status, actor: meta.actor || "staff", reason: meta.reason || null, at: timestamp() }
+      { status, actor: meta.actor || "staff", reason: meta.reason || null, at: timestamp(nowFn) }
     ]
   };
   items.set(id, updated);
@@ -114,8 +115,8 @@ function normalizeItem(item) {
   };
 }
 
-function timestamp() {
-  return new Date(0).toISOString();
+function timestamp(nowFn = () => new Date()) {
+  return nowFn().toISOString();
 }
 
 module.exports = {
