@@ -16,6 +16,7 @@ const { checkDraft } = require("../../safety checker ver 1.0/src/safetyChecker")
 const { createBusinessBackend } = require("../../private business backend mock ver 1.0/src/businessBackendMock");
 const { createStaffInbox } = require("../../staff inbox ver 1.0/src/staffInbox");
 const { createPromotionStore } = require("../../google drive promo sync ver 1.0/src/promoSync");
+const { hkDateKey } = require("../../google drive promo sync ver 1.0/src/hkTime");
 const promoSeed = require("../../google drive promo sync ver 1.0/seed/promoSeed");
 
 function createPipeline(config = {}) {
@@ -63,7 +64,7 @@ async function runMessage(input = {}, deps = {}) {
   const backendFacts = deps.backend.getMinimalFacts({
     businessId: normalizedMessage.businessId,
     intent,
-    query: inferBackendQuery({ normalizedMessage, intent })
+    query: inferBackendQuery({ normalizedMessage, intent, now: deps.nowFn() })
   });
   const modelRoute = routeModel({ decision, intent, gateway });
   const draft = await generateDraft({ decision, knowledge, intent, gateway, promotions }, { llmAdapter: deps.llmAdapter });
@@ -95,10 +96,10 @@ async function runMessage(input = {}, deps = {}) {
   });
 }
 
-function inferBackendQuery({ normalizedMessage, intent }) {
+function inferBackendQuery({ normalizedMessage, intent, now }) {
   const text = normalizedMessage.rawText || "";
   const query = { businessId: normalizedMessage.businessId };
-  const date = text.includes("今晚") ? "2026-05-09" : null;
+  const date = text.includes("今晚") ? hkDateKey(now || new Date()) : null;
   const timeMatch = text.match(/(\d{1,2})(?::(\d{2}))?\s*(?:點|:)?/);
   if (date) query.date = date;
   if (timeMatch) {

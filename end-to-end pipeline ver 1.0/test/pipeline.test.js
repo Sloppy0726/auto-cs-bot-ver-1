@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { createPipeline } = require("../src/pipeline");
+const { createPipeline, _internal } = require("../src/pipeline");
 const { standardCases } = require("./pipeline.cases");
 
 async function run() {
@@ -33,8 +33,15 @@ async function run() {
     }
   }
 
+  const tonightQuery = _internal.inferBackendQuery({
+    normalizedMessage: { businessId: "beauty_demo", rawText: "想book今晚個facial有冇位" },
+    intent: { primaryIntent: "booking" },
+    now: new Date("2026-06-02T16:30:00.000Z")
+  });
+  assert.equal(tonightQuery.date, "2026-06-03", "tonight should resolve using Hong Kong date from injected clock");
+
   assert.ok(pipeline.inbox.list().length >= 2, "staff inbox should collect held items");
-  console.log(`pipeline: ${standardCases.length + 1} tests passed`);
+  console.log(`pipeline: ${standardCases.length + 2} tests passed`);
 }
 
 run().catch((error) => {
