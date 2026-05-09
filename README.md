@@ -2,7 +2,7 @@
 
 Privacy-first Cantonese AI receptionist for Hong Kong SMEs.
 
-The product goal is to answer repetitive WhatsApp / Instagram / Facebook / website enquiries quickly while keeping private customer data away from the LLM, keeping business policy in deterministic code, and routing risky replies to staff.
+The product goal is to answer repetitive WhatsApp / Instagram / Facebook / website enquiries quickly while letting SMEs configure the bot through both a website and a mobile app, including adding approved knowledge and reviewing bot replies, keeping private customer data away from the LLM, keeping business policy in deterministic code, and routing risky replies to staff.
 
 ## Current Status
 
