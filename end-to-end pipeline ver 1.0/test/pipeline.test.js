@@ -5,9 +5,11 @@ const { createPipeline, _internal } = require("../src/pipeline");
 const { standardCases } = require("./pipeline.cases");
 
 async function run() {
+  const adapterCalls = [];
   const pipeline = createPipeline({
     nowFn: () => new Date("2026-05-09T00:00:00.000Z"),
     llmAdapter: async (prompt, context) => {
+      adapterCalls.push(context);
       if (context.decision.action === "handoff") {
         return { text: "【員工交接】\n意圖：" + context.intent.primaryIntent + "\n建議下一步：由同事跟進。" };
       }
@@ -39,9 +41,10 @@ async function run() {
     now: new Date("2026-06-02T16:30:00.000Z")
   });
   assert.equal(tonightQuery.date, "2026-06-03", "tonight should resolve using Hong Kong date from injected clock");
+  assert.ok(adapterCalls.some((context) => context.modelRoute?.model), "draft adapter context should include modelRoute");
 
   assert.ok(pipeline.inbox.list().length >= 2, "staff inbox should collect held items");
-  console.log(`pipeline: ${standardCases.length + 2} tests passed`);
+  console.log(`pipeline: ${standardCases.length + 3} tests passed`);
 }
 
 run().catch((error) => {

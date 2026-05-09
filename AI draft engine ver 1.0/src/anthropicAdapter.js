@@ -25,7 +25,8 @@ function createAnthropicAdapter(config = {}) {
       throw new Error("This Node.js runtime does not expose global fetch.");
     }
 
-    const model = config.model || chooseModel(context);
+    const model = config.model || context.modelRoute?.model || chooseModel(context);
+    const maxTokens = config.maxTokens || context.modelRoute?.maxTokens || 700;
     const systemPrompt = context.systemPrompt || config.systemPrompt || "You are a grounded customer-support draft engine.";
     const userPrompt = context.userPrompt || String(prompt || "");
 
@@ -38,7 +39,7 @@ function createAnthropicAdapter(config = {}) {
       },
       body: JSON.stringify({
         model,
-        max_tokens: config.maxTokens || 700,
+        max_tokens: maxTokens,
         system: [
           {
             type: "text",

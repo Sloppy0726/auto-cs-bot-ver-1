@@ -93,7 +93,7 @@ async function defaultLlmAdapter(prompt) {
 }
 
 async function generateDraft(input, options = {}) {
-  const { decision = {}, knowledge = {}, intent = {}, gateway = {}, promotions = null } = input || {};
+  const { decision = {}, knowledge = {}, intent = {}, gateway = {}, promotions = null, modelRoute = options.modelRoute || null } = input || {};
   const action = decision.action;
   const llmAdapter = options.llmAdapter || defaultLlmAdapter;
   const tone = pickTone(decision, knowledge);
@@ -154,6 +154,7 @@ async function generateDraft(input, options = {}) {
       decision,
       knowledge,
       promotions,
+      modelRoute,
       intent,
       gateway,
       systemPrompt: prompt.systemPrompt,
@@ -183,6 +184,7 @@ async function generateDraft(input, options = {}) {
       decision,
       knowledge,
       promotions,
+      modelRoute,
       intent,
       gateway,
       systemPrompt: prompt.systemPrompt,

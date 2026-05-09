@@ -80,6 +80,7 @@ async function run() {
   const promoCalls = [];
   await generateDraft({
     ...beautyPricing,
+    modelRoute: { provider: "anthropic", model: "claude-haiku-4-5-20251001", maxTokens: 321 },
     promotions: {
       activePromotions: [{
         id: "beauty_may_small_face_trial",
@@ -99,6 +100,7 @@ async function run() {
   assert.ok(promoCalls[0].prompt.includes("Active time-bound promotions"), "prompt should include promotion section");
   assert.ok(promoCalls[0].prompt.includes("小顏管理五月體驗優惠"), "prompt should include active promotion title");
   assert.equal(promoCalls[0].context.promotions.grounding[0], "beauty_may_small_face_trial", "context should carry promotion grounding");
+  assert.equal(promoCalls[0].context.modelRoute.model, "claude-haiku-4-5-20251001", "context should carry model route");
 
   const beautyBooking = buildPipeline({ businessId: "beauty_demo", input: "想book今晚個facial有冇位" });
   const guarded = await generateDraft(beautyBooking, {
@@ -124,7 +126,7 @@ async function run() {
     "handoff/complaint should choose complex model"
   );
 
-  console.log(`draftEngine: ${standardCases.length + 8} tests passed`);
+  console.log(`draftEngine: ${standardCases.length + 9} tests passed`);
 }
 
 run().catch((error) => {

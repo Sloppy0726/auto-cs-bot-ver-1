@@ -67,7 +67,7 @@ async function runMessage(input = {}, deps = {}) {
     query: inferBackendQuery({ normalizedMessage, intent, now: deps.nowFn() })
   });
   const modelRoute = routeModel({ decision, intent, gateway });
-  const draft = await generateDraft({ decision, knowledge, intent, gateway, promotions }, { llmAdapter: deps.llmAdapter });
+  const draft = await generateDraft({ decision, knowledge, intent, gateway, promotions, modelRoute }, { llmAdapter: deps.llmAdapter, modelRoute });
   const safety = checkDraft({ draft, decision, knowledge, intent, gateway });
 
   let staffItem = null;
