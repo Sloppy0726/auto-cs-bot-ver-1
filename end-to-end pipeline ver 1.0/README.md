@@ -38,7 +38,7 @@ const result = await pipeline.runMessage({
 
 ## Server
 
-`src/server.js` exposes `createWebhookServer()` using Node's built-in `http` module. It supports `POST /webhook`. Signed mode requires `x-webhook-timestamp` and `x-webhook-signature`; the signature is HMAC-SHA256 over `timestamp.rawBody`.
+`src/server.js` exposes `createWebhookServer()` using Node's built-in `http` module. It supports `POST /webhook`. Signed mode requires `x-webhook-timestamp` and `x-webhook-signature`; the signature is HMAC-SHA256 over `timestamp.rawBody`. For tenant isolation, configure per-business `webhookSecrets` so the verified credential derives the authorized `businessId` before the pipeline runs.
 
 ## Run
 
@@ -48,6 +48,13 @@ node "end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js"
 ```
 
 ## Changelog
+
+### 2026-05-10 02:45:32 HKT - Tenant-Bound Webhook Authorization
+
+- **Changed:** Signed webhook credentials can now be bound to a specific `businessId` using per-business `webhookSecrets`.
+- **Added:** Server-side authorization rejects signed requests when the payload `businessId` conflicts with the credential businessId.
+- **Added:** Payloads without `businessId` inherit the verified credential businessId before reaching `pipeline.runMessage()`.
+- **Verified:** `end-to-end pipeline ver 1.0/test/server.test.js` covers tenant-bound credentials and cross-business impersonation attempts.
 
 ### 2026-05-10 02:26:31 HKT - Webhook Authentication Hardening
 

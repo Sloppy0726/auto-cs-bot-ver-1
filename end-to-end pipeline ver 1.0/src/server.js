@@ -17,8 +17,8 @@ function createWebhookServer(config = {}) {
 
     try {
       const body = await readBody(req, config.maxBodyBytes);
-      verifyWebhookRequest(req, body, config);
-      const payload = parseJson(body);
+      const authContext = verifyWebhookRequest(req, body, config);
+      const payload = authorizeWebhookPayload(parseJson(body), authContext, config);
       const result = await pipeline.runMessage(payload);
       writeJson(res, 200, {
         finalStatus: result.finalStatus,
@@ -64,9 +64,9 @@ function parseJson(body) {
 }
 
 function verifyWebhookRequest(req, body, config = {}) {
-  const secret = config.webhookSecret || process.env.WEBHOOK_SECRET;
-  if (!secret && config.allowUnsignedWebhooks !== true) throw authError("webhook_secret_required");
-  if (!secret) return;
+  const candidates = webhookSecretCandidates(config);
+  if (candidates.length === 0 && config.allowUnsignedWebhooks !== true) throw authError("webhook_secret_required");
+  if (candidates.length === 0) return { businessId: config.webhookBusinessId || null, unsigned: true };
 
   const timestamp = getHeader(req, "x-webhook-timestamp");
   const signature = getHeader(req, "x-webhook-signature");
@@ -74,10 +74,59 @@ function verifyWebhookRequest(req, body, config = {}) {
 
   verifyFreshTimestamp(timestamp, config);
 
-  const expected = signBody({ body, timestamp, secret });
-  if (!constantTimeEqual(normalizeSignature(signature), expected)) {
-    throw authError("invalid_webhook_signature");
+  const matchingCredential = candidates.find((candidate) => {
+    const expected = signBody({ body, timestamp, secret: candidate.secret });
+    return constantTimeEqual(normalizeSignature(signature), expected);
+  });
+  if (!matchingCredential) throw authError("invalid_webhook_signature");
+
+  return {
+    businessId: matchingCredential.businessId || null,
+    credentialId: matchingCredential.id || matchingCredential.businessId || null
+  };
+}
+
+function webhookSecretCandidates(config = {}) {
+  const candidates = [];
+  const singleSecret = config.webhookSecret || process.env.WEBHOOK_SECRET;
+  if (singleSecret) {
+    candidates.push({
+      id: "default",
+      businessId: config.webhookBusinessId || null,
+      secret: singleSecret
+    });
   }
+
+  const tenantSecrets = config.webhookSecrets || {};
+  if (Array.isArray(tenantSecrets)) {
+    for (const item of tenantSecrets) {
+      if (!item?.secret) continue;
+      candidates.push({
+        id: item.id || item.businessId || null,
+        businessId: item.businessId || null,
+        secret: item.secret
+      });
+    }
+  } else {
+    for (const [businessId, secret] of Object.entries(tenantSecrets)) {
+      if (!secret) continue;
+      candidates.push({ id: businessId, businessId, secret });
+    }
+  }
+
+  return candidates;
+}
+
+function authorizeWebhookPayload(payload, authContext = {}, config = {}) {
+  const authorizedBusinessId = authContext.businessId || config.webhookBusinessId || null;
+  if (!authorizedBusinessId) return payload;
+
+  const requestedBusinessId = payload?.businessId;
+  if (requestedBusinessId && requestedBusinessId !== authorizedBusinessId) {
+    throw authError("business_id_not_authorized");
+  }
+
+  return { ...payload, businessId: authorizedBusinessId };
 }
 
 function verifyFreshTimestamp(timestamp, config = {}) {
@@ -145,6 +194,7 @@ function writeJson(res, statusCode, payload) {
 module.exports = {
   createWebhookServer,
   _internal: {
+    authorizeWebhookPayload,
     constantTimeEqual,
     parseJson,
     publicErrorMessage,
@@ -154,6 +204,7 @@ module.exports = {
     statusCodeForError,
     verifyFreshTimestamp,
     verifyWebhookRequest,
+    webhookSecretCandidates,
     writeJson
   }
 };

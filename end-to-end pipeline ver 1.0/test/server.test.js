@@ -49,10 +49,31 @@ const { createWebhookServer, _internal } = require("../src/server");
     { webhookSecret: secret, nowFn: () => new Date(Number(timestamp) * 1000) }
   ), /missing_webhook_signature/, "signed mode should require signature headers");
 
+  const tenantContext = _internal.verifyWebhookRequest(
+    requestWithHeaders({
+      "x-webhook-timestamp": timestamp,
+      "x-webhook-signature": "sha256=" + signature
+    }),
+    body,
+    { webhookSecrets: { restaurant_demo: secret }, nowFn: () => new Date(Number(timestamp) * 1000) }
+  );
+  assert.equal(tenantContext.businessId, "restaurant_demo", "matching tenant credentials should identify the authorized business");
+  assert.deepEqual(
+    _internal.authorizeWebhookPayload({ channel: "website", text: "hello" }, tenantContext),
+    { channel: "website", text: "hello", businessId: "restaurant_demo" },
+    "payloads without businessId should inherit the credential businessId"
+  );
+  assert.throws(() => _internal.authorizeWebhookPayload(
+    { channel: "website", businessId: "beauty_demo", text: "hello" },
+    tenantContext
+  ), /business_id_not_authorized/, "payload businessId must not conflict with credential businessId");
+
   await assertServerRejectsUnsignedBeforePipeline({ body, secret, timestamp });
   await assertServerAcceptsSignedWebhook({ body, secret, timestamp, signature });
+  await assertServerDerivesBusinessIdFromCredential({ secret, timestamp });
+  await assertServerRejectsBusinessIdImpersonation({ secret, timestamp });
 
-  console.log("server: 12 tests passed");
+  console.log("server: 17 tests passed");
 })();
 
 function requestWithHeaders(headers) {
@@ -136,4 +157,67 @@ async function assertServerAcceptsSignedWebhook({ body, secret, timestamp, signa
   assert.equal(response.statusCode, 200);
   assert.equal(response.body.finalStatus, "ready_to_send");
   assert.deepEqual(receivedPayload, JSON.parse(body));
+}
+
+
+async function assertServerDerivesBusinessIdFromCredential({ secret, timestamp }) {
+  let receivedPayload = null;
+  const body = JSON.stringify({ channel: "website", sessionId: "s2", text: "hello" });
+  const signature = _internal.signBody({ body, timestamp, secret });
+  const server = createWebhookServer({
+    webhookSecrets: { restaurant_demo: secret },
+    nowFn: () => new Date(Number(timestamp) * 1000),
+    pipeline: {
+      async runMessage(payload) {
+        receivedPayload = payload;
+        return {
+          finalStatus: "ready_to_send",
+          outbound: { status: "ready_to_send", payload: { text: "ok" } },
+          staffItem: null,
+          decision: { action: "auto_send" }
+        };
+      }
+    }
+  });
+
+  const response = await sendJson({
+    server,
+    payload: body,
+    headers: {
+      "x-webhook-timestamp": timestamp,
+      "x-webhook-signature": "sha256=" + signature
+    }
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(receivedPayload.businessId, "restaurant_demo");
+}
+
+async function assertServerRejectsBusinessIdImpersonation({ secret, timestamp }) {
+  let called = false;
+  const body = JSON.stringify({ channel: "website", businessId: "beauty_demo", sessionId: "s3", text: "hello" });
+  const signature = _internal.signBody({ body, timestamp, secret });
+  const server = createWebhookServer({
+    webhookSecrets: { restaurant_demo: secret },
+    nowFn: () => new Date(Number(timestamp) * 1000),
+    pipeline: {
+      async runMessage() {
+        called = true;
+        throw new Error("pipeline should not run");
+      }
+    }
+  });
+
+  const response = await sendJson({
+    server,
+    payload: body,
+    headers: {
+      "x-webhook-timestamp": timestamp,
+      "x-webhook-signature": "sha256=" + signature
+    }
+  });
+
+  assert.equal(response.statusCode, 401);
+  assert.equal(response.body.error, "business_id_not_authorized");
+  assert.equal(called, false, "pipeline must not run when signed credentials claim another businessId");
 }
