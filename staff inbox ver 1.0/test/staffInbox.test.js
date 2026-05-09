@@ -16,7 +16,11 @@ for (const c of standardCases) {
 }
 
 assert.equal(inbox.list().length, standardCases.length, "list should include submitted items");
-assert.equal(inbox.list({ priority: "high" }).length, 1, "priority filter should work");
+assert.equal(
+  inbox.list({ priority: "high" }).length,
+  standardCases.filter((item) => item.expectPriority === "high").length,
+  "priority filter should work"
+);
 
 const approved = inbox.approve(ids[0], "alice");
 assert.equal(approved.status, STATUSES.APPROVED, "approve should transition status");

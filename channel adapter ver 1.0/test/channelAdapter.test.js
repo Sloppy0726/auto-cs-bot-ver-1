@@ -9,7 +9,7 @@ for (const c of standardCases) {
   assert.equal(result.channel, c.expectChannel, `${c.name}: channel mismatch`);
   assert.equal(result.rawText, c.expectText, `${c.name}: text mismatch`);
   assert.equal(result.senderId, c.expectSender, `${c.name}: sender mismatch`);
-  assert.deepEqual(result.errors, [], `${c.name}: errors mismatch`);
+  assert.deepEqual(result.errors, c.expectErrors || [], `${c.name}: errors mismatch`);
 }
 
 const normalized = normalizeInbound({ channel: "website", sessionId: "s1", text: "hello" });

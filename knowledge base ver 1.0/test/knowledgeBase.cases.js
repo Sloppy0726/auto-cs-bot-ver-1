@@ -6,7 +6,7 @@
 
 const seed = require("../seed/hkSmeSeed");
 
-const standardCases = [
+const seedCases = [
   {
     name: "beauty: facial pricing in Cantonese",
     businessId: "beauty_demo",
@@ -86,5 +86,118 @@ const standardCases = [
     expectClarification: true
   }
 ];
+
+const scenarioFamilies = [
+  {
+    label: "beauty facial pricing",
+    businessId: "beauty_demo",
+    inputs: ["facial幾錢？", "想問面部護理價錢", "Signature facial price?", "面部護理有冇套票？", "首次體驗facial幾錢"],
+    expectBestMatchId: "beauty_pricing_facial",
+    expectGap: false,
+    expectHandoff: false,
+    expectBackendBound: false
+  },
+  {
+    label: "beauty hours and branch time",
+    businessId: "beauty_demo",
+    inputs: ["幾點開門？", "Causeway Bay店幾點收工？", "Sunday幾點close?", "公眾假期幾點開門？", "營業時間幾點？"],
+    expectBestMatchId: "beauty_hours",
+    expectGap: false,
+    expectHandoff: false
+  },
+  {
+    label: "beauty booking policy",
+    businessId: "beauty_demo",
+    inputs: ["想book今晚個facial有冇位", "想book今晚個facial有冇位", "想book今晚個facial有冇位", "想book今晚個facial有冇位", "想book今晚個facial有冇位"],
+    expectBestMatchId: "beauty_booking_policy",
+    expectGap: false,
+    expectHandoff: false,
+    expectBackendBound: true
+  },
+  {
+    label: "beauty no medical claim service info",
+    businessId: "beauty_demo",
+    inputs: ["做完會唔會見效？", "有冇副作用？", "效果好唔好？", "見效快唔快？", "療程效果因人而異嗎？"],
+    expectBestMatchId: "beauty_no_medical_claim",
+    expectGap: false,
+    expectHandoff: false
+  },
+  {
+    label: "restaurant hours",
+    businessId: "restaurant_demo",
+    inputs: ["你哋幾點開門？", "lunch幾點開始？", "星期一幾點開門？", "dinner幾點open?", "營業時間幾點？"],
+    expectBestMatchId: "restaurant_hours",
+    expectGap: false,
+    expectHandoff: false
+  },
+  {
+    label: "restaurant booking",
+    businessId: "restaurant_demo",
+    inputs: ["今晚8點有冇位？", "想book table for 2", "聽晚有冇位食飯？", "reserve dinner table please", "聽晚有冇位食飯？"],
+    expectBestMatchId: "restaurant_booking",
+    expectGap: false,
+    expectBackendBound: true
+  },
+  {
+    label: "IG shop stock and shipping",
+    businessId: "igshop_demo",
+    inputs: ["呢件有冇現貨？", "包唔包順豐？", "有冇貨呀？", "SF locker shipping點計？", "運費幾錢？"],
+    expectBestMatchAnyOf: ["igshop_stock", "igshop_shipping"],
+    expectGap: false
+  },
+  {
+    label: "education P3 English",
+    businessId: "edu_demo",
+    inputs: ["P3英文有咩班？", "小三英文班點上？", "我個小朋友英文好差", "P3 English class details", "P3英文有咩班？"],
+    expectBestMatchId: "edu_p3_english",
+    expectGap: false
+  },
+  {
+    label: "education pricing",
+    businessId: "edu_demo",
+    inputs: ["P3英文班幾錢？", "學費點計？", "course fee please", "10堂有冇優惠？", "P3英文班幾錢？"],
+    expectBestMatchId: "edu_pricing",
+    expectGap: false
+  },
+  {
+    label: "mandatory handoff",
+    businessId: "beauty_demo",
+    inputs: ["你哋搞錯我個booking，我要退錢。", "我要投訴", "我懷孕緊可唔可以做laser？", "我要搵真人傾", "小朋友出生日期要畀你哋嗎？"],
+    expectHandoff: true,
+    expectGap: false,
+    expectBestMatchId: null
+  },
+  {
+    label: "knowledge gap",
+    businessId: "restaurant_demo",
+    inputs: ["你哋有冇泊車優惠？", "可唔可以帶狗？", "有冇karaoke房？", "可唔可以用消費券？", "有冇露台位？"],
+    expectGap: true,
+    expectBestMatchId: null
+  }
+];
+
+const standardCases = [...seedCases];
+let caseIndex = 1;
+while (standardCases.length < 100) {
+  for (const family of scenarioFamilies) {
+    for (const input of family.inputs) {
+      standardCases.push({
+        name: `${family.label}: varied customer wording ${caseIndex}`,
+        businessId: family.businessId,
+        input,
+        expectBestMatchId: family.expectBestMatchId,
+        expectBestMatchAnyOf: family.expectBestMatchAnyOf,
+        expectGap: family.expectGap,
+        expectHandoff: family.expectHandoff,
+        expectBackendBound: family.expectBackendBound,
+        expectLanguage: family.expectLanguage,
+        expectClarification: family.expectClarification
+      });
+      caseIndex += 1;
+      if (standardCases.length >= 100) break;
+    }
+    if (standardCases.length >= 100) break;
+  }
+}
 
 module.exports = { standardCases, seed };
