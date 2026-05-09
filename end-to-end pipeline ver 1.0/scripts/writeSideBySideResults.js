@@ -13,8 +13,11 @@ function cell(value) {
 
 async function main() {
   const pipeline = createPipeline({
+    nowFn: () => new Date("2026-05-09T00:00:00.000Z"),
     llmAdapter: async (prompt, context) => {
       if (context.decision.action === "handoff") return { text: "【員工交接】\n意圖：" + context.intent.primaryIntent + "\n建議下一步：由同事跟進。" };
+      const promo = context.promotions?.bestPromotion;
+      if (promo) return { text: `${context.knowledge.bestMatch?.answer || ""}\n優惠：${promo.summary}`.trim() };
       return { text: context.knowledge.bestMatch?.answer || "請問你想了解邊方面？" };
     }
   });
@@ -28,7 +31,7 @@ async function main() {
   ];
   for (const c of standardCases) {
     const result = await pipeline.runMessage(c.input);
-    lines.push(`| ${cell(c.name)} | ${cell({ finalStatus: c.expectStatus, action: c.expectAction })} | ${cell({ finalStatus: result.finalStatus, action: result.decision.action, safety: result.safety.verdict, outbound: result.outbound?.status, staffItemId: result.staffItem?.id || null })} |`);
+    lines.push(`| ${cell(c.name)} | ${cell({ finalStatus: c.expectStatus, action: c.expectAction, promotion: c.expectPromotion || "" })} | ${cell({ finalStatus: result.finalStatus, action: result.decision.action, safety: result.safety.verdict, promotion: result.promotions?.bestPromotion?.id || "", outbound: result.outbound?.status, staffItemId: result.staffItem?.id || null })} |`);
   }
   lines.push("");
 

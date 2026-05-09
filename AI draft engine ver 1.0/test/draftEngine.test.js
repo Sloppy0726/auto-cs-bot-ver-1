@@ -77,6 +77,29 @@ async function run() {
   assert.equal(defaultResult.llmUsed, true, "default stub should mark LLM used for staff_review");
   assert.ok(defaultResult.text.startsWith("[stub] "), "default LLM adapter should return stub text");
 
+  const promoCalls = [];
+  await generateDraft({
+    ...beautyPricing,
+    promotions: {
+      activePromotions: [{
+        id: "beauty_may_small_face_trial",
+        title: "小顏管理五月體驗優惠",
+        summary: "小顏管理五月首次體驗 HK$480，原價 HK$880。",
+        expiresOn: "2026-05-31",
+        staffInstruction: "唔好承諾一定瘦面。"
+      }],
+      grounding: ["beauty_may_small_face_trial"]
+    }
+  }, {
+    llmAdapter: async (prompt, context) => {
+      promoCalls.push({ prompt, context });
+      return { text: "草稿：五月體驗優惠可由同事覆核後回覆。" };
+    }
+  });
+  assert.ok(promoCalls[0].prompt.includes("Active time-bound promotions"), "prompt should include promotion section");
+  assert.ok(promoCalls[0].prompt.includes("小顏管理五月體驗優惠"), "prompt should include active promotion title");
+  assert.equal(promoCalls[0].context.promotions.grounding[0], "beauty_may_small_face_trial", "context should carry promotion grounding");
+
   const beautyBooking = buildPipeline({ businessId: "beauty_demo", input: "想book今晚個facial有冇位" });
   const guarded = await generateDraft(beautyBooking, {
     llmAdapter: async () => ({ text: "已確認預約今晚8點，客人可以直接嚟。" })
@@ -101,7 +124,7 @@ async function run() {
     "handoff/complaint should choose complex model"
   );
 
-  console.log(`draftEngine: ${standardCases.length + 5} tests passed`);
+  console.log(`draftEngine: ${standardCases.length + 8} tests passed`);
 }
 
 run().catch((error) => {

@@ -14,6 +14,13 @@ const standardCases = [
     expectAction: "staff_review"
   },
   {
+    name: "beauty small-face promo is read before staff draft",
+    input: { channel: "whatsapp", businessId: "beauty_demo", from: "u-small-face", text: "想了解小顏項目同點收費" },
+    expectStatus: "staff_review",
+    expectAction: "staff_review",
+    expectPromotion: "beauty_may_small_face_trial"
+  },
+  {
     name: "restaurant parking clarify can send",
     input: { channel: "website", businessId: "restaurant_demo", sessionId: "s3", text: "你哋有冇泊車優惠？" },
     expectStatus: "ready_to_send",

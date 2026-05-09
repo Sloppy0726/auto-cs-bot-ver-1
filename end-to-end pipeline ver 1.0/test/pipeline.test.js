@@ -6,10 +6,13 @@ const { standardCases } = require("./pipeline.cases");
 
 async function run() {
   const pipeline = createPipeline({
+    nowFn: () => new Date("2026-05-09T00:00:00.000Z"),
     llmAdapter: async (prompt, context) => {
       if (context.decision.action === "handoff") {
         return { text: "【員工交接】\n意圖：" + context.intent.primaryIntent + "\n建議下一步：由同事跟進。" };
       }
+      const promo = context.promotions?.bestPromotion;
+      if (promo) return { text: `${context.knowledge.bestMatch?.answer || ""}\n優惠：${promo.summary}`.trim() };
       return { text: context.knowledge.bestMatch?.answer || "請問你想了解邊方面？" };
     }
   });
@@ -23,6 +26,10 @@ async function run() {
       assert.ok(result.safety.safeToSend, `${c.name}: safety should allow send`);
     } else {
       assert.ok(result.staffItem, `${c.name}: staff item missing`);
+    }
+    if (c.expectPromotion) {
+      assert.equal(result.promotions.bestPromotion?.id, c.expectPromotion, `${c.name}: promotion mismatch`);
+      assert.equal(result.staffItem.promotions.bestPromotion.id, c.expectPromotion, `${c.name}: staff item promotion mismatch`);
     }
   }
 

@@ -15,20 +15,25 @@ const { routeModel } = require("../../model router ver 1.0/src/modelRouter");
 const { checkDraft } = require("../../safety checker ver 1.0/src/safetyChecker");
 const { createBusinessBackend } = require("../../private business backend mock ver 1.0/src/businessBackendMock");
 const { createStaffInbox } = require("../../staff inbox ver 1.0/src/staffInbox");
+const { createPromotionStore } = require("../../google drive promo sync ver 1.0/src/promoSync");
+const promoSeed = require("../../google drive promo sync ver 1.0/seed/promoSeed");
 
 function createPipeline(config = {}) {
   const kb = config.knowledgeBase || createKnowledgeBase({ entries: config.seed || seed });
   const backend = config.backend || createBusinessBackend();
   const inbox = config.staffInbox || createStaffInbox();
+  const promotionStore = config.promotionStore || createPromotionStore({ entries: config.promotionEntries || promoSeed });
   const llmAdapter = config.llmAdapter;
+  const nowFn = config.nowFn || (() => new Date());
 
   return {
     async runMessage(input) {
-      return runMessage(input, { kb, backend, inbox, llmAdapter, config });
+      return runMessage(input, { kb, backend, inbox, promotionStore, llmAdapter, nowFn, config });
     },
     inbox,
     backend,
-    kb
+    kb,
+    promotionStore
   };
 }
 
@@ -47,6 +52,12 @@ async function runMessage(input = {}, deps = {}) {
   const gateway = routeMessage(normalizedMessage.rawText);
   const intent = await classifyIntent(gateway);
   const knowledge = deps.kb.lookup({ businessId: normalizedMessage.businessId, sanitizedText: gateway.sanitizedText, intent });
+  const promotions = deps.promotionStore.lookup({
+    businessId: normalizedMessage.businessId,
+    sanitizedText: gateway.sanitizedText,
+    intent,
+    now: deps.nowFn()
+  });
   const businessConfig = getConfig(normalizedMessage.businessId);
   const decision = evaluate({ gateway, intent, knowledge, businessConfig });
   const backendFacts = deps.backend.getMinimalFacts({
@@ -55,12 +66,12 @@ async function runMessage(input = {}, deps = {}) {
     query: inferBackendQuery({ normalizedMessage, intent })
   });
   const modelRoute = routeModel({ decision, intent, gateway });
-  const draft = await generateDraft({ decision, knowledge, intent, gateway }, { llmAdapter: deps.llmAdapter });
+  const draft = await generateDraft({ decision, knowledge, intent, gateway, promotions }, { llmAdapter: deps.llmAdapter });
   const safety = checkDraft({ draft, decision, knowledge, intent, gateway });
 
   let staffItem = null;
   if (!safety.safeToSend || !["auto_send", "clarify"].includes(draft.action)) {
-    staffItem = deps.inbox.submit({ decision, draft, safety, normalizedMessage, backendFacts });
+    staffItem = deps.inbox.submit({ decision, draft, safety, normalizedMessage, backendFacts, promotions });
   }
 
   const outbound = buildOutboundMessage({ normalizedMessage, draft, safety, staffItem });
@@ -71,6 +82,7 @@ async function runMessage(input = {}, deps = {}) {
     gateway,
     intent,
     knowledge,
+    promotions,
     decision,
     backendFacts,
     modelRoute,
@@ -110,6 +122,7 @@ function result(payload) {
     gateway: payload.gateway || null,
     intent: payload.intent || null,
     knowledge: payload.knowledge || null,
+    promotions: payload.promotions || null,
     decision: payload.decision || null,
     backendFacts: payload.backendFacts || null,
     modelRoute: payload.modelRoute || null,

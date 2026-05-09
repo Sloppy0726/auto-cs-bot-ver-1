@@ -67,6 +67,8 @@ function createItem(input, index) {
     safeToSend: Boolean(safety.safeToSend),
     escalationLabel: decision.escalationLabel || null,
     staffPacket: decision.staffPacket || null,
+    backendFacts: input.backendFacts || null,
+    promotions: input.promotions || null,
     reasons: [...(decision.reasons || []), ...(safety.reasons || [])],
     history: [{ status: STATUSES.OPEN, actor: "system", at: timestamp() }],
     createdAt: timestamp(),

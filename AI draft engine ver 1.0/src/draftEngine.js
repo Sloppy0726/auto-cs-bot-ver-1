@@ -93,7 +93,7 @@ async function defaultLlmAdapter(prompt) {
 }
 
 async function generateDraft(input, options = {}) {
-  const { decision = {}, knowledge = {}, intent = {}, gateway = {} } = input || {};
+  const { decision = {}, knowledge = {}, intent = {}, gateway = {}, promotions = null } = input || {};
   const action = decision.action;
   const llmAdapter = options.llmAdapter || defaultLlmAdapter;
   const tone = pickTone(decision, knowledge);
@@ -148,11 +148,12 @@ async function generateDraft(input, options = {}) {
   }
 
   if (action === ACTIONS.HANDOFF) {
-    const prompt = buildHandoffPrompt({ decision, knowledge, intent, gateway, tone });
+    const prompt = buildHandoffPrompt({ decision, knowledge, intent, gateway, promotions, tone });
     const text = await callLlm(llmAdapter, prompt.fullPrompt, {
       action,
       decision,
       knowledge,
+      promotions,
       intent,
       gateway,
       systemPrompt: prompt.systemPrompt,
@@ -176,11 +177,12 @@ async function generateDraft(input, options = {}) {
   }
 
   if (action === ACTIONS.STAFF_REVIEW) {
-    const prompt = buildStaffReviewPrompt({ decision, knowledge, intent, gateway, tone });
+    const prompt = buildStaffReviewPrompt({ decision, knowledge, intent, gateway, promotions, tone });
     const text = await callLlm(llmAdapter, prompt.fullPrompt, {
       action,
       decision,
       knowledge,
+      promotions,
       intent,
       gateway,
       systemPrompt: prompt.systemPrompt,
@@ -214,17 +216,19 @@ async function generateDraft(input, options = {}) {
   });
 }
 
-function buildStaffReviewPrompt({ decision, knowledge, intent, gateway, tone }) {
+function buildStaffReviewPrompt({ decision, knowledge, intent, gateway, promotions, tone }) {
   const sourceAnswer = knowledge.bestMatch?.answer || "(No approved answer matched. Ask one short clarifying question instead of inventing facts.)";
   const toneProfile = TONE_PROFILES[tone] || TONE_PROFILES.polite_professional;
+  const promotionContext = formatPromotionContext(promotions);
   const systemPrompt = [
     "You are the AI Draft Engine for a privacy-first HK SME customer support SaaS.",
     "Write only draft candidates for staff review. The staff decides whether to send, edit, or reject.",
     `Allowed capabilities:\n${bulletList(decision.allowedCapabilities)}`,
     `Forbidden capabilities:\n${bulletList(decision.forbiddenCapabilities)}`,
     `Only approved factual source:\n${sourceAnswer}`,
+    `Active time-bound promotions, checked in Hong Kong time:\n${promotionContext}`,
     `Tone profile (${tone}): ${toneProfile}`,
-    "If the source does not contain a fact, do not add that fact. If facts are missing, ask one concise clarifying question.",
+    "If the source or active promotion context does not contain a fact, do not add that fact. If facts are missing, ask one concise clarifying question.",
     "Never confirm bookings, refunds, payments, delivery ETAs, treatment outcomes, medical advice, legal advice, or anything listed as forbidden."
   ].join("\n\n");
 
@@ -234,13 +238,14 @@ function buildStaffReviewPrompt({ decision, knowledge, intent, gateway, tone }) 
     `Intent: ${intent.primaryIntent || "general"} (confidence: ${formatMaybe(intent.confidence)})`,
     `Customer goal: ${intent.customerGoal || ""}`,
     `Decision reason: ${decision.reason || ""}`,
+    `Promotion grounding: ${(promotions?.grounding || []).join(", ") || "(none)"}`,
     `Required citations: ${citationsFor(decision, knowledge).join(", ") || "(none)"}`
   ].join("\n");
 
   return sandwich(systemPrompt, userPrompt);
 }
 
-function buildHandoffPrompt({ decision, knowledge, intent, gateway, tone }) {
+function buildHandoffPrompt({ decision, knowledge, intent, gateway, promotions, tone }) {
   const toneProfile = TONE_PROFILES[tone] || TONE_PROFILES.polite_professional;
   const packet = decision.staffPacket || {};
   const systemPrompt = [
@@ -264,7 +269,8 @@ function buildHandoffPrompt({ decision, knowledge, intent, gateway, tone }) {
     `Intent: ${intent.primaryIntent || packet.primaryIntent || "general"}`,
     `Customer goal: ${intent.customerGoal || packet.customerGoal || ""}`,
     `Escalation label: ${decision.escalationLabel || packet.escalationLabel || ""}`,
-    `Best approved answer, if any: ${knowledge.bestMatch?.answer || packet.bestMatchAnswer || ""}`
+    `Best approved answer, if any: ${knowledge.bestMatch?.answer || packet.bestMatchAnswer || ""}`,
+    `Active promotions, if any: ${formatPromotionContext(promotions).replace(/\n/g, " | ")}`
   ].join("\n");
 
   return sandwich(systemPrompt, userPrompt);
@@ -346,6 +352,16 @@ function formatMaybe(value) {
   return typeof value === "number" ? String(value) : "unknown";
 }
 
+function formatPromotionContext(promotions) {
+  const active = promotions?.activePromotions || [];
+  if (active.length === 0) return "- (none)";
+  return active.map((promo) => {
+    const expiry = promo.expiresOn ? ` expires ${promo.expiresOn} HK time` : " no expiry set";
+    const instruction = promo.staffInstruction ? ` Staff note: ${promo.staffInstruction}` : "";
+    return `- ${promo.title}: ${promo.summary} (${expiry}).${instruction}`;
+  }).join("\n");
+}
+
 function unique(items) {
   return Array.from(new Set(items.filter(Boolean)));
 }
@@ -359,6 +375,7 @@ module.exports = {
     buildStaffReviewPrompt,
     buildHandoffPrompt,
     validateAgainstForbidden,
+    formatPromotionContext,
     FORBIDDEN_SURFACES
   }
 };
