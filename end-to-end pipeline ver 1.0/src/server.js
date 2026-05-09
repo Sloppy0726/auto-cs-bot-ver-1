@@ -21,7 +21,8 @@ function createWebhookServer(config = {}) {
         action: result.decision?.action || null
       });
     } catch (error) {
-      writeJson(res, 500, { error: error.message });
+      const statusCode = statusCodeForError(error);
+      writeJson(res, statusCode, { error: error.message });
     }
   });
 }
@@ -44,9 +45,15 @@ function readJson(req) {
   });
 }
 
+function statusCodeForError(error) {
+  if (error?.message === "request_too_large") return 413;
+  if (error instanceof SyntaxError) return 400;
+  return 500;
+}
+
 function writeJson(res, statusCode, payload) {
   res.writeHead(statusCode, { "content-type": "application/json" });
   res.end(JSON.stringify(payload));
 }
 
-module.exports = { createWebhookServer, _internal: { readJson, writeJson } };
+module.exports = { createWebhookServer, _internal: { readJson, writeJson, statusCodeForError } };
