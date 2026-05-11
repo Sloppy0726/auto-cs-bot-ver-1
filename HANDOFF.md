@@ -499,3 +499,27 @@ Total after Session 4: **889 tests passing**.
 2. Daily sync scheduling is expressed in code via `runDue()` / `nextDailyRunAtHongKong()`. Production still needs a worker/cron runner to call it daily.
 3. Promotion store is in memory by default. Production should persist synced promotions per tenant.
 4. The pipeline reads active promotions before drafting, but conservative business rules still prevent automatic sending for beauty pricing/treatment claims. This is intentional.
+
+---
+
+## Session 5 notes — Legal and trust draft documents
+
+Added product-specific legal/trust working drafts under `legal/`:
+
+- `legal/README.md`
+- `legal/draft-trust-and-safety-overview.md`
+- `legal/draft-pilot-terms-of-service.md`
+- `legal/draft-privacy-policy.md`
+- `legal/draft-data-processing-addendum.md`
+
+Updated the root `README.md` to link these documents from a new "Legal and Trust Drafts" section.
+
+### Important caveat
+
+These are product and pilot drafts, not legal advice. Before using them with paying customers, confirm:
+
+- Final legal entity name and contact emails.
+- Whether the provider is a processor, data user, or both for each data flow.
+- Production hosting region and subprocessor list.
+- Final retention/deletion periods.
+- Payment, refund, support, liability, governing law, and dispute terms with Hong Kong counsel.

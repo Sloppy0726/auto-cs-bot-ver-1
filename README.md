@@ -45,6 +45,17 @@ No npm dependencies are required. Everything is plain Node.js stdlib.
 | 12 | `staff inbox ver 1.0` | In-memory review / handoff queue. |
 | 13 | `end-to-end pipeline ver 1.0` | Orchestrates the whole local workflow. |
 
+## Legal and Trust Drafts
+
+Draft customer-facing trust/legal documents live in [`legal/`](legal/). They are product-specific working drafts and need Hong Kong legal review before use with paying customers.
+
+| Document | Purpose |
+|---|---|
+| [`legal/draft-trust-and-safety-overview.md`](legal/draft-trust-and-safety-overview.md) | Plain-English explanation of privacy filtering, approved knowledge, staff review, and AI limitations. |
+| [`legal/draft-pilot-terms-of-service.md`](legal/draft-pilot-terms-of-service.md) | Pilot/subscription terms covering scope, AI output, customer duties, support, payment, liability, and termination. |
+| [`legal/draft-privacy-policy.md`](legal/draft-privacy-policy.md) | Privacy notice covering account data, end-customer messages, AI processing, subprocessors, retention, deletion, and security. |
+| [`legal/draft-data-processing-addendum.md`](legal/draft-data-processing-addendum.md) | B2B processing terms for SME customers using the product with their customer messages. |
+
 ## Local Run
 
 Example:
