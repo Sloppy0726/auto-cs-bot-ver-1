@@ -38,7 +38,7 @@ const result = await pipeline.runMessage({
 
 ## Server
 
-`src/server.js` exposes `createWebhookServer()` using Node's built-in `http` module. It supports `POST /webhook`. Signed mode requires `x-webhook-timestamp` and `x-webhook-signature`; the signature is HMAC-SHA256 over `timestamp.rawBody`. For tenant isolation, configure per-business `webhookSecrets` or set `webhookBusinessId` with a single `webhookSecret` so the verified request is bound to a server-side `businessId` before the pipeline runs. Tenant-scoped payloads are rejected when the signed credential is not bound to a business.
+`src/server.js` exposes `createWebhookServer()` using Node's built-in `http` module. It supports `POST /webhook`. Signed mode requires `x-webhook-timestamp` and `x-webhook-signature`; the signature is HMAC-SHA256 over `timestamp.rawBody`. For tenant isolation, configure per-business `webhookSecrets` or set `webhookBusinessId` with a single `webhookSecret` so the verified request is bound to a server-side `businessId` before the pipeline runs. Tenant-scoped payloads are rejected when the signed credential is not bound to a business. The server rejects non-JSON content types, oversized declared bodies, and slow body reads before running the pipeline.
 
 ## Run
 
@@ -48,6 +48,18 @@ node "end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js"
 ```
 
 ## Changelog
+
+### 2026-05-12 HKT - Webhook Request Envelope Hardening
+
+- **Changed:** Webhook requests now reject non-JSON content types and oversized declared bodies before reading/parsing the full payload.
+- **Changed:** Request body reads now have a configurable timeout via `bodyTimeoutMs`.
+- **Verified:** `end-to-end pipeline ver 1.0/test/server.test.js` covers unsupported content types, declared oversize bodies, and timeout status mapping.
+
+### 2026-05-12 HKT - Sender-Bound Backend Lookups
+
+- **Changed:** Pipeline backend queries now pass the normalized channel `senderId`.
+- **Changed:** Customer-bound order/payment records only return facts when the query sender matches the record owner.
+- **Verified:** `private business backend mock ver 1.0/test/businessBackendMock.test.js` and `end-to-end pipeline ver 1.0/test/pipeline.test.js` passed after the change.
 
 ### 2026-05-10 03:35:13 HKT - Webhook Tenant Binding and Error Masking
 

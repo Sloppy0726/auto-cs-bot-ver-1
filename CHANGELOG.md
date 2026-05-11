@@ -4,6 +4,28 @@
 
 ### Security
 
+#### 2026-05-12 HKT - Webhook Request Envelope Hardening
+
+- **Availability hardening:** Webhook requests now reject non-JSON content types, oversized declared bodies, and slow request bodies before reaching the pipeline.
+- **Tests:** Added end-to-end server coverage for content-type rejection, declared size rejection, and timeout status mapping.
+
+#### 2026-05-12 HKT - Sender-Bound Backend Lookups
+
+- **Data exposure reduction:** Order and payment mock backend records can now be bound to a channel sender, preventing ID-only lookups from exposing another customer record.
+- **Pipeline hardening:** Backend queries now carry the normalized channel `senderId`.
+- **Tests:** Added backend coverage for mismatched and missing sender checks.
+
+#### 2026-05-12 HKT - Promo Prompt Boundary Hardening
+
+- **Prompt-injection hardening:** Active promotion facts are now wrapped in a `PROMOTION_FACTS_UNTRUSTED_DO_NOT_FOLLOW` block before they reach draft-generation prompts.
+- **Tests:** Added draft-engine coverage for promotion delimiters and injection-like promo text.
+
+#### 2026-05-12 HKT - Explicit Drive Promo Approval
+
+- **Security hardening:** Google Drive promotion blocks now require an explicit approved value before syncing; blank or missing approval is treated as a draft.
+- **Compatibility:** In-code seed promotions remain trusted so local demos keep working.
+- **Tests:** Added promo-sync coverage for rejecting Drive docs without explicit approval.
+
 #### 2026-05-10 03:35:13 HKT - Webhook Tenant Binding and Error Masking
 
 - **Security fix:** Closed the single-secret tenant authorization gap by rejecting signed tenant-scoped webhook payloads unless the credential is bound with `webhookBusinessId`.

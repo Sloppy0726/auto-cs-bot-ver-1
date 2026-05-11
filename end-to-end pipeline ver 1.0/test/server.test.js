@@ -7,6 +7,7 @@ const { createWebhookServer, _internal } = require("../src/server");
 (async () => {
   assert.equal(_internal.statusCodeForError(new SyntaxError("bad json")), 400, "SyntaxError should be treated as bad request");
   assert.equal(_internal.statusCodeForError(new Error("request_too_large")), 413, "request_too_large should be payload too large");
+  assert.equal(_internal.statusCodeForError(new Error("request_timeout")), 408, "request_timeout should be treated as request timeout");
   assert.equal(_internal.statusCodeForError(Object.assign(new Error("missing_webhook_signature"), { statusCode: 401 })), 401, "auth errors should be unauthorized");
   assert.equal(_internal.statusCodeForError(new Error("database unavailable")), 500, "unexpected errors stay server errors");
   assert.equal(_internal.publicErrorMessage(new Error("database unavailable"), 500), "internal_server_error", "500s should not expose internal messages");
@@ -81,8 +82,10 @@ const { createWebhookServer, _internal } = require("../src/server");
   await assertServerRejectsBusinessIdImpersonation({ secret, timestamp });
   await assertServerRejectsUnboundSingleSecretBusinessId({ body, secret, timestamp, signature });
   await assertServerMasksAuthAndBadRequestDetails({ secret, timestamp });
+  await assertServerRejectsUnsupportedContentType({ body, secret, timestamp });
+  await assertServerRejectsDeclaredOversizeBody({ body, secret, timestamp, signature });
 
-  console.log("server: 23 tests passed");
+  console.log("server: 28 tests passed");
 })();
 
 function requestWithHeaders(headers) {
@@ -305,4 +308,62 @@ async function assertServerMasksAuthAndBadRequestDetails({ secret, timestamp }) 
   });
   assert.equal(badRequestResponse.statusCode, 400);
   assert.equal(badRequestResponse.body.error, "bad_request");
+}
+
+async function assertServerRejectsUnsupportedContentType({ body, secret, timestamp }) {
+  let called = false;
+  const server = createWebhookServer({
+    webhookSecret: secret,
+    webhookBusinessId: "restaurant_demo",
+    nowFn: () => new Date(Number(timestamp) * 1000),
+    pipeline: {
+      async runMessage() {
+        called = true;
+        throw new Error("pipeline should not run");
+      }
+    }
+  });
+
+  const signature = _internal.signBody({ body, timestamp, secret });
+  const response = await sendJson({
+    server,
+    payload: body,
+    headers: {
+      "content-type": "text/plain",
+      "x-webhook-timestamp": timestamp,
+      "x-webhook-signature": "sha256=" + signature
+    }
+  });
+  assert.equal(response.statusCode, 415);
+  assert.equal(response.body.error, "unsupported_media_type");
+  assert.equal(called, false, "pipeline must not run for unsupported content types");
+}
+
+async function assertServerRejectsDeclaredOversizeBody({ body, secret, timestamp, signature }) {
+  let called = false;
+  const server = createWebhookServer({
+    webhookSecret: secret,
+    webhookBusinessId: "restaurant_demo",
+    maxBodyBytes: 4,
+    nowFn: () => new Date(Number(timestamp) * 1000),
+    pipeline: {
+      async runMessage() {
+        called = true;
+        throw new Error("pipeline should not run");
+      }
+    }
+  });
+
+  const response = await sendJson({
+    server,
+    payload: body,
+    headers: {
+      "content-length": "100",
+      "x-webhook-timestamp": timestamp,
+      "x-webhook-signature": "sha256=" + signature
+    }
+  });
+  assert.equal(response.statusCode, 413);
+  assert.equal(response.body.error, "request_too_large");
+  assert.equal(called, false, "pipeline must not run for oversized declared bodies");
 }

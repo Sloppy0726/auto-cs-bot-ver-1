@@ -6,6 +6,7 @@ const { createPipeline } = require("./pipeline");
 
 const DEFAULT_MAX_BODY_BYTES = 1_000_000;
 const DEFAULT_REPLAY_WINDOW_SECONDS = 300;
+const DEFAULT_BODY_TIMEOUT_MS = 5_000;
 
 function createWebhookServer(config = {}) {
   const pipeline = config.pipeline || createPipeline(config);
@@ -16,7 +17,9 @@ function createWebhookServer(config = {}) {
     }
 
     try {
-      const body = await readBody(req, config.maxBodyBytes);
+      const envelopeError = validateWebhookEnvelope(req, config);
+      if (envelopeError) throw envelopeError;
+      const body = await readBody(req, config.maxBodyBytes, config.bodyTimeoutMs);
       const authContext = verifyWebhookRequest(req, body, config);
       const payload = authorizeWebhookPayload(parseJson(body), authContext, config);
       const result = await pipeline.runMessage(payload);
@@ -37,30 +40,53 @@ function readJson(req) {
   return readBody(req).then(parseJson);
 }
 
-function readBody(req, maxBodyBytes = DEFAULT_MAX_BODY_BYTES) {
+function readBody(req, maxBodyBytes = DEFAULT_MAX_BODY_BYTES, timeoutMs = DEFAULT_BODY_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     let body = "";
     let tooLarge = false;
+    const timer = setTimeout(() => {
+      reject(new Error("request_timeout"));
+      req.destroy();
+    }, timeoutMs);
+
+    function settle(fn, value) {
+      clearTimeout(timer);
+      fn(value);
+    }
 
     req.on("data", (chunk) => {
       if (tooLarge) return;
       body += chunk;
       if (Buffer.byteLength(body, "utf8") > maxBodyBytes) {
         tooLarge = true;
-        reject(new Error("request_too_large"));
+        settle(reject, new Error("request_too_large"));
         req.destroy();
       }
     });
 
     req.on("end", () => {
-      if (!tooLarge) resolve(body);
+      if (!tooLarge) settle(resolve, body);
     });
-    req.on("error", reject);
+    req.on("error", (error) => settle(reject, error));
   });
 }
 
 function parseJson(body) {
   return body ? JSON.parse(body) : {};
+}
+
+function validateWebhookEnvelope(req, config = {}) {
+  const contentType = getHeader(req, "content-type") || "";
+  if (!/^application\/json\b/i.test(contentType)) return httpError("unsupported_media_type", 415);
+
+  const maxBodyBytes = config.maxBodyBytes || DEFAULT_MAX_BODY_BYTES;
+  const contentLength = getHeader(req, "content-length");
+  const declaredLength = Number(contentLength);
+  if (contentLength && Number.isFinite(declaredLength) && declaredLength > maxBodyBytes) {
+    return new Error("request_too_large");
+  }
+
+  return null;
 }
 
 function verifyWebhookRequest(req, body, config = {}) {
@@ -186,9 +212,16 @@ function authError(message) {
   return error;
 }
 
+function httpError(message, statusCode) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
 function statusCodeForError(error) {
   if (error?.statusCode) return error.statusCode;
   if (error?.message === "request_too_large") return 413;
+  if (error?.message === "request_timeout") return 408;
   if (error instanceof SyntaxError) return 400;
   return 500;
 }
@@ -216,6 +249,7 @@ module.exports = {
     readJson,
     signBody,
     statusCodeForError,
+    validateWebhookEnvelope,
     verifyUnsignedWebhookMode,
     verifyFreshTimestamp,
     verifyWebhookRequest,
