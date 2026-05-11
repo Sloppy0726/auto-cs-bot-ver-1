@@ -123,14 +123,15 @@ function lookupPromotions(entries, input = {}) {
   };
 }
 
-function normalizeEntries(rawEntries) {
+function normalizeEntries(rawEntries, options = {}) {
   return (rawEntries || [])
-    .map(normalizeEntry)
+    .map((entry) => normalizeEntry(entry, options))
     .filter(Boolean);
 }
 
-function normalizeEntry(raw) {
+function normalizeEntry(raw, options = {}) {
   if (!raw || typeof raw !== "object") return null;
+  if (options.requireExplicitApproval && raw.approved !== true) return null;
   if (raw.approved === false) return null;
   const id = raw.id || stablePromoId(raw.businessId, raw.title, raw.expiresOn);
   return {
@@ -179,7 +180,7 @@ function parseBlock(block, input, index) {
     expiresOn: fields.expiresOn || fields.expiryDate || fields.expiry || null,
     timezone: HK_TIMEZONE,
     approved: parseApproved(fields.approved)
-  });
+  }, { requireExplicitApproval: true });
 }
 
 function normalizeFieldKey(key) {
@@ -224,7 +225,6 @@ function splitList(value) {
 }
 
 function parseApproved(value) {
-  if (value == null || value === "") return true;
   return /^(true|yes|y|approved|1|係|是|已批核)$/i.test(String(value).trim());
 }
 

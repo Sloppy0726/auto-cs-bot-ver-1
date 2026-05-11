@@ -32,6 +32,8 @@ ExpiresOn: 2026-05-31
 Approved: true
 ```
 
+Drive-imported promo blocks must include an explicit approved value such as `Approved: true`, `Approved: yes`, or `已批核: 是`. Draft blocks with a missing or blank approval field are ignored. In-code seed promos remain trusted by the application code path.
+
 ## Main API
 
 ```js
@@ -89,6 +91,7 @@ node "google drive promo sync ver 1.0/scripts/writeSideBySideResults.js"
 ## Production Wiring Later
 
 - Replace the mock `driveClient` with a real Google Drive connector.
+- Keep Drive approval explicit: every synced promo block must say `Approved: true` (or an equivalent approved value) before it can enter the promotion store.
 - Run `sync.runDue()` from a worker / cron every day.
 - Persist the store in a database instead of memory.
 - Keep every date in Hong Kong time when checking `StartsOn` and `ExpiresOn`.

@@ -29,6 +29,14 @@ const parsed = parseDrivePromoDocument({
 assert.equal(parsed.length, 1, "drive document should parse one promo");
 assert.equal(parsed[0].expiresOn, "2026-05-31", "expiry should parse");
 
+const unapprovedParsed = parseDrivePromoDocument({
+  businessId: "beauty_demo",
+  fileId: "draft-file",
+  title: "Draft promo doc",
+  text: driveDocument.replace("\nApproved: true", "")
+});
+assert.equal(unapprovedParsed.length, 0, "drive documents must include explicit approval before syncing");
+
 const driveClient = {
   async listFiles() {
     return [{ id: "file1", name: "May promo" }];
@@ -83,7 +91,7 @@ async function run() {
   assert.equal(multiBusinessStore.list({ businessId: "igshop_demo" }).length, 1, "syncOnce must preserve other businesses' promotions");
   assert.equal(multiBusinessStore.list({ businessId: "beauty_demo" }).length, 1, "syncOnce should replace only the scoped business promotions");
 
-  console.log(`promoSync: ${standardCases.length + 7} tests passed`);
+  console.log(`promoSync: ${standardCases.length + 8} tests passed`);
 }
 
 run().catch((error) => {
