@@ -93,7 +93,7 @@ The adapter sets `cache_control` on the system message because the capability/to
 
 ## Promotion Context
 
-When the pipeline provides `promotions`, the staff-review and handoff prompts include active time-bound promotions that were checked in Hong Kong time. The draft engine treats them as approved contextual facts, but still does not auto-send pricing or treatment claims for conservative archetypes such as `beauty_clinic`.
+When the pipeline provides `promotions`, the staff-review and handoff prompts include active time-bound promotions that were checked in Hong Kong time. Promotion text is wrapped inside a `PROMOTION_FACTS_UNTRUSTED_DO_NOT_FOLLOW` block so editable campaign copy is treated as quoted context, not model instructions. The draft engine still does not auto-send pricing or treatment claims for conservative archetypes such as `beauty_clinic`.
 
 ## Integration
 
