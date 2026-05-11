@@ -67,8 +67,8 @@ function missingAvailabilityFields(query) {
 
 function lookupOrder(data, query) {
   const orderId = query.orderId || query.reference;
-  const match = recordsFor(data, query.businessId, "orders").find((item) => item.orderId === orderId);
-  if (!match) return { found: false, facts: [], reason: "Order not found in mock backend." };
+  const match = recordsFor(data, query.businessId, "orders").find((item) => item.orderId === orderId && matchesCustomer(item, query));
+  if (!match) return { found: false, facts: [], reason: "Order not found or not verified for this sender." };
   return {
     found: true,
     facts: minimalFacts(match, ["orderId", "status", "shipmentStatus", "courier"]),
@@ -94,8 +94,8 @@ function getStock(data, query) {
 
 function lookupPayment(data, query) {
   const ref = query.reference || query.orderId;
-  const match = recordsFor(data, query.businessId, "payments").find((item) => item.reference === ref);
-  if (!match) return { found: false, facts: [], reason: "Payment not found in mock backend." };
+  const match = recordsFor(data, query.businessId, "payments").find((item) => item.reference === ref && matchesCustomer(item, query));
+  if (!match) return { found: false, facts: [], reason: "Payment not found or not verified for this sender." };
   return {
     found: true,
     facts: minimalFacts(match, ["reference", "status", "amount"]),
@@ -116,6 +116,11 @@ function recordsFor(data, businessId, key) {
   return data[businessId]?.[key] || [];
 }
 
+function matchesCustomer(record, query) {
+  if (!record.customerExternalId) return true;
+  return Boolean(query.senderId) && record.customerExternalId === query.senderId;
+}
+
 function minimalFacts(record, keys) {
   return keys
     .filter((key) => record[key] !== undefined && record[key] !== null)
@@ -128,5 +133,5 @@ function clone(value) {
 
 module.exports = {
   createBusinessBackend,
-  _internal: { checkAvailability, lookupOrder, getStock, lookupPayment, minimalFacts, missingAvailabilityFields }
+  _internal: { checkAvailability, lookupOrder, getStock, lookupPayment, matchesCustomer, minimalFacts, missingAvailabilityFields }
 };

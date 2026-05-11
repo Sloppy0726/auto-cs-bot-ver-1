@@ -18,8 +18,14 @@ for (const c of standardCases) {
 const minimal = backend.getMinimalFacts({
   businessId: "igshop_demo",
   intent: { primaryIntent: "order_status" },
-  query: { businessId: "igshop_demo", orderId: "IG1001" }
+  query: { businessId: "igshop_demo", orderId: "IG1001", senderId: "ig_sender_1001" }
 });
 assert.equal(minimal.found, true, "getMinimalFacts should route order_status lookup");
 
-console.log(`businessBackendMock: ${standardCases.length + 1} tests passed`);
+const unverifiedOrder = backend.lookupOrder({ businessId: "igshop_demo", orderId: "IG1001", senderId: "wrong_sender" });
+assert.equal(unverifiedOrder.found, false, "order lookup must not expose facts to a mismatched sender");
+
+const unverifiedPayment = backend.lookupPayment({ businessId: "igshop_demo", reference: "FPS-IG1001" });
+assert.equal(unverifiedPayment.found, false, "payment lookup must require sender verification when records are customer-bound");
+
+console.log(`businessBackendMock: ${standardCases.length + 3} tests passed`);

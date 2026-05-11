@@ -26,10 +26,10 @@ module.exports = {
       { sku: "BAG-CREAM", name: "Cream tote bag", available: false, quantity: 0 }
     ],
     orders: [
-      { orderId: "IG1001", status: "paid", shipmentStatus: "pending", courier: "SF Express", trackingNo: null },
-      { orderId: "IG1002", status: "shipped", shipmentStatus: "in_transit", courier: "SF Express", trackingNo: "SF123456" }
+      { orderId: "IG1001", customerExternalId: "ig_sender_1001", status: "paid", shipmentStatus: "pending", courier: "SF Express", trackingNo: null },
+      { orderId: "IG1002", customerExternalId: "ig_sender_1002", status: "shipped", shipmentStatus: "in_transit", courier: "SF Express", trackingNo: "SF123456" }
     ],
-    payments: [{ reference: "FPS-IG1001", status: "received", amount: 500 }]
+    payments: [{ reference: "FPS-IG1001", customerExternalId: "ig_sender_1001", status: "received", amount: 500 }]
   },
   edu_demo: {
     availability: [

@@ -98,7 +98,10 @@ async function runMessage(input = {}, deps = {}) {
 
 function inferBackendQuery({ normalizedMessage, intent, now }) {
   const text = normalizedMessage.rawText || "";
-  const query = { businessId: normalizedMessage.businessId };
+  const query = {
+    businessId: normalizedMessage.businessId,
+    senderId: normalizedMessage.senderId
+  };
   const date = text.includes("今晚") ? hkDateKey(now || new Date()) : null;
   const timeMatch = text.match(/(\d{1,2})(?::(\d{2}))?\s*(?:點|:)?/);
   if (date) query.date = date;

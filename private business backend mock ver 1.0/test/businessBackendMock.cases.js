@@ -46,8 +46,8 @@ const paymentScenarios = [
 const minimalFactsScenarios = [
   minimal("minimal facts booking routes to availability", "beauty_demo", "booking", { businessId: "beauty_demo", date: "2026-05-09", time: "19:00", service: "facial" }, true),
   minimal("minimal facts reschedule routes to availability", "restaurant_demo", "reschedule", { businessId: "restaurant_demo", date: "2026-05-09", time: "18:30", partySize: 2 }, true),
-  minimal("minimal facts order status routes to order lookup", "igshop_demo", "order_status", { businessId: "igshop_demo", orderId: "IG1001" }, true),
-  minimal("minimal facts payment routes to payment lookup", "igshop_demo", "payment", { businessId: "igshop_demo", reference: "FPS-IG1001" }, true),
+  minimal("minimal facts order status routes to verified order lookup", "igshop_demo", "order_status", { businessId: "igshop_demo", orderId: "IG1001", senderId: "ig_sender_1001" }, true),
+  minimal("minimal facts payment routes to verified payment lookup", "igshop_demo", "payment", { businessId: "igshop_demo", reference: "FPS-IG1001", senderId: "ig_sender_1001" }, true),
   minimal("minimal facts service info routes to stock lookup", "igshop_demo", "service_info", { businessId: "igshop_demo", sku: "TEE-BLK-M" }, true),
   minimal("minimal facts general skips backend lookup", "igshop_demo", "general", { businessId: "igshop_demo", sku: "TEE-BLK-M" }, false)
 ];
@@ -109,7 +109,7 @@ function order(name, businessId, orderId, expectFound) {
   return {
     name,
     fn: "lookupOrder",
-    query: { businessId, orderId },
+    query: { businessId, orderId, senderId: senderForOrder(orderId) },
     expectFound
   };
 }
@@ -118,7 +118,7 @@ function payment(name, businessId, reference, expectFound) {
   return {
     name,
     fn: "lookupPayment",
-    query: { businessId, reference },
+    query: { businessId, reference, senderId: senderForPayment(reference) },
     expectFound
   };
 }
@@ -130,6 +130,17 @@ function minimal(name, businessId, intent, query, expectFound) {
     query: { businessId, intent: { primaryIntent: intent }, query },
     expectFound
   };
+}
+
+function senderForOrder(orderId) {
+  if (orderId === "IG1001") return "ig_sender_1001";
+  if (orderId === "IG1002") return "ig_sender_1002";
+  return "unknown_sender";
+}
+
+function senderForPayment(reference) {
+  if (reference === "FPS-IG1001") return "ig_sender_1001";
+  return "unknown_sender";
 }
 
 module.exports = { standardCases };
