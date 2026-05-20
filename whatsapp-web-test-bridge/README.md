@@ -84,6 +84,35 @@ Staff-review outputs can still be converted into customer-facing handoff message
 WA_BRIDGE_SEND_HELD_DRAFTS=true
 ```
 
+## Human Handoff Pause
+
+When the bridge sends a staff-review handoff for booking, reschedule, payment, order status, complaint, sensitive-health, or human-request intents, it marks that WhatsApp chat as staff-owned. While staff-owned, new customer messages are logged but not sent to the bot, so the bot will not jump back in while staff is handling the case.
+
+The bridge also watches outgoing WhatsApp messages. Once it sees a non-bot outgoing staff reply after the handoff, it treats the handoff as close to resolved:
+
+- If the next customer reply is a short acknowledgement such as `ok`, `收到`, or `多謝`, the bridge stays silent and automatically releases the chat back to the bot.
+- If the next customer reply looks like a new substantive question, the bridge automatically releases the chat and lets the bot handle that message.
+
+The pause is stored locally in:
+
+```text
+whatsapp-web-test-bridge/state/handoff.json
+```
+
+The file is gitignored and expires entries after 24 hours as a fallback if no staff/customer completion signal is detected. Clear all paused chats with:
+
+```bash
+npm run handoff:clear
+```
+
+Or tune it in `.env`:
+
+```bash
+WA_BRIDGE_HANDOFF_PAUSE=true
+WA_BRIDGE_HANDOFF_PAUSE_TTL_HOURS=24
+WA_BRIDGE_HANDOFF_PAUSE_INTENTS=booking,reschedule,complaint,sensitive_health,human_request,payment,order_status
+```
+
 ## Config
 
 | Variable | Default | Meaning |
@@ -97,6 +126,9 @@ WA_BRIDGE_SEND_HELD_DRAFTS=true
 | `WA_BRIDGE_SEND_REPLIES` | `false` | Auto-click Send. Set true only for test accounts. |
 | `WA_BRIDGE_SEND_HELD_DRAFTS` | `true` | Send customer-facing handoff notices for staff-review items. |
 | `WA_BRIDGE_REPLY_LATEST_ON_START` | `false` | Process latest visible incoming message on startup. Useful for one-off replay, risky for normal restarts. |
+| `WA_BRIDGE_HANDOFF_PAUSE` | `true` | Pause bot replies after selected human handoff intents. |
+| `WA_BRIDGE_HANDOFF_PAUSE_TTL_HOURS` | `24` | How long a chat remains staff-owned before auto-release. |
+| `WA_BRIDGE_HANDOFF_PAUSE_INTENTS` | booking/reschedule/etc. | Comma-separated intents that should pause the chat after staff-review. |
 
 ## Logs
 

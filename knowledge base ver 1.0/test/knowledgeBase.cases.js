@@ -28,7 +28,7 @@ const seedCases = [
   {
     name: "beauty: company identity",
     businessId: "beauty_demo",
-    input: "你係邊間公司？",
+    input: "你地間舖叫咩",
     expectBestMatchId: "beauty_identity",
     expectGap: false,
     expectHandoff: false
@@ -127,6 +127,14 @@ const scenarioFamilies = [
     businessId: "beauty_demo",
     inputs: ["做完會唔會見效？", "有冇副作用？", "效果好唔好？", "見效快唔快？", "療程效果因人而異嗎？"],
     expectBestMatchId: "beauty_no_medical_claim",
+    expectGap: false,
+    expectHandoff: false
+  },
+  {
+    label: "beauty service list",
+    businessId: "beauty_demo",
+    inputs: ["有咩療程？", "有冇list", "有冇療程list？", "What treatments do you have?", "Can you send me the service menu?"],
+    expectBestMatchId: "beauty_service_list",
     expectGap: false,
     expectHandoff: false
   },

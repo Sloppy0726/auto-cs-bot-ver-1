@@ -27,6 +27,28 @@ else
 fi
 echo
 
+echo "Handoff pause state:"
+if [[ -f "$BRIDGE_DIR/state/handoff.json" ]]; then
+  node - "$BRIDGE_DIR/state/handoff.json" <<'NODE'
+const fs = require("node:fs");
+const file = process.argv[2];
+const state = JSON.parse(fs.readFileSync(file, "utf8"));
+const paused = Object.values(state.paused || {});
+if (paused.length === 0) {
+  console.log("  No paused chats.");
+} else {
+  for (const item of paused) {
+    const stage = item.stage || "waiting_for_staff";
+    const staff = item.staffReplyAt ? `, staff replied at ${item.staffReplyAt}` : "";
+    console.log(`  ${item.chatKey} paused for ${item.intent || "handoff"} (${stage}${staff}) until ${item.pauseUntil}`);
+  }
+}
+NODE
+else
+  echo "  No paused chats."
+fi
+echo
+
 echo "Recent bridge log:"
 tail -n 40 "$LOG_DIR/bridge.log" 2>/dev/null || echo "  No bridge log yet."
 echo

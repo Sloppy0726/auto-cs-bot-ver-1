@@ -8,6 +8,8 @@
     "start": "bin/start-local.sh",
     "stop": "bin/stop-local.sh",
     "status": "bin/status.sh",
+    "test": "node test/handoffState.test.js",
+    "handoff:clear": "rm -f state/handoff.json",
     "bridge:reply-latest-on-start": "WA_BRIDGE_REPLY_LATEST_ON_START=true node src/whatsappWebBridge.js"
   }
 }

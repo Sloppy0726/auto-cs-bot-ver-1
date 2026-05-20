@@ -24,7 +24,7 @@ module.exports = [
     businessId: "beauty_demo",
     intent: "hours_location",
     question: "店名 / company identity",
-    keywords: ["邊間公司", "邊間店", "店名", "公司名", "brand", "business name", "你係"],
+    keywords: ["邊間公司", "邊間店", "店名", "公司名", "間舖", "間鋪", "舖名", "鋪名", "叫咩", "brand", "business name", "shop name", "store name", "你係"],
     tone: "luxury_beauty",
     answers: {
       "zh-HK": "我哋係 Solara Beauty（測試美容店），銅鑼灣店提供面部護理、皮膚狀態評估同部分脫毛護理。",
@@ -60,11 +60,25 @@ module.exports = [
     }
   },
   {
+    id: "beauty_service_list",
+    businessId: "beauty_demo",
+    intent: "service_info",
+    question: "療程列表 / treatment list",
+    keywords: ["list", "menu", "treatments", "services", "service menu", "treatment list", "有咩療程", "有咩服務", "有冇list", "有無list", "療程list", "服務list"],
+    tone: "luxury_beauty",
+    policyRef: "no_medical_claim",
+    answers: {
+      "zh-HK": "我哋測試美容店暫時有：免費皮膚狀態評估、首次體驗面部護理、皇牌保濕修護護理、面部護理五次套票，同腋下脫毛單次護理。實際適合邊個療程要先睇膚況；如果想睇收費，可以直接問我價目。",
+      en: "Our test beauty salon currently offers: free skin assessments, first-trial facial treatments, signature hydrating repair facials, 5-session facial packages, and single-session underarm laser hair removal. Suitability depends on your skin condition; you can ask me for pricing details anytime.",
+      mixed: "我哋暫時有free skin assessment、first-trial facial、signature hydrating repair facial、5-session facial package同underarm laser hair removal。實際適合邊個plan要睇膚況；想睇pricing可以直接問我。"
+    }
+  },
+  {
     id: "beauty_service_recommendation",
     businessId: "beauty_demo",
     intent: "service_info",
     question: "療程推介 / treatment recommendation",
-    keywords: ["推介", "推薦", "建議", "介紹", "recommend", "recommendation", "facial", "plan"],
+    keywords: ["推介", "推薦", "建議", "介紹", "療程建議", "有咩療程建議", "recommend", "recommendation", "facial", "plan"],
     tone: "luxury_beauty",
     policyRef: "no_medical_claim",
     answers: {

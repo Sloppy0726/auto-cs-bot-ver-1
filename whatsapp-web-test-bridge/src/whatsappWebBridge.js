@@ -2,6 +2,7 @@
 
 const { execFile } = require("node:child_process");
 const { stitchText } = require("../../conversation context ver 1.0/src/conversationContext");
+const { createHandoffState, DEFAULT_TTL_MS } = require("./handoffState");
 
 const BOT_URL = process.env.BOT_URL || "http://127.0.0.1:3000/webhook";
 const BUSINESS_ID = process.env.WA_BRIDGE_BUSINESS_ID || "restaurant_demo";
@@ -10,11 +11,26 @@ const DRAFT_REPLIES = process.env.WA_BRIDGE_DRAFT_REPLIES !== "false";
 const SEND_REPLIES = process.env.WA_BRIDGE_SEND_REPLIES === "true";
 const SEND_HELD_DRAFTS = process.env.WA_BRIDGE_SEND_HELD_DRAFTS === "true";
 const REPLY_LATEST_ON_START = process.env.WA_BRIDGE_REPLY_LATEST_ON_START === "true";
+const HANDOFF_PAUSE_ENABLED = process.env.WA_BRIDGE_HANDOFF_PAUSE !== "false";
+const HANDOFF_PAUSE_TTL_MS = Number(process.env.WA_BRIDGE_HANDOFF_PAUSE_TTL_HOURS || 24) * 60 * 60 * 1000 || DEFAULT_TTL_MS;
+const HANDOFF_PAUSE_INTENTS = new Set(
+  String(process.env.WA_BRIDGE_HANDOFF_PAUSE_INTENTS || "booking,reschedule,complaint,sensitive_health,human_request,payment,order_status")
+    .split(",")
+    .map((intent) => intent.trim())
+    .filter(Boolean)
+);
+const HANDOFF_STATE_FILE = process.env.WA_BRIDGE_HANDOFF_STATE_FILE;
+const handoffState = createHandoffState({
+  enabled: HANDOFF_PAUSE_ENABLED,
+  ttlMs: HANDOFF_PAUSE_TTL_MS,
+  filePath: HANDOFF_STATE_FILE
+});
 
 let lastFingerprint = null;
 let lastDraftedFingerprint = null;
 let lastOpenedUnreadPreview = null;
 let timer = null;
+let tickInFlight = false;
 
 main().catch((error) => {
   console.error("[wa-bridge] fatal:", error.message);
@@ -26,19 +42,28 @@ async function main() {
   lastFingerprint = REPLY_LATEST_ON_START ? null : latestIncoming(snapshot)?.fingerprint || null;
   console.log(`[wa-bridge] watching Safari WhatsApp Web chat`);
   console.log(`[wa-bridge] bot=${BOT_URL} businessId=${BUSINESS_ID} draftReplies=${DRAFT_REPLIES} sendReplies=${SEND_REPLIES} sendHeldDrafts=${SEND_HELD_DRAFTS}`);
+  console.log(`[wa-bridge] handoffPause=${HANDOFF_PAUSE_ENABLED} ttlHours=${Math.round(HANDOFF_PAUSE_TTL_MS / 60 / 60 / 1000)} intents=${Array.from(HANDOFF_PAUSE_INTENTS).join(",")}`);
   console.log(`[wa-bridge] currentChat=${snapshot.chatTitle || "unknown"} existingLast=${lastFingerprint || "none"}`);
   console.log("[wa-bridge] waiting for the next incoming message...");
 
   await tick();
   timer = setInterval(() => {
-    tick().catch((error) => console.error("[wa-bridge] tick:", error.message));
+    if (tickInFlight) return;
+    tickInFlight = true;
+    tick()
+      .catch((error) => console.error("[wa-bridge] tick:", error.message))
+      .finally(() => {
+        tickInFlight = false;
+      });
   }, POLL_MS);
   await new Promise(() => {});
 }
 
 async function tick() {
   let snapshot = await readWhatsAppSnapshot();
+  syncStaffReplyForSnapshot(snapshot);
   let incoming = latestIncoming(snapshot);
+  if (incoming && incoming.fingerprint === lastFingerprint) return;
   if (!incoming || incoming.fingerprint === lastFingerprint) {
     const unread = await openLatestUnreadChat(lastOpenedUnreadPreview);
     if (unread.opened) {
@@ -46,6 +71,7 @@ async function tick() {
       console.log(`[wa-bridge] opened unread chat: ${unread.preview || "unknown"}`);
       await sleep(1200);
       snapshot = await readWhatsAppSnapshot();
+      syncStaffReplyForSnapshot(snapshot);
       incoming = latestIncoming(snapshot);
     }
   }
@@ -54,6 +80,24 @@ async function tick() {
   lastFingerprint = incoming.fingerprint;
   lastOpenedUnreadPreview = null;
   console.log(`[wa-bridge] incoming from ${incoming.sender || "unknown"}: ${incoming.text}`);
+  const chatKey = chatKeyFor(incoming, snapshot);
+  const activeHandoff = handoffState.active(chatKey);
+  if (activeHandoff) {
+    const afterStaff = activeHandoff.stage === "staff_replied" || activeHandoff.staffReplyAt;
+    if (afterStaff && isCustomerAcknowledgement(incoming.text)) {
+      handoffState.release(chatKey);
+      console.log(`[wa-bridge] customer acknowledged staff reply in paused chat=${chatKey}; bot stayed silent and auto-resumed.`);
+      return;
+    }
+    if (afterStaff) {
+      handoffState.release(chatKey);
+      console.log(`[wa-bridge] customer sent a new substantive message after staff reply in chat=${chatKey}; auto-resumed bot.`);
+    } else {
+      console.log(`[wa-bridge] paused for staff handoff chat=${chatKey} intent=${activeHandoff.intent || "unknown"} until=${activeHandoff.pauseUntil}; bot did not reply.`);
+      return;
+    }
+  }
+
   const textForBot = contextualizeIncoming(incoming, snapshot);
   if (textForBot !== incoming.text) {
     console.log(`[wa-bridge] contextualized message: ${textForBot}`);
@@ -82,15 +126,18 @@ async function tick() {
         await clickSendButton();
         console.log(`[wa-bridge] sent staff-review handoff notice. staffItemId=${botResponse.staffItemId || "none"}`);
         if (draftText) console.log(`[wa-bridge] staff draft: ${draftText}`);
+        pauseIfHandoffNeeded({ incoming, snapshot, botResponse, noticeText });
         return;
       }
       console.log(`[wa-bridge] drafted staff-review handoff notice. staffItemId=${botResponse.staffItemId || "none"}`);
       if (draftText) console.log(`[wa-bridge] staff draft: ${draftText}`);
+      pauseIfHandoffNeeded({ incoming, snapshot, botResponse, noticeText });
       return;
     }
 
     console.log(`[wa-bridge] held for staff review; not drafting into WhatsApp. staffItemId=${botResponse.staffItemId || "none"}`);
     if (draftText) console.log(`[wa-bridge] staff draft: ${draftText}`);
+    pauseIfHandoffNeeded({ incoming, snapshot, botResponse, noticeText: null });
     return;
   }
 
@@ -124,6 +171,65 @@ async function callBot(payload) {
 
 function latestIncoming(snapshot) {
   return [...(snapshot.messages || [])].reverse().find((message) => message.incoming && message.text);
+}
+
+function chatKeyFor(incoming, snapshot) {
+  return incoming.sender || snapshot.chatTitle || "whatsapp_web_sender";
+}
+
+function pauseIfHandoffNeeded({ incoming, snapshot, botResponse, noticeText }) {
+  if (!shouldPauseForHandoff(botResponse)) return;
+  const intent = botResponse?.debug?.intent?.primaryIntent || "general";
+  const record = handoffState.pause(chatKeyFor(incoming, snapshot), {
+    reason: "staff_review",
+    intent,
+    staffItemId: botResponse?.staffItemId || null,
+    lastCustomerText: incoming.text || null,
+    botHandoffText: noticeText || null
+  });
+  if (record) {
+    console.log(`[wa-bridge] paused chat for staff handoff chat=${record.chatKey} intent=${intent} until=${record.pauseUntil}`);
+  }
+}
+
+function shouldPauseForHandoff(botResponse) {
+  const intent = botResponse?.debug?.intent?.primaryIntent || "general";
+  const action = botResponse?.action || botResponse?.debug?.decision?.action || "";
+  if (action === "handoff") return true;
+  return botResponse?.finalStatus === "staff_review" && HANDOFF_PAUSE_INTENTS.has(intent);
+}
+
+function syncStaffReplyForSnapshot(snapshot) {
+  const incoming = latestIncoming(snapshot);
+  const chatKey = chatKeyFor(incoming || {}, snapshot);
+  const activeHandoff = handoffState.active(chatKey);
+  if (!activeHandoff || activeHandoff.staffReplyAt) return;
+  const outgoing = latestOutgoing(snapshot);
+  if (!outgoing?.text) return;
+  if (outgoing.fingerprint === activeHandoff.botHandoffFingerprint) return;
+  if (outgoing.text === activeHandoff.botHandoffText) return;
+  if (looksLikeBridgeAuthored(outgoing.text)) return;
+
+  const record = handoffState.markStaffReply(chatKey, {
+    text: outgoing.text,
+    fingerprint: outgoing.fingerprint
+  });
+  if (record) {
+    console.log(`[wa-bridge] detected staff reply in handoff chat=${chatKey}; next acknowledgement will stay silent, then bot resumes.`);
+  }
+}
+
+function latestOutgoing(snapshot) {
+  return [...(snapshot.messages || [])].reverse().find((message) => message.outgoing && message.text);
+}
+
+function isCustomerAcknowledgement(text) {
+  return /^(ok|okay|k|yes|yep|thanks?|thank you|thx|好|好的|好呀|可以|得|得呀|收到|明白|唔該|謝謝|多謝|🙏|👍)[\s!.。！?？🙏👍]*$/i.test(String(text || "").trim());
+}
+
+function looksLikeBridgeAuthored(text) {
+  const value = String(text || "");
+  return /跟進編號：staff_|交俾同事跟進|真人同事|留位費|以上只係一般參考|以下係目前測試資料|後台草稿：|我幫你睇咗/.test(value);
 }
 
 function contextualizeIncoming(incoming, snapshot) {
@@ -421,7 +527,25 @@ async function clickSendButton() {
       const dataIcon = button.querySelector('[data-icon]')?.getAttribute('data-icon') || '';
       return /send|傳送|发送/i.test(aria + ' ' + title + ' ' + dataIcon);
     });
-    if (!sendButton) return JSON.stringify({ ok: false, reason: 'send_button_not_found' });
+    if (!sendButton) {
+      const composer = [...document.querySelectorAll('[contenteditable="true"][role="textbox"]')]
+        .find((el) => {
+          const label = el.getAttribute('aria-label') || '';
+          return !/search|搜尋/i.test(label) && (/message|訊息|輸入/i.test(label) || el.closest('footer'));
+        });
+      if (!composer) return JSON.stringify({ ok: false, reason: 'send_button_not_found' });
+      composer.focus();
+      const enter = new KeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        cancelable: true
+      });
+      composer.dispatchEvent(enter);
+      return JSON.stringify({ ok: true, method: 'keyboard-enter' });
+    }
     sendButton.click();
     return JSON.stringify({ ok: true });
   })()`));

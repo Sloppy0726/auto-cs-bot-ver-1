@@ -11,6 +11,7 @@
     "bridge:whatsapp-web": "node \"whatsapp-web-test-bridge/src/whatsappWebBridge.js\"",
     "bridge:whatsapp-web:start": "cd \"whatsapp-web-test-bridge\" && npm start",
     "bridge:whatsapp-web:stop": "cd \"whatsapp-web-test-bridge\" && npm run stop",
-    "bridge:whatsapp-web:status": "cd \"whatsapp-web-test-bridge\" && npm run status"
+    "bridge:whatsapp-web:status": "cd \"whatsapp-web-test-bridge\" && npm run status",
+    "bridge:whatsapp-web:handoff:clear": "cd \"whatsapp-web-test-bridge\" && npm run handoff:clear"
   }
 }

@@ -41,7 +41,7 @@ const intentRules = [
     intent: "hours_location",
     confidence: 0.88,
     reason: "Matched hours or location keyword",
-    pattern: /地址|邊度|位置|分店|旺角|銅鑼灣|尖沙咀|幾點開|幾點收|營業|開門|收工|邊間公司|邊間店|店名|公司名|brand|business name|hours|location|address|branch|open|close|closing|opening|directions|nearest mtr|where are you|地鐵|港鐵|出口|mtr/i
+    pattern: /地址|邊度|位置|分店|旺角|銅鑼灣|尖沙咀|幾點開|幾點收|營業|開門|收工|邊間公司|邊間店|店名|公司名|間舖|間鋪|舖名|鋪名|叫咩|brand|business name|shop name|store name|hours|location|address|branch|open|close|closing|opening|directions|nearest mtr|where are you|地鐵|港鐵|出口|mtr/i
   },
   {
     intent: "aftercare",
@@ -89,7 +89,7 @@ const intentRules = [
     intent: "service_info",
     confidence: 0.76,
     reason: "Matched service information keyword",
-    pattern: /療程|服務|做咩|包括|需時|效果|推介|推薦|建議|介紹|recommend|recommendation|underarm|腋下|laser|facial|HIFU|脫毛|nail|spa|service|treatment/i
+    pattern: /療程|服務|做咩|包括|需時|效果|推介|推薦|建議|介紹|有冇list|有無list|list|menu|recommend|recommendation|underarm|腋下|laser|facial|HIFU|脫毛|nail|spa|service|treatment/i
   }
 ];
 
