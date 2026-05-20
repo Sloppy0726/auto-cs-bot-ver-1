@@ -10,6 +10,8 @@ Local v1.0 workflow skeleton is complete:
 
 ```text
 customer channel
+  -> channel adapter
+  -> conversation context
   -> privacy filter
   -> privacy gateway
   -> intent classifier
@@ -23,7 +25,7 @@ customer channel
   -> send reply or staff inbox
 ```
 
-Current test total: **889 passing**.
+Current test total: **2,121 passing** across 16 plain Node.js test runners.
 
 No npm dependencies are required. Everything is plain Node.js stdlib.
 
@@ -44,6 +46,7 @@ No npm dependencies are required. Everything is plain Node.js stdlib.
 | 11 | `private business backend mock ver 1.0` | Mock booking, order, stock, and payment facts. |
 | 12 | `staff inbox ver 1.0` | In-memory review / handoff queue. |
 | 13 | `end-to-end pipeline ver 1.0` | Orchestrates the whole local workflow. |
+| 14 | `conversation context ver 1.0` | Shared deterministic stitching for fragmented booking follow-ups before the pipeline. |
 
 ## Legal and Trust Drafts
 
@@ -57,6 +60,55 @@ Draft customer-facing trust/legal documents live in [`legal/`](legal/). They are
 | [`legal/draft-data-processing-addendum.md`](legal/draft-data-processing-addendum.md) | B2B processing terms for SME customers using the product with their customer messages. |
 
 ## Local Run
+
+Start the local webhook server:
+
+```bash
+npm start
+```
+
+By default it listens at `http://127.0.0.1:3000/webhook` in unsigned local mode for `restaurant_demo`.
+Opening that URL in a browser shows a local website chat simulator with fake customers, orders, payments, stock, and booking scenarios.
+
+The fake database lives at:
+
+```text
+private business backend mock ver 1.0/seed/mockBusinessData.js
+```
+
+Send a test message:
+
+```bash
+curl -X POST http://127.0.0.1:3000/webhook \
+  -H "content-type: application/json" \
+  -d '{"channel":"website","sessionId":"local-demo-001","text":"你哋幾點開門？"}'
+```
+
+To run signed mode, set a webhook secret first:
+
+```bash
+WEBHOOK_SECRET="dev-secret" WEBHOOK_BUSINESS_ID="restaurant_demo" npm start
+```
+
+## WhatsApp Web Local Testing
+
+The WhatsApp Web bridge is packaged separately in:
+
+```text
+whatsapp-web-test-bridge/
+```
+
+This is a development adapter for Safari + WhatsApp Web only. It does not replace the webhook/API infrastructure that a real WhatsApp Business API integration should use.
+
+Fresh machine setup:
+
+```bash
+cd whatsapp-web-test-bridge
+cp .env.example .env
+npm start
+```
+
+The packaged starter runs the local bot server if needed, starts the WhatsApp Web bridge in `screen`, and writes logs under `whatsapp-web-test-bridge/logs/`. See [`whatsapp-web-test-bridge/README.md`](whatsapp-web-test-bridge/README.md) for setup, safety switches, and troubleshooting.
 
 Example:
 
@@ -110,8 +162,11 @@ Run from the repo root:
 
 ```bash
 node "privacy filter ver 1.0/test/privacyFilter.test.js"
+node "privacy filter ver 1.0/test/privacyFilter.edge.test.js"
 node "privacy gateway ver 1.0/test/privacyGateway.test.js"
+node "conversation context ver 1.0/test/conversationContext.test.js"
 node "intent classifier ver 1.0/test/intentClassifier.test.js"
+node "intent classifier ver 1.0/test/intentClassifier.edge.test.js"
 node "knowledge base ver 1.0/test/knowledgeBase.test.js"
 node "business rules ver 1.0/test/businessRules.test.js"
 node "google drive promo sync ver 1.0/test/promoSync.test.js"
@@ -122,6 +177,7 @@ node "model router ver 1.0/test/modelRouter.test.js"
 node "private business backend mock ver 1.0/test/businessBackendMock.test.js"
 node "staff inbox ver 1.0/test/staffInbox.test.js"
 node "end-to-end pipeline ver 1.0/test/pipeline.test.js"
+node "end-to-end pipeline ver 1.0/test/server.test.js"
 ```
 
 ## Side-by-side Reports

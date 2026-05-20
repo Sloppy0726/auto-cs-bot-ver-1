@@ -43,6 +43,11 @@ const result = await pipeline.runMessage({
 ## Run
 
 ```bash
+npm start
+curl -X POST http://127.0.0.1:3000/webhook \
+  -H "content-type: application/json" \
+  -d '{"channel":"website","sessionId":"local-demo-001","text":"你哋幾點開門？"}'
+
 node "end-to-end pipeline ver 1.0/test/pipeline.test.js"
 node "end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js"
 ```

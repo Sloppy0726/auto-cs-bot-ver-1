@@ -20,6 +20,19 @@ module.exports = [
     }
   },
   {
+    id: "beauty_identity",
+    businessId: "beauty_demo",
+    intent: "hours_location",
+    question: "店名 / company identity",
+    keywords: ["邊間公司", "邊間店", "店名", "公司名", "brand", "business name", "你係"],
+    tone: "luxury_beauty",
+    answers: {
+      "zh-HK": "我哋係 Solara Beauty（測試美容店），銅鑼灣店提供面部護理、皮膚狀態評估同部分脫毛護理。",
+      en: "We are Solara Beauty, a test beauty salon. Our Causeway Bay branch offers facial treatments, skin assessments, and selected laser hair removal services.",
+      mixed: "我哋係 Solara Beauty（測試美容店），Causeway Bay店提供facial、skin assessment同部分laser hair removal。"
+    }
+  },
+  {
     id: "beauty_pricing_facial",
     businessId: "beauty_demo",
     intent: "pricing",
@@ -117,6 +130,34 @@ module.exports = [
       "zh-HK": "滿HK$500免順豐順便智能櫃，未滿就$30運費。工商/住宅地址另外報價。",
       en: "Free SF locker shipping for orders over HK$500, otherwise HK$30. Door-to-door quoted separately.",
       mixed: "滿$500免SF locker，否則$30，door-to-door另計。"
+    }
+  },
+  {
+    id: "igshop_order_status",
+    businessId: "igshop_demo",
+    intent: "order_status",
+    question: "訂單狀態 / order status",
+    keywords: ["order", "status", "訂單", "單號", "物流", "tracking", "shipment", "courier", "IG"],
+    tone: "casual_ig",
+    requiresBackend: true,
+    answers: {
+      "zh-HK": "我可以幫你睇訂單狀態；為保障私隱，只會用已驗證嘅IG帳戶同訂單號查詢。",
+      en: "I can check the order status using the verified IG account and order reference.",
+      mixed: "我可以幫你check order status，會用verified IG account同order ref查。"
+    }
+  },
+  {
+    id: "igshop_payment_check",
+    businessId: "igshop_demo",
+    intent: "payment",
+    question: "付款查詢 / payment check",
+    keywords: ["FPS", "PayMe", "payment", "付款", "入數", "轉數快", "paid", "pay"],
+    tone: "casual_ig",
+    requiresBackend: true,
+    answers: {
+      "zh-HK": "我可以幫你查付款紀錄；為保障私隱，只會用已驗證帳戶同付款參考編號查詢。",
+      en: "I can check the payment record using the verified account and payment reference.",
+      mixed: "我可以幫你check payment record，會用verified account同payment ref查。"
     }
   },
 

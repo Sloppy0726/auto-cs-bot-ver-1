@@ -4,11 +4,12 @@
 
 const seedCases = [
   {
-    name: "beauty hours: archetype allows hours_location auto_send (no $/digits in answer? — has 11:00, so trips ask-staff-before-promise → review)",
+    name: "beauty hours: archetype allows hours_location auto_send",
     businessId: "beauty_demo",
     input: "Causeway Bay店今晚幾點收工？",
-    expectAction: "staff_review",
-    expectMustForbid: ["invent_prices", "give_medical_advice", "promise_treatment_result"]
+    expectAction: "auto_send",
+    expectMustForbid: ["invent_prices", "give_medical_advice", "promise_treatment_result"],
+    expectMustAllow: ["quote_kb_verbatim"]
   },
   {
     name: "restaurant hours: archetype allows + no digit-trip mode → auto_send",

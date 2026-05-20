@@ -1,0 +1,16 @@
+{
+  "name": "hk-ai-customer-support-saas",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node \"end-to-end pipeline ver 1.0/src/server.js\"",
+    "test:context": "node \"conversation context ver 1.0/test/conversationContext.test.js\"",
+    "test:e2e": "node \"end-to-end pipeline ver 1.0/test/pipeline.test.js\" && node \"end-to-end pipeline ver 1.0/test/server.test.js\"",
+    "bridge:whatsapp": "node \"scripts/whatsappWebBridge.js\"",
+    "bridge:whatsapp-web": "node \"whatsapp-web-test-bridge/src/whatsappWebBridge.js\"",
+    "bridge:whatsapp-web:start": "cd \"whatsapp-web-test-bridge\" && npm start",
+    "bridge:whatsapp-web:stop": "cd \"whatsapp-web-test-bridge\" && npm run stop",
+    "bridge:whatsapp-web:status": "cd \"whatsapp-web-test-bridge\" && npm run status"
+  }
+}

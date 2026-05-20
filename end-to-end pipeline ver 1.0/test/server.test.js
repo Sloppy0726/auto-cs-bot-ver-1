@@ -74,6 +74,15 @@ const { createWebhookServer, _internal } = require("../src/server");
     { channel: "website", businessId: "beauty_demo", text: "hello" },
     { credentialId: "default" }
   ), /business_id_binding_required/, "tenant-scoped payloads require a server-side business binding");
+  assert.deepEqual(
+    _internal.authorizeWebhookPayload(
+      { channel: "instagram", businessId: "igshop_demo", text: "hello" },
+      { unsigned: true },
+      { allowUnsignedWebhooks: true }
+    ),
+    { channel: "instagram", businessId: "igshop_demo", text: "hello" },
+    "unsigned local mode should allow payload-selected fake businesses"
+  );
   assert.throws(() => _internal.verifyUnsignedWebhookMode({ allowUnsignedWebhooks: true, nodeEnv: "production" }), /webhook_signature_required/, "unsigned webhook mode must not run in production");
 
   await assertServerRejectsUnsignedBeforePipeline({ body, secret, timestamp });
@@ -84,8 +93,9 @@ const { createWebhookServer, _internal } = require("../src/server");
   await assertServerMasksAuthAndBadRequestDetails({ secret, timestamp });
   await assertServerRejectsUnsupportedContentType({ body, secret, timestamp });
   await assertServerRejectsDeclaredOversizeBody({ body, secret, timestamp, signature });
+  await assertServerStitchesApiConversationContext();
 
-  console.log("server: 28 tests passed");
+  console.log("server: 30 tests passed");
 })();
 
 function requestWithHeaders(headers) {
@@ -261,6 +271,41 @@ async function assertServerRejectsUnboundSingleSecretBusinessId({ body, secret, 
   assert.equal(response.statusCode, 401);
   assert.equal(response.body.error, "unauthorized");
   assert.equal(called, false, "pipeline must not run when a single secret is not bound to a businessId");
+}
+
+async function assertServerStitchesApiConversationContext() {
+  const receivedPayloads = [];
+  const server = createWebhookServer({
+    allowUnsignedWebhooks: true,
+    pipeline: {
+      async runMessage(payload) {
+        receivedPayloads.push(payload);
+        return {
+          finalStatus: "ready_to_send",
+          outbound: { status: "ready_to_send", payload: { text: "ok" } },
+          staffItem: null,
+          decision: { action: "auto_send" }
+        };
+      }
+    }
+  });
+
+  const first = await sendJson({
+    server,
+    payload: { channel: "whatsapp", businessId: "beauty_demo", from: "api_sender_1", text: "想book位", debug: true }
+  });
+  assert.equal(first.statusCode, 200);
+  assert.equal(first.body.debug.conversationContext.changed, false);
+
+  const second = await sendJson({
+    server,
+    payload: { channel: "whatsapp", businessId: "beauty_demo", from: "api_sender_1", text: "今晚四點", debug: true }
+  });
+  assert.equal(second.statusCode, 200);
+  assert.equal(receivedPayloads[1].text, "想book 今晚四點", "API server should stitch fragmented booking follow-ups");
+  assert.equal(second.body.debug.conversationContext.changed, true);
+  assert.equal(second.body.debug.conversationContext.originalText, "今晚四點");
+  assert.equal(second.body.debug.conversationContext.stitchedText, "想book 今晚四點");
 }
 
 async function assertServerMasksAuthAndBadRequestDetails({ secret, timestamp }) {

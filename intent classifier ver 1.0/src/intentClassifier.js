@@ -23,7 +23,7 @@ const intentRules = [
     intent: "pricing",
     confidence: 0.9,
     reason: "Matched pricing keyword",
-    pattern: /幾錢|價錢|收費|費用|price|pricing|how much|cost|\bfees?\b|rate|rates|\bcharges?\b|trial|promotion|discount|offer|優惠|package|套票/i
+    pattern: /幾錢|幾多錢|價錢|價目|收費|費用|方案|price|pricing|how much|cost|\bfees?\b|rate|rates|\bcharges?\b|plans?|trial|promotion|discount|offer|優惠|package|套票/i
   },
   {
     intent: "reschedule",
@@ -35,13 +35,13 @@ const intentRules = [
     intent: "booking",
     confidence: 0.9,
     reason: "Matched booking keyword",
-    pattern: /book|booking|預約|有冇位|有無位|hold|appointment|walk in|walk-in|availability|available|slot|reserve|schedule/i
+    pattern: /book|booking|預約|有冇位|有無位|有咩時間|咩時間|有咩時段|咩時段|hold|appointment|walk in|walk-in|availability|available|slot|reserve|schedule/i
   },
   {
     intent: "hours_location",
     confidence: 0.88,
     reason: "Matched hours or location keyword",
-    pattern: /地址|邊度|位置|分店|旺角|銅鑼灣|尖沙咀|幾點開|幾點收|營業|開門|收工|hours|location|address|branch|open|close|closing|opening|directions|nearest mtr|where are you|地鐵|港鐵|出口|mtr/i
+    pattern: /地址|邊度|位置|分店|旺角|銅鑼灣|尖沙咀|幾點開|幾點收|營業|開門|收工|邊間公司|邊間店|店名|公司名|brand|business name|hours|location|address|branch|open|close|closing|opening|directions|nearest mtr|where are you|地鐵|港鐵|出口|mtr/i
   },
   {
     intent: "aftercare",
@@ -65,7 +65,7 @@ const intentRules = [
     intent: "complaint",
     confidence: 0.94,
     reason: "Matched complaint keyword",
-    pattern: /投訴|退款|退錢|唔滿意|嬲|chargeback|refund|complaint|angry|not happy|bad service|no reply|didn.?t reply|overcharged|payment not found|paid but you said|paid but.*not found/i
+    pattern: /投訴|退款|退錢|唔滿意|嬲|屌|廢|垃圾|咁廢|bad bot|useless bot|chargeback|refund|complaint|angry|not happy|bad service|no reply|didn.?t reply|overcharged|payment not found|paid but you said|paid but.*not found/i
   },
   {
     intent: "sensitive_health",

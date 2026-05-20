@@ -67,7 +67,7 @@ async function runMessage(input = {}, deps = {}) {
     query: inferBackendQuery({ normalizedMessage, intent, now: deps.nowFn() })
   });
   const modelRoute = routeModel({ decision, intent, gateway });
-  const draft = await generateDraft({ decision, knowledge, intent, gateway, promotions, modelRoute }, { llmAdapter: deps.llmAdapter, modelRoute });
+  const draft = await generateDraft({ decision, knowledge, intent, gateway, promotions, backendFacts, modelRoute }, { llmAdapter: deps.llmAdapter, modelRoute });
   const safety = checkDraft({ draft, decision, knowledge, intent, gateway });
 
   let staffItem = null;
@@ -102,21 +102,89 @@ function inferBackendQuery({ normalizedMessage, intent, now }) {
     businessId: normalizedMessage.businessId,
     senderId: normalizedMessage.senderId
   };
-  const date = text.includes("今晚") ? hkDateKey(now || new Date()) : null;
-  const timeMatch = text.match(/(\d{1,2})(?::(\d{2}))?\s*(?:點|:)?/);
+  const date = inferRequestedDate(text, now || new Date());
+  const time = inferRequestedTime(text);
+  const partySize = inferPartySize(text);
   if (date) query.date = date;
-  if (timeMatch) {
-    const hour = timeMatch[1].padStart(2, "0");
-    const minute = timeMatch[2] || "00";
-    query.time = `${hour}:${minute}`;
-  }
-  if (/facial|面部|護理/i.test(text)) query.service = "facial";
+  if (partySize) query.partySize = partySize;
+  if (time) query.time = time;
+  if (/facial|面部|護理|首次|第一次|體驗|trial/i.test(text)) query.service = "facial";
+  if (/assessment|評估/i.test(text)) query.service = "assessment";
+  if (/p3|小三|english|英文/i.test(text)) query.service = "p3_english";
+  if (/laser|脫毛|underarm|腋下/i.test(text)) query.service = "laser";
   const orderMatch = text.match(/\b(?:IG)?\d{4,}\b/i);
+  const paymentRefMatch = text.match(/\b(?:FPS|PAYME|PM|DEP)-[A-Z0-9-]+\b/i);
   if (orderMatch) query.orderId = orderMatch[0].toUpperCase().startsWith("IG") ? orderMatch[0].toUpperCase() : `IG${orderMatch[0]}`;
+  if (paymentRefMatch) query.reference = paymentRefMatch[0].toUpperCase();
   const skuMatch = text.match(/\b[A-Z]{2,}-[A-Z0-9-]+\b/i);
   if (skuMatch) query.sku = skuMatch[0].toUpperCase();
   if (intent.primaryIntent === "service_info" && /tee|t-shirt/i.test(text)) query.sku = query.sku || "TEE-BLK-M";
   return query;
+}
+
+function inferRequestedDate(text, now) {
+  if (/今晚|今日|today|tonight/i.test(text)) return hkDateKey(now);
+
+  if (/聽日|明日|明天|tomorrow/i.test(text)) {
+    const date = new Date(now);
+    date.setUTCDate(date.getUTCDate() + 1);
+    return hkDateKey(date);
+  }
+
+  const isoDate = text.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
+  if (isoDate) return isoDate[1];
+
+  return null;
+}
+
+function inferRequestedTime(text) {
+  const numericTime = text.match(/(?:^|[^\d])(\d{1,2})(?::(\d{2}))?\s*(?:點|時)?(?:\s*(半))?/);
+  if (numericTime) {
+    const hour = normalizeHour(Number(numericTime[1]), text);
+    const minute = numericTime[2] || (numericTime[3] ? "30" : "00");
+    return `${String(hour).padStart(2, "0")}:${minute}`;
+  }
+
+  const chineseNumber = "一兩二三四五六七八九十";
+  const chineseTime = text.match(new RegExp(`([${chineseNumber}])\\s*(?:點|時)(?:\\s*(半))?`));
+  if (chineseTime) {
+    const hour = normalizeHour(chineseNumberValue(chineseTime[1]), text);
+    const minute = chineseTime[2] ? "30" : "00";
+    return `${String(hour).padStart(2, "0")}:${minute}`;
+  }
+
+  return null;
+}
+
+function normalizeHour(hour, text) {
+  if (hour < 1 || hour > 23) return hour;
+  if (hour <= 11 && /今晚|夜晚|晚上|下午|pm/i.test(text)) return hour + 12;
+  return hour;
+}
+
+function chineseNumberValue(value) {
+  const chineseNumbers = {
+    一: 1,
+    兩: 2,
+    二: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9,
+    十: 10
+  };
+  return chineseNumbers[value] || null;
+}
+
+function inferPartySize(text) {
+  const digitMatch = text.match(/(\d{1,2})\s*(?:位|人|pax|people|persons|guests?)/i);
+  if (digitMatch) return Number(digitMatch[1]);
+
+  const chineseMatch = text.match(/([一兩二三四五六七八九十])\s*(?:位|人)/);
+  return chineseMatch ? chineseNumberValue(chineseMatch[1]) : null;
 }
 
 function result(payload) {
@@ -141,5 +209,5 @@ function result(payload) {
 module.exports = {
   createPipeline,
   runMessage,
-  _internal: { inferBackendQuery }
+  _internal: { inferBackendQuery, inferPartySize, inferRequestedDate, inferRequestedTime }
 };

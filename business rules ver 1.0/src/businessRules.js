@@ -17,7 +17,7 @@ const ACTIONS = Object.freeze({
   BLOCK: "block"
 });
 
-const ANGRY_PATTERN = /搞錯|嬲|憤怒|不滿|唔滿意|投訴|退錢|退款|chargeback|refund|complaint|angry|furious|terrible|worst/i;
+const ANGRY_PATTERN = /搞錯|嬲|憤怒|不滿|唔滿意|投訴|退錢|退款|屌|廢|垃圾|咁廢|chargeback|refund|complaint|angry|furious|terrible|worst|bad bot|useless bot/i;
 
 const POLICY_TO_FORBIDDEN = Object.freeze({
   no_medical_claim: ["give_medical_advice", "promise_treatment_result", "diagnose"],
@@ -160,7 +160,9 @@ function evaluate(input) {
   const passScore = bestScore >= 0.7;
   const passConfidence = intentConfidence >= 0.7;
   const noRiskHints = (intent.riskLevel === "none" || intent.riskLevel === "low");
+  const numberNeedsReview = intent.primaryIntent !== "hours_location";
   const askStaffTrip = config.askStaffBeforePromise
+    && numberNeedsReview
     && knowledge.bestMatch
     && NUMBER_LIKE_PATTERN.test(knowledge.bestMatch.answer || "");
 

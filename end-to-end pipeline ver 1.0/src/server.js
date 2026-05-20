@@ -3,14 +3,31 @@
 const http = require("node:http");
 const crypto = require("node:crypto");
 const { createPipeline } = require("./pipeline");
+const { createConversationContextStore } = require("../../conversation context ver 1.0/src/conversationContext");
+const fakeBusinessData = require("../../private business backend mock ver 1.0/seed/mockBusinessData");
 
 const DEFAULT_MAX_BODY_BYTES = 1_000_000;
 const DEFAULT_REPLAY_WINDOW_SECONDS = 300;
 const DEFAULT_BODY_TIMEOUT_MS = 5_000;
+const DEFAULT_HOST = "127.0.0.1";
+const DEFAULT_PORT = 3000;
 
 function createWebhookServer(config = {}) {
   const pipeline = config.pipeline || createPipeline(config);
+  const conversationContextStore = config.conversationContextStore === false
+    ? null
+    : (config.conversationContextStore || createConversationContextStore(config.conversationContext || {}));
   return http.createServer(async (req, res) => {
+    if (req.method === "GET" && ["/", "/webhook"].includes(req.url)) {
+      writeHtml(res, 200, webChatHtml());
+      return;
+    }
+
+    if (req.method === "GET" && req.url === "/debug/fake-db") {
+      writeJson(res, 200, summarizeFakeDatabase(fakeBusinessData));
+      return;
+    }
+
     if (req.method !== "POST" || req.url !== "/webhook") {
       writeJson(res, 404, { error: "not_found" });
       return;
@@ -22,13 +39,12 @@ function createWebhookServer(config = {}) {
       const body = await readBody(req, config.maxBodyBytes, config.bodyTimeoutMs);
       const authContext = verifyWebhookRequest(req, body, config);
       const payload = authorizeWebhookPayload(parseJson(body), authContext, config);
-      const result = await pipeline.runMessage(payload);
-      writeJson(res, 200, {
-        finalStatus: result.finalStatus,
-        outbound: result.outbound,
-        staffItemId: result.staffItem?.id || null,
-        action: result.decision?.action || null
-      });
+      const contextResult = conversationContextStore
+        ? conversationContextStore.enrichPayload(payload)
+        : { payload, changed: false, originalText: payload?.text || null, stitchedText: payload?.text || null, reason: null, commit() {} };
+      const result = await pipeline.runMessage(contextResult.payload);
+      contextResult.commit();
+      writeJson(res, 200, publicWebhookResponse(result, contextResult.payload, config, contextResult));
     } catch (error) {
       const statusCode = statusCodeForError(error);
       writeJson(res, statusCode, { error: publicErrorMessage(error, statusCode) });
@@ -149,6 +165,10 @@ function webhookSecretCandidates(config = {}) {
 function authorizeWebhookPayload(payload, authContext = {}, config = {}) {
   const authorizedBusinessId = authContext.businessId || config.webhookBusinessId || null;
   const requestedBusinessId = payload?.businessId;
+  if (requestedBusinessId && !authorizedBusinessId && authContext.unsigned === true) {
+    return payload;
+  }
+
   if (requestedBusinessId && !authorizedBusinessId) {
     throw authError("business_id_binding_required");
   }
@@ -238,8 +258,916 @@ function writeJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function writeHtml(res, statusCode, html) {
+  res.writeHead(statusCode, { "content-type": "text/html; charset=utf-8" });
+  res.end(html);
+}
+
+function publicWebhookResponse(result, payload = {}, config = {}, contextResult = null) {
+  const response = {
+    finalStatus: result.finalStatus,
+    outbound: result.outbound,
+    staffItemId: result.staffItem?.id || null,
+    action: result.decision?.action || null
+  };
+
+  if (payload.debug === true || config.localDebug === true) {
+    response.debug = {
+      businessId: result.normalizedMessage?.businessId || null,
+      senderId: result.normalizedMessage?.senderId || null,
+      sanitizedText: result.gateway?.sanitizedText || null,
+      intent: result.intent,
+      knowledge: {
+        bestMatchId: result.knowledge?.bestMatch?.id || null,
+        bestMatchAnswer: result.knowledge?.bestMatch?.answer || null,
+        grounding: result.knowledge?.grounding || []
+      },
+      backendFacts: result.backendFacts,
+      draft: result.draft,
+      decision: {
+        action: result.decision?.action || null,
+        reason: result.decision?.reason || null,
+        reasons: result.decision?.reasons || []
+      },
+      safety: result.safety,
+      staffItem: result.staffItem
+        ? {
+            id: result.staffItem.id,
+            status: result.staffItem.status,
+            escalationLabel: result.staffItem.escalationLabel || null,
+            customerText: result.staffItem.customerText || null
+          }
+        : null,
+      conversationContext: contextResult
+        ? {
+            changed: Boolean(contextResult.changed),
+            originalText: contextResult.originalText || null,
+            stitchedText: contextResult.stitchedText || null,
+            reason: contextResult.reason || null,
+            key: contextResult.key || null
+          }
+        : null
+    };
+  }
+
+  return response;
+}
+
+function summarizeFakeDatabase(data) {
+  return Object.fromEntries(Object.entries(data).map(([businessId, record]) => {
+    return [businessId, {
+      customers: (record.customers || []).map((customer) => ({
+        customerExternalId: customer.customerExternalId,
+        displayName: customer.displayName || customer.handle || null,
+        notes: customer.notes || null
+      })),
+      availability: record.availability || [],
+      pricing: record.pricing || [],
+      stock: record.stock || [],
+      orders: (record.orders || []).map((order) => ({
+        orderId: order.orderId,
+        customerExternalId: order.customerExternalId,
+        status: order.status,
+        shipmentStatus: order.shipmentStatus,
+        courier: order.courier
+      })),
+      payments: (record.payments || []).map((payment) => ({
+        reference: payment.reference,
+        customerExternalId: payment.customerExternalId,
+        status: payment.status,
+        amount: payment.amount
+      }))
+    }];
+  }));
+}
+
+function webChatHtml() {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Website Chat Test</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --text: #17191f;
+      --muted: #626b7a;
+      --line: #d8dde7;
+      --accent: #0b65d8;
+      --accent-text: #ffffff;
+      --customer: #e9eef8;
+      --bot: #eef8f2;
+      --held: #fff5df;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #101317;
+        --panel: #181c22;
+        --text: #f3f5f8;
+        --muted: #a9b1bf;
+        --line: #303743;
+        --accent: #78a9ff;
+        --accent-text: #101317;
+        --customer: #252b35;
+        --bot: #1d3028;
+        --held: #3a2f1c;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+    }
+    main {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0;
+    }
+    header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 28px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .status {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 8px 12px;
+      font-weight: 700;
+      color: #0b7a50;
+      white-space: nowrap;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+      gap: 16px;
+    }
+    aside, .chat-panel, .debug-panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+    aside {
+      padding: 16px;
+    }
+    label {
+      display: block;
+      margin: 0 0 6px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    select, input, textarea, button {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--text);
+      font: inherit;
+    }
+    select, input {
+      padding: 10px 12px;
+      margin-bottom: 12px;
+    }
+    button {
+      padding: 10px 12px;
+      cursor: pointer;
+      font-weight: 750;
+    }
+    .scenario-list {
+      display: grid;
+      gap: 8px;
+      margin: 4px 0 16px;
+    }
+    .scenario-list button {
+      background: transparent;
+      text-align: left;
+    }
+    .chat-panel {
+      display: grid;
+      grid-template-rows: auto minmax(420px, 58vh) auto;
+      min-height: 600px;
+      overflow: hidden;
+    }
+    .chat-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid var(--line);
+      padding: 14px 16px;
+    }
+    .chat-title {
+      font-weight: 800;
+    }
+    .chat-subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 2px;
+    }
+    .messages {
+      overflow: auto;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .message {
+      max-width: min(76%, 620px);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .message.customer {
+      align-self: flex-end;
+      background: var(--customer);
+    }
+    .message.bot {
+      align-self: flex-start;
+      background: var(--bot);
+    }
+    .message.held {
+      align-self: flex-start;
+      background: var(--held);
+    }
+    .composer {
+      border-top: 1px solid var(--line);
+      padding: 14px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 116px;
+      gap: 10px;
+    }
+    textarea {
+      min-height: 48px;
+      max-height: 160px;
+      resize: vertical;
+      padding: 11px 12px;
+      line-height: 1.4;
+    }
+    .send {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--accent-text);
+    }
+    .debug-panel {
+      margin-top: 16px;
+      padding: 14px;
+    }
+    .debug-panel summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-weight: 750;
+    }
+    pre {
+      max-height: 320px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 12px 0 0;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    @media (max-width: 820px) {
+      header { display: block; }
+      .status { display: inline-block; margin-top: 12px; }
+      .layout { grid-template-columns: 1fr; }
+      .chat-panel { min-height: 560px; }
+      .composer { grid-template-columns: 1fr; }
+      .message { max-width: 92%; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Website Chat Test</h1>
+        <p>Local web channel simulator for the customer support bot.</p>
+      </div>
+      <div class="status" id="server-status">Server running</div>
+    </header>
+
+    <div class="layout">
+      <aside>
+        <label for="businessId">Business</label>
+        <select id="businessId">
+          <option value="restaurant_demo">Restaurant</option>
+          <option value="beauty_demo">Beauty clinic</option>
+          <option value="igshop_demo">IG shop</option>
+          <option value="edu_demo">Education centre</option>
+        </select>
+
+        <label for="sessionId">Test Customer</label>
+        <select id="sessionId"></select>
+
+        <label>Try A Scenario</label>
+        <div class="scenario-list">
+          <button type="button" data-scenario="hours">Opening hours</button>
+          <button type="button" data-scenario="restaurant">Book restaurant table</button>
+          <button type="button" data-scenario="beauty">Book facial slot</button>
+          <button type="button" data-scenario="order">Check fake order</button>
+          <button type="button" data-scenario="payment">Check fake payment</button>
+          <button type="button" data-scenario="complaint">Complaint handoff</button>
+        </div>
+
+        <button type="button" id="reset-chat">Reset Chat</button>
+      </aside>
+
+      <section>
+        <div class="chat-panel">
+          <div class="chat-top">
+            <div>
+              <div class="chat-title" id="chat-title">Restaurant</div>
+              <div class="chat-subtitle" id="chat-subtitle">website channel</div>
+            </div>
+            <div id="last-status">Ready</div>
+          </div>
+          <div class="messages" id="messages"></div>
+          <form class="composer" id="chat-form">
+            <textarea id="message" placeholder="Type a customer message...">What time are you open?</textarea>
+            <button class="send" type="submit">Send</button>
+          </form>
+        </div>
+
+        <details class="debug-panel" open>
+          <summary>Debug output</summary>
+          <pre id="debug">Send a message to see pipeline details.</pre>
+        </details>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const businessSelect = document.getElementById("businessId");
+    const sessionSelect = document.getElementById("sessionId");
+    const form = document.getElementById("chat-form");
+    const input = document.getElementById("message");
+    const messages = document.getElementById("messages");
+    const debug = document.getElementById("debug");
+    const lastStatus = document.getElementById("last-status");
+    const chatTitle = document.getElementById("chat-title");
+    const chatSubtitle = document.getElementById("chat-subtitle");
+
+    const customers = {
+      restaurant_demo: [
+        ["table_guest_001", "Chris W."],
+        ["table_guest_004", "Ms Lee"]
+      ],
+      beauty_demo: [
+        ["beauty_customer_amy", "Amy C."],
+        ["beauty_customer_may", "May L."]
+      ],
+      igshop_demo: [
+        ["local-browser-demo", "Demo User"],
+        ["ig_sender_1001", "Cass"],
+        ["ig_sender_1002", "Tony"]
+      ],
+      edu_demo: [
+        ["parent_demo_001", "Parent Demo"],
+        ["parent_chan_002", "Mrs Chan"]
+      ]
+    };
+
+    const businessNames = {
+      restaurant_demo: "Restaurant",
+      beauty_demo: "Beauty clinic",
+      igshop_demo: "IG shop",
+      edu_demo: "Education centre"
+    };
+
+    const scenarios = {
+      hours: { businessId: "restaurant_demo", sessionId: "table_guest_001", text: "What time are you open?" },
+      restaurant: { businessId: "restaurant_demo", sessionId: "table_guest_001", text: "Can I book tonight 18:30 for 2 people?" },
+      beauty: { businessId: "beauty_demo", sessionId: "beauty_customer_may", text: "想book今日19:00 facial有冇位" },
+      order: { businessId: "igshop_demo", sessionId: "ig_sender_1001", text: "Can you check my order IG1001 status?" },
+      payment: { businessId: "igshop_demo", sessionId: "local-browser-demo", text: "I paid FPS-IG2001, can you check payment?" },
+      complaint: { businessId: "igshop_demo", sessionId: "local-browser-demo", text: "I am angry, no reply, I want refund for IG2002" }
+    };
+
+    function syncCustomers() {
+      const businessId = businessSelect.value;
+      sessionSelect.innerHTML = "";
+      for (const customer of customers[businessId] || [["local-browser-demo", "Demo User"]]) {
+        const option = document.createElement("option");
+        option.value = customer[0];
+        option.textContent = customer[1] + " (" + customer[0] + ")";
+        sessionSelect.appendChild(option);
+      }
+      chatTitle.textContent = businessNames[businessId] || businessId;
+      chatSubtitle.textContent = sessionSelect.value + " via website channel";
+    }
+
+    function addMessage(kind, text) {
+      const item = document.createElement("div");
+      item.className = "message " + kind;
+      item.textContent = text;
+      messages.appendChild(item);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function botTextFromResponse(body) {
+      if (body.outbound && body.outbound.payload && body.outbound.payload.text) {
+        return body.outbound.payload.text;
+      }
+      if (body.debug && body.debug.draft && body.debug.draft.text) {
+        return body.debug.draft.text;
+      }
+      if (body.staffItemId) {
+        return "Held for staff review: " + body.staffItemId;
+      }
+      return JSON.stringify(body, null, 2);
+    }
+
+    async function sendMessage(text) {
+      const payload = {
+        channel: "website",
+        businessId: businessSelect.value,
+        sessionId: sessionSelect.value,
+        senderId: sessionSelect.value,
+        text,
+        debug: true
+      };
+
+      addMessage("customer", text);
+      lastStatus.textContent = "Sending";
+
+      const response = await fetch("/webhook", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const body = await response.json();
+      const held = body.finalStatus !== "ready_to_send";
+      addMessage(held ? "held" : "bot", botTextFromResponse(body));
+      lastStatus.textContent = body.action + " / " + body.finalStatus;
+      debug.textContent = JSON.stringify(body, null, 2);
+    }
+
+    businessSelect.addEventListener("change", syncCustomers);
+    sessionSelect.addEventListener("change", () => {
+      chatSubtitle.textContent = sessionSelect.value + " via website channel";
+    });
+
+    document.querySelectorAll("[data-scenario]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const scenario = scenarios[button.dataset.scenario];
+        businessSelect.value = scenario.businessId;
+        syncCustomers();
+        sessionSelect.value = scenario.sessionId;
+        chatSubtitle.textContent = sessionSelect.value + " via website channel";
+        input.value = scenario.text;
+        input.focus();
+      });
+    });
+
+    document.getElementById("reset-chat").addEventListener("click", () => {
+      messages.innerHTML = "";
+      debug.textContent = "Send a message to see pipeline details.";
+      lastStatus.textContent = "Ready";
+    });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = "";
+      try {
+        await sendMessage(text);
+      } catch (error) {
+        lastStatus.textContent = "Error";
+        addMessage("held", error.message);
+      }
+    });
+
+    syncCustomers();
+    addMessage("bot", "Hi, this is the local website test chat. Send a message when ready.");
+  </script>
+</body>
+</html>`;
+}
+
+function localConsoleHtml() {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Local Customer Support Bot</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --text: #17181c;
+      --muted: #5d6472;
+      --line: #d8dce5;
+      --accent: #1464f4;
+      --ok: #0b7a50;
+      --hold: #9a5b00;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #101216;
+        --panel: #181b21;
+        --text: #f1f3f7;
+        --muted: #aab1c0;
+        --line: #303541;
+        --accent: #78a6ff;
+        --ok: #63d89f;
+        --hold: #ffc267;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+    }
+    main {
+      width: min(980px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 40px 0;
+    }
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .status {
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: var(--ok);
+      background: var(--panel);
+      font-weight: 650;
+      font-size: 14px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
+      gap: 16px;
+    }
+    section {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 18px;
+    }
+    label {
+      display: block;
+      margin: 0 0 6px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 650;
+    }
+    input, select, textarea, button {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--text);
+      font: inherit;
+    }
+    input, select, textarea {
+      padding: 10px 12px;
+      margin-bottom: 14px;
+    }
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+    button {
+      padding: 10px 14px;
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    pre {
+      min-height: 300px;
+      margin: 0;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--text);
+    }
+    .meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .badge {
+      color: var(--hold);
+    }
+    .scenario-list {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .scenario-list button {
+      background: transparent;
+      color: var(--text);
+      border-color: var(--line);
+      text-align: left;
+      font-weight: 650;
+    }
+    @media (max-width: 760px) {
+      header { display: block; }
+      .status { display: inline-block; margin-top: 16px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Local Customer Support Bot</h1>
+        <p>Test the webhook pipeline running on this machine.</p>
+      </div>
+      <div class="status">Server running</div>
+    </header>
+
+    <div class="grid">
+      <section>
+        <label>Test Scenarios</label>
+        <div class="scenario-list">
+          <button type="button" data-scenario="restaurant">Restaurant table tonight</button>
+          <button type="button" data-scenario="igorder">IG order status</button>
+          <button type="button" data-scenario="igpayment">IG payment check</button>
+          <button type="button" data-scenario="beauty">Beauty booking</button>
+          <button type="button" data-scenario="edu">Education assessment</button>
+        </div>
+
+        <form id="message-form">
+          <label for="businessId">Business</label>
+          <select id="businessId" name="businessId">
+            <option value="restaurant_demo">restaurant_demo</option>
+            <option value="beauty_demo">beauty_demo</option>
+            <option value="igshop_demo">igshop_demo</option>
+            <option value="edu_demo">edu_demo</option>
+          </select>
+
+          <label for="channel">Channel</label>
+          <select id="channel" name="channel">
+            <option value="website">website</option>
+            <option value="whatsapp">whatsapp</option>
+            <option value="instagram">instagram</option>
+            <option value="facebook">facebook</option>
+          </select>
+
+          <label for="sessionId">Session ID</label>
+          <input id="sessionId" name="sessionId" value="local-browser-demo">
+
+          <label for="senderId">Sender ID</label>
+          <input id="senderId" name="senderId" value="local-browser-demo">
+
+          <label for="text">Customer Message</label>
+          <textarea id="text" name="text">What time are you open?</textarea>
+
+          <button type="submit">Send Test Message</button>
+        </form>
+      </section>
+
+      <section>
+        <div class="meta">
+          <span>Response</span>
+          <span id="result-status" class="badge">Waiting</span>
+        </div>
+        <pre id="result">Submit a message to see the pipeline response.</pre>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const form = document.getElementById("message-form");
+    const result = document.getElementById("result");
+    const status = document.getElementById("result-status");
+    const scenarios = {
+      restaurant: {
+        businessId: "restaurant_demo",
+        channel: "website",
+        sessionId: "table_guest_001",
+        senderId: "table_guest_001",
+        text: "Can I book tonight 18:30 for 2 people?"
+      },
+      igorder: {
+        businessId: "igshop_demo",
+        channel: "instagram",
+        sessionId: "ig_sender_1001",
+        senderId: "ig_sender_1001",
+        text: "Can you check my order IG1001 status?"
+      },
+      igpayment: {
+        businessId: "igshop_demo",
+        channel: "instagram",
+        sessionId: "local-browser-demo",
+        senderId: "local-browser-demo",
+        text: "I paid FPS-IG2001, can you check payment?"
+      },
+      beauty: {
+        businessId: "beauty_demo",
+        channel: "website",
+        sessionId: "beauty_customer_may",
+        senderId: "beauty_customer_may",
+        text: "想book今日19:00 facial有冇位"
+      },
+      edu: {
+        businessId: "edu_demo",
+        channel: "website",
+        sessionId: "parent_demo_001",
+        senderId: "parent_demo_001",
+        text: "Can I book today 17:30 assessment for P3 English?"
+      }
+    };
+
+    document.querySelectorAll("[data-scenario]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const scenario = scenarios[button.dataset.scenario];
+        for (const [key, value] of Object.entries(scenario)) {
+          form.elements[key].value = value;
+        }
+      });
+    });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      status.textContent = "Sending";
+      const payload = Object.fromEntries(new FormData(form).entries());
+      payload.debug = true;
+      try {
+        const response = await fetch("/webhook", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const body = await response.json();
+        status.textContent = response.ok ? "OK" : "Error";
+        result.textContent = JSON.stringify(body, null, 2);
+      } catch (error) {
+        status.textContent = "Error";
+        result.textContent = error.message;
+      }
+    });
+  </script>
+</body>
+</html>`;
+}
+
+function startWebhookServer(config = {}) {
+  const host = config.host || process.env.HOST || DEFAULT_HOST;
+  const port = Number(config.port || process.env.PORT || DEFAULT_PORT);
+  const nodeEnv = config.nodeEnv || process.env.NODE_ENV;
+  const hasWebhookSecret = Boolean(config.webhookSecret || process.env.WEBHOOK_SECRET);
+  const allowUnsignedWebhooks = config.allowUnsignedWebhooks ?? (!hasWebhookSecret && nodeEnv !== "production");
+  const webhookBusinessId = config.webhookBusinessId || process.env.WEBHOOK_BUSINESS_ID || null;
+  const server = createWebhookServer({
+    ...config,
+    allowUnsignedWebhooks,
+    webhookBusinessId,
+    llmAdapter: config.llmAdapter || localDemoLlmAdapter
+  });
+
+  return server.listen(port, host, () => {
+    const mode = allowUnsignedWebhooks ? "unsigned local mode" : "signed webhook mode";
+    console.log(`Webhook server listening at http://${host}:${port}/webhook (${mode}, businessId=${webhookBusinessId || "payload-selected"})`);
+  });
+}
+
+async function localDemoLlmAdapter(prompt, context = {}) {
+  const intent = context.intent?.primaryIntent || "general";
+  const action = context.decision?.action || "staff_review";
+  const facts = factsObject(context.backendFacts);
+
+  if (action === "handoff") {
+    return { text: `員工交接摘要\n意圖：${intent}\n原因：${context.decision?.reason || "需要人手跟進"}\n建議：請同事檢查對話同後台資料後回覆。` };
+  }
+
+  if (context.backendFacts?.found) {
+    if (intent === "pricing") {
+      return {
+        text: `後台草稿：\n${formatPricingPlans(context.backendFacts)}\n\n請同事確認客人需要邊個療程，再提醒效果因人而異及預約需付留位費。`
+      };
+    }
+
+    if (intent === "booking" || intent === "reschedule") {
+      if (Array.isArray(facts.availableSlots)) {
+        const slots = facts.availableSlots.length > 0 ? facts.availableSlots.join("、") : "暫時未見到可選時段";
+        return {
+          text: `後台草稿：${facts.date || "指定日期"} ${facts.service || facts.partySize || ""} 可選時段：${slots}。正式確認前請同事再核實並回覆客人。`
+        };
+      }
+      const availability = facts.available === true ? "暫時見到有位" : "暫時未見到有位";
+      return {
+        text: `後台草稿：${facts.date || "指定日期"} ${facts.time || "指定時間"} ${facts.partySize ? `${facts.partySize}位` : facts.service || ""} ${availability}。正式確認前請同事再核實並回覆客人。`
+      };
+    }
+
+    if (intent === "order_status") {
+      return {
+        text: `後台草稿：訂單 ${facts.orderId || ""} 狀態為 ${facts.status || "未提供"}，物流狀態為 ${facts.shipmentStatus || "未提供"}，快遞為 ${facts.courier || "未提供"}。請同事核實後回覆客人。`
+      };
+    }
+
+    if (intent === "payment") {
+      return {
+        text: `後台草稿：付款參考 ${facts.reference || ""} 的後台狀態為 ${facts.status || "未提供"}，金額 HK$${facts.amount ?? "未提供"}。請同事核實後回覆客人。`
+      };
+    }
+
+    if (intent === "service_info") {
+      const stock = facts.available === true ? "有庫存" : "未見庫存";
+      return {
+        text: `後台草稿：${facts.name || facts.sku || "查詢項目"} ${stock}，數量 ${facts.quantity ?? "未提供"}。請同事核實後回覆客人。`
+      };
+    }
+  }
+
+  return { text: context.knowledge?.bestMatch?.answer || "後台草稿：資料不足，請同事向客人追問一個必要資料。" };
+}
+
+function factsObject(backendFacts = {}) {
+  return Object.fromEntries((backendFacts.facts || []).map((fact) => [fact.key, fact.value]));
+}
+
+function formatPricingPlans(backendFacts = {}) {
+  const plans = [];
+  let current = null;
+  for (const fact of backendFacts.facts || []) {
+    if (fact.key === "planId") {
+      current = { planId: fact.value };
+      plans.push(current);
+      continue;
+    }
+    if (current) current[fact.key] = fact.value;
+  }
+
+  if (plans.length === 0) return "未搵到相符價目。";
+
+  return plans.map((plan) => {
+    const original = plan.originalPriceHkd ? `，原價HK$${plan.originalPriceHkd}` : "";
+    const sessions = plan.sessions ? `，${plan.sessions}次` : "";
+    const duration = plan.durationMinutes ? `，約${plan.durationMinutes}分鐘` : "";
+    const deposit = plan.depositHkd ? `，留位費HK$${plan.depositHkd}` : "";
+    const notes = plan.notesZh ? `\n  備註：${plan.notesZh}` : "";
+    return `- ${plan.planNameZh || plan.planId}: HK$${plan.priceHkd}${original}${sessions}${duration}${deposit}${notes}`;
+  }).join("\n");
+}
+
+if (require.main === module) {
+  startWebhookServer();
+}
+
 module.exports = {
   createWebhookServer,
+  startWebhookServer,
   _internal: {
     authorizeWebhookPayload,
     constantTimeEqual,

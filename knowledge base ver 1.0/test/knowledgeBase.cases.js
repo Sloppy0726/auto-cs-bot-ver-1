@@ -26,6 +26,14 @@ const seedCases = [
     expectHandoff: false
   },
   {
+    name: "beauty: company identity",
+    businessId: "beauty_demo",
+    input: "你係邊間公司？",
+    expectBestMatchId: "beauty_identity",
+    expectGap: false,
+    expectHandoff: false
+  },
+  {
     name: "beauty: booking is backend-bound",
     businessId: "beauty_demo",
     input: "想book今晚個facial有冇位",

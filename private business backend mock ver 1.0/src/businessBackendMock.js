@@ -20,6 +20,9 @@ function createBusinessBackend(config = {}) {
     lookupPayment(query) {
       return lookupPayment(data, query || {});
     },
+    lookupPricing(query) {
+      return lookupPricing(data, query || {});
+    },
     getMinimalFacts(input) {
       return getMinimalFacts(data, input || {});
     }
@@ -27,6 +30,10 @@ function createBusinessBackend(config = {}) {
 }
 
 function checkAvailability(data, query) {
+  if (shouldListAvailability(query)) {
+    return listAvailability(data, query);
+  }
+
   const missing = missingAvailabilityFields(query);
   if (missing.length > 0) {
     return {
@@ -52,6 +59,44 @@ function checkAvailability(data, query) {
     available: Boolean(match.available),
     facts: minimalFacts(match, ["date", "time", "service", "partySize", "available"]),
     reason: match.available ? "Mock backend has an available slot/table." : "Mock backend record is unavailable."
+  };
+}
+
+function shouldListAvailability(query) {
+  if (!query?.businessId || !query.date || query.time) return false;
+  if (query.businessId === "restaurant_demo") return Boolean(query.partySize);
+  return Boolean(query.service);
+}
+
+function listAvailability(data, query) {
+  const records = recordsFor(data, query.businessId, "availability")
+    .filter((item) => {
+      return item.date === query.date
+        && (!query.service || item.service === query.service)
+        && (!query.partySize || item.partySize === query.partySize);
+    })
+    .sort((left, right) => String(left.time).localeCompare(String(right.time)));
+  const availableSlots = records
+    .filter((item) => item.available)
+    .map((item) => item.time);
+  const facts = minimalFacts({ ...query, availableSlots }, ["date", "service", "partySize", "availableSlots"]);
+
+  if (records.length === 0) {
+    return {
+      found: false,
+      available: null,
+      facts,
+      reason: "No matching availability records in mock backend."
+    };
+  }
+
+  return {
+    found: true,
+    available: availableSlots.length > 0,
+    facts,
+    reason: availableSlots.length > 0
+      ? `Mock backend has ${availableSlots.length} available slot(s).`
+      : "Mock backend has matching records but no available slots."
   };
 }
 
@@ -103,8 +148,29 @@ function lookupPayment(data, query) {
   };
 }
 
+function lookupPricing(data, query) {
+  const records = recordsFor(data, query.businessId, "pricing");
+  const service = String(query.service || "").toLowerCase();
+  const plan = String(query.plan || query.planId || "").toLowerCase();
+  const matches = records.filter((item) => {
+    const serviceMatches = !service || String(item.service || "").toLowerCase() === service;
+    const planMatches = !plan
+      || String(item.planId || "").toLowerCase() === plan
+      || String(item.planNameZh || "").toLowerCase().includes(plan);
+    return serviceMatches && planMatches;
+  });
+
+  if (matches.length === 0) return { found: false, facts: [], reason: "Pricing plan not found in mock backend." };
+  return {
+    found: true,
+    facts: matches.flatMap((item) => pricingFacts(item)),
+    reason: `Found ${matches.length} pricing plan(s) in mock backend.`
+  };
+}
+
 function getMinimalFacts(data, input) {
   const intent = input.intent?.primaryIntent || input.intent || "general";
+  if (intent === "pricing") return lookupPricing(data, input.query || { businessId: input.businessId });
   if (intent === "booking" || intent === "reschedule") return checkAvailability(data, input.query || { businessId: input.businessId });
   if (intent === "order_status") return lookupOrder(data, input.query || { businessId: input.businessId });
   if (intent === "payment") return lookupPayment(data, input.query || { businessId: input.businessId });
@@ -127,11 +193,26 @@ function minimalFacts(record, keys) {
     .map((key) => ({ key, value: record[key] }));
 }
 
+function pricingFacts(record) {
+  return [
+    { key: "planId", value: record.planId },
+    { key: "service", value: record.service },
+    { key: "planNameZh", value: record.planNameZh },
+    { key: "descriptionZh", value: record.descriptionZh },
+    { key: "priceHkd", value: record.priceHkd },
+    { key: "originalPriceHkd", value: record.originalPriceHkd },
+    { key: "durationMinutes", value: record.durationMinutes },
+    { key: "sessions", value: record.sessions },
+    { key: "depositHkd", value: record.depositHkd },
+    { key: "notesZh", value: record.notesZh }
+  ].filter((fact) => fact.value !== undefined && fact.value !== null);
+}
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
 module.exports = {
   createBusinessBackend,
-  _internal: { checkAvailability, lookupOrder, getStock, lookupPayment, matchesCustomer, minimalFacts, missingAvailabilityFields }
+  _internal: { checkAvailability, lookupOrder, getStock, lookupPayment, lookupPricing, matchesCustomer, minimalFacts, missingAvailabilityFields, pricingFacts, listAvailability }
 };
