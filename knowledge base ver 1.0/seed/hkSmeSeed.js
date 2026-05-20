@@ -102,6 +102,20 @@ module.exports = [
       mixed: "Let me check下個slot，confirm之後要$200 deposit，做嘅時候deduct返。"
     }
   },
+  {
+    id: "beauty_membership_points",
+    businessId: "beauty_demo",
+    intent: "membership",
+    question: "會員積分 / member points",
+    keywords: ["會員", "會員號碼", "會員編號", "積分", "免費療程", "換療程", "member", "membership", "member id", "points", "free treatment", "redeem"],
+    tone: "luxury_beauty",
+    requiresBackend: true,
+    answers: {
+      "zh-HK": "請提供8位數字會員編號，我可以幫你查會員積分。每完成1次療程會累積1分；每10分可換1次免費療程。",
+      en: "Please share your 8-digit member ID and I can check your points. You earn 1 point for each completed treatment, and every 10 points can be redeemed for 1 free treatment.",
+      mixed: "請提供8位member ID，我可以幫你check points。每做1次treatment有1 point；每10 points可換1次free treatment。"
+    }
+  },
 
   // ---------------- Restaurant / cafe ----------------
   {

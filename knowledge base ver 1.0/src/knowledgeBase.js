@@ -14,7 +14,7 @@ const DEFAULT_OPTIONS = Object.freeze({
   alwaysHandoffIntents: ["complaint", "sensitive_health", "child_data", "human_request"],
   // Intents whose answer depends on real-time backend (slot, stock, payment status).
   // KB can suggest a templated reply, but the entry must be flagged requiresBackend.
-  backendBoundIntents: ["booking", "reschedule", "order_status", "payment"]
+  backendBoundIntents: ["booking", "reschedule", "order_status", "payment", "membership"]
 });
 
 function createKnowledgeBase(config = {}) {
@@ -69,7 +69,7 @@ function lookup(input, entriesByBusiness, options) {
       handoff: false,
       handoffReason: null,
       grounding: [],
-      suggestedClarification: clarificationFor(primaryIntent, language),
+      suggestedClarification: clarificationFor(primaryIntent, language, businessId),
       language,
       reasons: [`No knowledge base loaded for business "${businessId}"`]
     });
@@ -108,7 +108,7 @@ function lookup(input, entriesByBusiness, options) {
     handoff: false,
     handoffReason: null,
     grounding: matches.map((match) => match.id),
-    suggestedClarification: matches.length === 0 ? clarificationFor(primaryIntent, language) : null,
+    suggestedClarification: matches.length === 0 ? clarificationFor(primaryIntent, language, businessId) : null,
     language,
     backendBound,
     reasons: matches.length === 0
@@ -213,7 +213,7 @@ function detectLanguage(text) {
   return "unknown";
 }
 
-function clarificationFor(intent, language) {
+function clarificationFor(intent, language, businessId = null) {
   const zh = {
     pricing: "唔好意思，可以講多少少你想了解邊個服務嘅價錢？",
     booking: "請問你想預約邊個日期同時間？",
@@ -221,6 +221,7 @@ function clarificationFor(intent, language) {
     hours_location: "請問你想知道邊間分店嘅資料？",
     service_info: "可唔可以講多少少你想了解邊個服務？",
     aftercare: "請問係邊個療程之後嘅護理？",
+    membership: "請提供8位數字會員編號，我可以幫你查會員積分同免費療程資格。",
     order_status: "可唔可以提供你嘅訂單號碼？",
     general: "唔好意思，可唔可以講多少少你想問咩？"
   };
@@ -231,11 +232,23 @@ function clarificationFor(intent, language) {
     hours_location: "Which branch would you like info on?",
     service_info: "Could you share which service you're asking about?",
     aftercare: "Which treatment is the aftercare for?",
+    membership: "Please share your 8-digit member ID so I can check your points and free-treatment eligibility.",
     order_status: "Could you share your order reference?",
     general: "Could you share a bit more about what you'd like to ask?"
   };
   const table = language === "en" ? en : zh;
-  return table[intent] || table.general;
+  return withGreeting(table[intent] || table.general, language, businessId);
+}
+
+function withGreeting(text, language, businessId) {
+  const greeting = greetingForBusiness(businessId, language);
+  return greeting ? `${greeting}\n${text}` : text;
+}
+
+function greetingForBusiness(businessId, language) {
+  if (businessId !== "beauty_demo") return null;
+  if (language === "en") return "Hi, this is Solara Beauty.";
+  return "你好，呢度係 Solara Beauty。";
 }
 
 function toPublicEntry(entry) {
@@ -257,5 +270,5 @@ function round(value) {
 module.exports = {
   createKnowledgeBase,
   // exported for unit tests / advanced wiring
-  _internal: { tokenize, scoreEntry, normalizeEntry, detectLanguage }
+  _internal: { tokenize, scoreEntry, normalizeEntry, detectLanguage, clarificationFor, greetingForBusiness }
 };

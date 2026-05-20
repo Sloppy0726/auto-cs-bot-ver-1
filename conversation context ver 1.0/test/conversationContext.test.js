@@ -44,6 +44,27 @@ assert.equal(
   "greeting should break stale booking carry-over for service-only messages"
 );
 
+assert.deepEqual(
+  stitchText({
+    text: "00000010",
+    history: [
+      { incoming: true, text: "我已經是會員" },
+      { incoming: false, text: "請提供8位數字會員編號，我可以幫你查會員積分。" }
+    ]
+  }),
+  { text: "會員號碼 00000010", changed: true, reason: "membership_followup_context" },
+  "bare member ID after membership prompt should get membership context"
+);
+
+assert.equal(
+  stitchText({
+    text: "00000010",
+    history: [{ incoming: true, text: "想book位" }]
+  }).changed,
+  false,
+  "bare 8-digit numbers should not be stitched without membership context"
+);
+
 assert.equal(_internal.inferServiceFromText("腋下脫毛"), "laser", "underarm/laser service should infer laser");
 
 const store = createConversationContextStore();
@@ -75,6 +96,22 @@ const third = store.enrichPayload({
 assert.equal(third.changed, true, "API context store should stitch service-only booking follow-up");
 assert.equal(third.payload.text, "想book 今晚 四點 laser 做脫毛", "service-only follow-up should carry recent date and time");
 
+const memberStore = createConversationContextStore();
+memberStore.enrichPayload({
+  channel: "whatsapp",
+  businessId: "beauty_demo",
+  from: "api_member_1",
+  text: "我已經是會員"
+}).commit();
+const memberSecond = memberStore.enrichPayload({
+  channel: "whatsapp",
+  businessId: "beauty_demo",
+  from: "api_member_1",
+  text: "00000001"
+});
+assert.equal(memberSecond.changed, true, "API context store should stitch member ID follow-up");
+assert.equal(memberSecond.payload.text, "會員號碼 00000001", "member ID follow-up should be queryable by backend");
+
 const nestedStore = createConversationContextStore();
 nestedStore.enrichPayload({
   channel: "whatsapp",
@@ -88,4 +125,4 @@ const nested = nestedStore.enrichPayload({
 });
 assert.equal(nested.payload.messages[0].text.body, "想book 今晚四點", "WhatsApp API nested text body should be stitched");
 
-console.log("conversationContext: 10 tests passed");
+console.log("conversationContext: 13 tests passed");

@@ -60,11 +60,18 @@ async function runMessage(input = {}, deps = {}) {
     now: deps.nowFn()
   });
   const businessConfig = getConfig(normalizedMessage.businessId);
-  const decision = evaluate({ gateway, intent, knowledge, businessConfig });
+  const backendQuery = inferBackendQuery({ normalizedMessage, intent, now: deps.nowFn() });
+  const requiredClarification = requiredClarificationForBackendIntent({
+    normalizedMessage,
+    intent,
+    query: backendQuery,
+    language: knowledge.language || intent.language
+  });
+  const decision = evaluate({ gateway, intent, knowledge, businessConfig, requiredClarification });
   const backendFacts = deps.backend.getMinimalFacts({
     businessId: normalizedMessage.businessId,
     intent,
-    query: inferBackendQuery({ normalizedMessage, intent, now: deps.nowFn() })
+    query: backendQuery
   });
   const modelRoute = routeModel({ decision, intent, gateway });
   const draft = await generateDraft({ decision, knowledge, intent, gateway, promotions, backendFacts, modelRoute }, { llmAdapter: deps.llmAdapter, modelRoute });
@@ -112,6 +119,8 @@ function inferBackendQuery({ normalizedMessage, intent, now }) {
   if (/assessment|評估/i.test(text)) query.service = "assessment";
   if (/p3|小三|english|英文/i.test(text)) query.service = "p3_english";
   if (/laser|脫毛|underarm|腋下/i.test(text)) query.service = "laser";
+  const memberIdMatch = text.match(/(?:會員(?:號碼|編號)?|member(?:\s*id)?|membership)\D*(\d{8})|\b(0{7}[1-9]|0{6}10)\b/i);
+  if (memberIdMatch) query.memberId = memberIdMatch[1] || memberIdMatch[2];
   const orderMatch = text.match(/\b(?:IG)?\d{4,}\b/i);
   const paymentRefMatch = text.match(/\b(?:FPS|PAYME|PM|DEP)-[A-Z0-9-]+\b/i);
   if (orderMatch) query.orderId = orderMatch[0].toUpperCase().startsWith("IG") ? orderMatch[0].toUpperCase() : `IG${orderMatch[0]}`;
@@ -120,6 +129,62 @@ function inferBackendQuery({ normalizedMessage, intent, now }) {
   if (skuMatch) query.sku = skuMatch[0].toUpperCase();
   if (intent.primaryIntent === "service_info" && /tee|t-shirt/i.test(text)) query.sku = query.sku || "TEE-BLK-M";
   return query;
+}
+
+function requiredClarificationForBackendIntent({ normalizedMessage, intent, query, language }) {
+  if (!["booking", "reschedule"].includes(intent.primaryIntent)) return null;
+
+  const businessId = normalizedMessage.businessId;
+  const text = normalizedMessage.rawText || "";
+  const missing = [];
+  const needsService = businessId === "beauty_demo" || businessId === "edu_demo";
+  const asksForAvailableTimes = /有咩時間|咩時間|有咩時段|咩時段|available\s*(times?|slots?)|what\s*(times?|slots?)/i.test(text);
+
+  if (needsService && !query.service) missing.push("service");
+  if (!query.date) missing.push("date");
+  if (!query.time && !asksForAvailableTimes) missing.push("time");
+
+  if (missing.length === 0) return null;
+
+  return {
+    reason: `booking missing ${missing.join(",")}`,
+    text: bookingClarificationText({ businessId, language, missing })
+  };
+}
+
+function bookingClarificationText({ businessId, language, missing }) {
+  const english = language === "en";
+  const greeting = businessId === "beauty_demo"
+    ? (english ? "Hi, this is Solara Beauty." : "你好，呢度係 Solara Beauty。")
+    : null;
+  const needsService = missing.includes("service");
+  const needsDate = missing.includes("date");
+  const needsTime = missing.includes("time");
+
+  let question;
+  if (english) {
+    const parts = [
+      needsService && "treatment",
+      needsDate && "date",
+      needsTime && "time"
+    ].filter(Boolean);
+    question = `Sure. Please share the ${joinEnglishList(parts)} you would like to book.`;
+  } else {
+    const parts = [
+      needsService && "療程",
+      needsDate && "日期",
+      needsTime && "時間"
+    ].filter(Boolean);
+    question = `可以呀，請問你想預約邊個${parts.join("、")}？`;
+  }
+
+  return [greeting, question].filter(Boolean).join("\n");
+}
+
+function joinEnglishList(parts) {
+  if (parts.length <= 1) return parts[0] || "details";
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
 }
 
 function inferRequestedDate(text, now) {
@@ -209,5 +274,5 @@ function result(payload) {
 module.exports = {
   createPipeline,
   runMessage,
-  _internal: { inferBackendQuery, inferPartySize, inferRequestedDate, inferRequestedTime }
+  _internal: { inferBackendQuery, inferPartySize, inferRequestedDate, inferRequestedTime, requiredClarificationForBackendIntent }
 };

@@ -1122,6 +1122,12 @@ async function localDemoLlmAdapter(prompt, context = {}) {
       };
     }
 
+    if (intent === "membership") {
+      return {
+        text: formatMembershipDraft(context)
+      };
+    }
+
     if (intent === "service_info") {
       const stock = facts.available === true ? "有庫存" : "未見庫存";
       return {
@@ -1144,6 +1150,29 @@ function formatPricingDraft(context = {}) {
   }
 
   return `後台草稿：\n${formatPricingPlans(context.backendFacts, language)}\n\n請同事確認客人需要邊個療程，再提醒效果因人而異及預約需付留位費。`;
+}
+
+function formatMembershipDraft(context = {}) {
+  const language = context.intent?.language || "zh-HK";
+  const facts = factsObject(context.backendFacts);
+  const eligible = Number(facts.freeTreatmentsAvailable || 0) > 0;
+  if (language === "en") {
+    return [
+      `Staff draft: Member ${facts.memberId || ""} (${facts.displayName || "member"}) has ${facts.points ?? 0} point(s).`,
+      `The test rule is 1 point per completed treatment, and every ${facts.rewardThreshold || 10} points can be redeemed for 1 free treatment.`,
+      eligible
+        ? `This member is eligible for ${facts.freeTreatmentsAvailable} free treatment(s). Please confirm redemption details with staff before booking.`
+        : `They need ${facts.pointsUntilNextReward ?? "more"} more point(s) for the next free treatment.`
+    ].join("\n");
+  }
+
+  return [
+    `後台草稿：會員 ${facts.memberId || ""}（${facts.displayName || "會員"}）現有 ${facts.points ?? 0} 分。`,
+    `測試規則：每完成1次療程有1分；每 ${facts.rewardThreshold || 10} 分可換1次免費療程。`,
+    eligible
+      ? `此會員現時可換 ${facts.freeTreatmentsAvailable} 次免費療程；正式安排前請同事確認兌換細節。`
+      : `距離下次免費療程尚欠 ${facts.pointsUntilNextReward ?? "若干"} 分。`
+  ].join("\n");
 }
 
 function formatPricingPlans(backendFacts = {}, language = "zh-HK") {

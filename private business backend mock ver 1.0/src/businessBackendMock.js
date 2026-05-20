@@ -23,6 +23,9 @@ function createBusinessBackend(config = {}) {
     lookupPricing(query) {
       return lookupPricing(data, query || {});
     },
+    lookupMember(query) {
+      return lookupMember(data, query || {});
+    },
     getMinimalFacts(input) {
       return getMinimalFacts(data, input || {});
     }
@@ -169,12 +172,31 @@ function lookupPricing(data, query) {
   };
 }
 
+function lookupMember(data, query) {
+  const memberId = String(query.memberId || "").trim();
+  if (!memberId) {
+    return { found: false, facts: [], reason: "Missing memberId. Ask for the 8-digit member ID." };
+  }
+  if (!/^\d{8}$/.test(memberId)) {
+    return { found: false, facts: [], reason: "Member ID must be exactly 8 digits." };
+  }
+
+  const match = recordsFor(data, query.businessId, "members").find((item) => item.memberId === memberId);
+  if (!match) return { found: false, facts: [], reason: "Member not found in mock backend." };
+  return {
+    found: true,
+    facts: memberFacts(match),
+    reason: "Member found in mock backend."
+  };
+}
+
 function getMinimalFacts(data, input) {
   const intent = input.intent?.primaryIntent || input.intent || "general";
   if (intent === "pricing") return lookupPricing(data, input.query || { businessId: input.businessId });
   if (intent === "booking" || intent === "reschedule") return checkAvailability(data, input.query || { businessId: input.businessId });
   if (intent === "order_status") return lookupOrder(data, input.query || { businessId: input.businessId });
   if (intent === "payment") return lookupPayment(data, input.query || { businessId: input.businessId });
+  if (intent === "membership") return lookupMember(data, input.query || { businessId: input.businessId });
   if (intent === "service_info") return getStock(data, input.query || { businessId: input.businessId });
   return { found: false, facts: [], reason: "Intent does not require backend lookup." };
 }
@@ -212,11 +234,27 @@ function pricingFacts(record) {
   ].filter((fact) => fact.value !== undefined && fact.value !== null);
 }
 
+function memberFacts(record) {
+  const points = Number(record.points || 0);
+  const rewardThreshold = 10;
+  const freeTreatmentsAvailable = Math.floor(points / rewardThreshold);
+  const pointsUntilNextReward = freeTreatmentsAvailable > 0 ? 0 : rewardThreshold - (points % rewardThreshold);
+  return [
+    { key: "memberId", value: record.memberId },
+    { key: "displayName", value: record.displayName },
+    { key: "points", value: points },
+    { key: "pointsPerTreatment", value: 1 },
+    { key: "rewardThreshold", value: rewardThreshold },
+    { key: "freeTreatmentsAvailable", value: freeTreatmentsAvailable },
+    { key: "pointsUntilNextReward", value: pointsUntilNextReward }
+  ];
+}
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
 module.exports = {
   createBusinessBackend,
-  _internal: { checkAvailability, lookupOrder, getStock, lookupPayment, lookupPricing, matchesCustomer, minimalFacts, missingAvailabilityFields, pricingFacts, listAvailability }
+  _internal: { checkAvailability, lookupOrder, getStock, lookupPayment, lookupPricing, lookupMember, matchesCustomer, minimalFacts, missingAvailabilityFields, pricingFacts, memberFacts, listAvailability }
 };

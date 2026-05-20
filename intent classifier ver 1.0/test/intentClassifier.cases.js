@@ -109,6 +109,13 @@ const standardCases = [
     minConfidence: 0.8
   },
   {
+    name: "beauty membership id lookup",
+    input: "會員號碼 00000010 有冇免費療程？",
+    primaryIntent: "membership",
+    secondaryIntents: ["service_info"],
+    minConfidence: 0.86
+  },
+  {
     name: "english aftercare",
     input: "Can I exercise after treatment or take a hot bath?",
     primaryIntent: "aftercare",
@@ -227,6 +234,8 @@ const standardCases = [
   {"name":"english recommendation","input":"Any recommendations?","primaryIntent":"service_info","language":"en","minConfidence":0.74},
   {"name":"english treatment duration","input":"How long does the laser treatment take?","primaryIntent":"service_info","language":"en","minConfidence":0.74},
   {"name":"english hifu effect","input":"How long does HIFU effect last?","primaryIntent":"service_info","language":"en","minConfidence":0.74},
+  {"name":"cantonese member points","input":"我已經是會員，想查積分","primaryIntent":"membership","minConfidence":0.86},
+  {"name":"english member id points","input":"My member id is 00000001, how many points do I have?","primaryIntent":"membership","language":"en","minConfidence":0.86},
   {"name":"cantonese aftercare sauna","input":"做完之後可唔可以去桑拿？","primaryIntent":"aftercare","minConfidence":0.86},
   {"name":"cantonese aftercare sun","input":"laser之後曬太陽得唔得？","primaryIntent":"aftercare","secondaryIntents":["service_info"],"language":"mixed","minConfidence":0.86},
   {"name":"english aftercare sauna","input":"Can I use sauna after treatment?","primaryIntent":"aftercare","secondaryIntents":["service_info"],"language":"en","minConfidence":0.86},

@@ -57,4 +57,21 @@ assert.deepEqual(
   "beauty slot-list lookup should expose available times only"
 );
 
-console.log(`businessBackendMock: ${standardCases.length + 9} tests passed`);
+const memberOne = backend.lookupMember({ businessId: "beauty_demo", memberId: "00000001" });
+assert.equal(memberOne.found, true, "member 00000001 should exist");
+assert.equal(memberOne.facts.find((fact) => fact.key === "points")?.value, 1, "member 00000001 should have 1 point");
+assert.equal(memberOne.facts.find((fact) => fact.key === "pointsUntilNextReward")?.value, 9, "member 00000001 should need 9 more points");
+
+const memberTen = backend.lookupMember({ businessId: "beauty_demo", memberId: "00000010" });
+assert.equal(memberTen.found, true, "member 00000010 should exist");
+assert.equal(memberTen.facts.find((fact) => fact.key === "points")?.value, 10, "member 00000010 should have 10 points");
+assert.equal(memberTen.facts.find((fact) => fact.key === "freeTreatmentsAvailable")?.value, 1, "member 00000010 should have a free treatment");
+
+const missingMember = backend.getMinimalFacts({
+  businessId: "beauty_demo",
+  intent: { primaryIntent: "membership" },
+  query: { businessId: "beauty_demo" }
+});
+assert.equal(missingMember.found, false, "membership lookup without ID should ask for member ID");
+
+console.log(`businessBackendMock: ${standardCases.length + 18} tests passed`);

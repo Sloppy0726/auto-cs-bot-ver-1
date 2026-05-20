@@ -54,11 +54,13 @@ function stitchText(input = {}) {
   const text = String(input.text || "");
   const history = Array.isArray(input.history) ? input.history : [];
   const lookbackMessages = input.lookbackMessages || DEFAULT_LOOKBACK_MESSAGES;
+  const recent = history.slice(-lookbackMessages);
 
+  const membershipFollowup = stitchMembershipFollowup(text, recent);
+  if (membershipFollowup.changed) return membershipFollowup;
   if (!looksLikeBookingFollowup(text)) return unchanged(text);
   if (hasBookingIntent(text) && inferServiceFromText(text) && hasDateToken(text)) return unchanged(text);
 
-  const recent = history.slice(-lookbackMessages);
   const lastIncoming = latestPreviousIncoming(recent, () => true);
   if (inferServiceFromText(text) && !hasDateOrTime(text) && isGreeting(messageText(lastIncoming))) {
     return unchanged(text);
@@ -133,6 +135,38 @@ function latestPreviousIncoming(history, predicate) {
   return history.slice().reverse().find((message) => {
     return message?.incoming !== false && predicate(message);
   });
+}
+
+function latestPreviousMessage(history, predicate) {
+  return history.slice().reverse().find((message) => predicate(message));
+}
+
+function stitchMembershipFollowup(text, history) {
+  if (!looksLikeMemberIdFollowup(text)) return unchanged(text);
+
+  const previousMembership = latestPreviousMessage(history, (message) => {
+    const value = messageText(message);
+    return hasMembershipIntent(value) || askedForMembershipDetails(value);
+  });
+  if (!previousMembership) return unchanged(text);
+
+  return {
+    text: `會員號碼 ${text.trim()}`,
+    changed: true,
+    reason: "membership_followup_context"
+  };
+}
+
+function looksLikeMemberIdFollowup(text) {
+  return /^\s*\d{8}\s*$/.test(text || "");
+}
+
+function hasMembershipIntent(text) {
+  return /會員|membership|member\s*id|會員號碼|會員編號|積分|\bpoints?\b|free treatment|免費療程|換療程|redeem/i.test(text || "");
+}
+
+function askedForMembershipDetails(text) {
+  return /8\s*-?\s*digit|8位|八位|會員編號|會員號碼|member\s*id|membership\s*id|積分|points|免費療程|free treatment/i.test(text || "");
 }
 
 function looksLikeBookingFollowup(text) {
@@ -227,6 +261,9 @@ module.exports = {
     inferRecentTimeToken,
     hasBookingIntent,
     looksLikeBookingFollowup,
+    stitchMembershipFollowup,
+    looksLikeMemberIdFollowup,
+    hasMembershipIntent,
     isGreeting
   }
 };

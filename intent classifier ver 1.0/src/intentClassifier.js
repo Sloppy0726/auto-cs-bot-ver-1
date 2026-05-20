@@ -7,6 +7,7 @@ const VALID_INTENTS = new Set([
   "hours_location",
   "service_info",
   "aftercare",
+  "membership",
   "payment",
   "order_status",
   "complaint",
@@ -48,6 +49,12 @@ const intentRules = [
     confidence: 0.86,
     reason: "Matched aftercare keyword",
     pattern: /做完|aftercare|護理|gym|exercise|workout|運動|桑拿|熱水浴|hot bath|曬太陽|sun exposure|exfoliation|sauna|post-treatment|after treatment/i
+  },
+  {
+    intent: "membership",
+    confidence: 0.88,
+    reason: "Matched membership keyword",
+    pattern: /會員|membership|member\s*id|會員號碼|會員編號|積分|\bpoints?\b|free treatment|免費療程|換療程|redeem/i
   },
   {
     intent: "payment",
@@ -286,6 +293,7 @@ function summarizeGoal(intent, text) {
     hours_location: "Customer asks about opening hours, branch, or location.",
     service_info: "Customer asks for service or treatment information.",
     aftercare: "Customer asks about aftercare guidance.",
+    membership: "Customer asks about membership, points, or reward eligibility.",
     payment: "Customer asks about payment methods or payment handling.",
     order_status: "Customer asks about order, delivery, or status.",
     complaint: "Customer has a complaint, refund request, or dispute.",

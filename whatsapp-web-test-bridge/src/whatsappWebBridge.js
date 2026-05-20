@@ -3,6 +3,7 @@
 const { execFile } = require("node:child_process");
 const { stitchText } = require("../../conversation context ver 1.0/src/conversationContext");
 const { createHandoffState, DEFAULT_TTL_MS } = require("./handoffState");
+const { isCustomerAcknowledgement, looksLikeBridgeAuthored } = require("./messageHeuristics");
 
 const BOT_URL = process.env.BOT_URL || "http://127.0.0.1:3000/webhook";
 const BUSINESS_ID = process.env.WA_BRIDGE_BUSINESS_ID || "restaurant_demo";
@@ -223,15 +224,6 @@ function latestOutgoing(snapshot) {
   return [...(snapshot.messages || [])].reverse().find((message) => message.outgoing && message.text);
 }
 
-function isCustomerAcknowledgement(text) {
-  return /^(ok|okay|k|yes|yep|thanks?|thank you|thx|好|好的|好呀|可以|得|得呀|收到|明白|唔該|謝謝|多謝|🙏|👍)[\s!.。！?？🙏👍]*$/i.test(String(text || "").trim());
-}
-
-function looksLikeBridgeAuthored(text) {
-  const value = String(text || "");
-  return /跟進編號：staff_|交俾同事跟進|真人同事|留位費|以上只係一般參考|以下係目前測試資料|後台草稿：|我幫你睇咗/.test(value);
-}
-
 function contextualizeIncoming(incoming, snapshot) {
   const messages = snapshot.messages || [];
   const incomingIndex = messages.findIndex((message) => message.fingerprint === incoming.fingerprint);
@@ -256,6 +248,7 @@ function staffReviewNotice(botResponse) {
   const intent = botResponse?.debug?.intent?.primaryIntent || "general";
   if (intent === "pricing") return pricingReviewNotice(botResponse);
   if (intent === "booking" || intent === "reschedule") return bookingReviewNotice(botResponse);
+  if (intent === "membership") return membershipReviewNotice(botResponse);
   if (intent === "service_info" || intent === "aftercare") return serviceInfoReviewNotice(botResponse);
 
   const reason = customerFacingReason(intent, botResponse);
@@ -281,6 +274,41 @@ function serviceInfoReviewNotice(botResponse) {
     "我會交俾真人同事幫你確認邊個療程比較適合。",
     "原因：療程推介要視乎皮膚狀態，避免直接答錯或講到保證效果。" + staffItemId
   ].join("\n");
+}
+
+function membershipReviewNotice(botResponse) {
+  const facts = factsObject(botResponse?.debug?.backendFacts);
+  const language = botResponse?.debug?.intent?.language || "zh-HK";
+  const english = language === "en";
+  const staffItemId = botResponse?.staffItemId ? `\n跟進編號：${botResponse.staffItemId}` : "";
+
+  if (!botResponse?.debug?.backendFacts?.found) {
+    const fallback = botResponse?.debug?.knowledge?.bestMatchAnswer || (english
+      ? "Please share your 8-digit member ID so I can check your points and free-treatment eligibility."
+      : "請提供8位數字會員編號，我可以幫你查會員積分同免費療程資格。");
+    return fallback + staffItemId;
+  }
+
+  const eligible = Number(facts.freeTreatmentsAvailable || 0) > 0;
+  if (english) {
+    return [
+      `I found member ${facts.memberId} (${facts.displayName}).`,
+      `Current points: ${facts.points}. You earn 1 point per completed treatment, and every ${facts.rewardThreshold || 10} points can be redeemed for 1 free treatment.`,
+      eligible
+        ? `You are eligible for ${facts.freeTreatmentsAvailable} free treatment(s). Staff will confirm the redemption details before booking.`
+        : `You need ${facts.pointsUntilNextReward} more point(s) for the next free treatment.`,
+      staffItemId.trim()
+    ].filter(Boolean).join("\n");
+  }
+
+  return [
+    `搵到會員 ${facts.memberId}（${facts.displayName}）。`,
+    `現有積分：${facts.points} 分。每完成1次療程有1分；每 ${facts.rewardThreshold || 10} 分可換1次免費療程。`,
+    eligible
+      ? `你而家可以換 ${facts.freeTreatmentsAvailable} 次免費療程；正式預約前同事會再確認兌換細節。`
+      : `距離下次免費療程尚欠 ${facts.pointsUntilNextReward} 分。`,
+    staffItemId.trim()
+  ].filter(Boolean).join("\n");
 }
 
 function pricingReviewNotice(botResponse) {

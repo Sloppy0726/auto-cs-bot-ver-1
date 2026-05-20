@@ -49,7 +49,8 @@ function evaluate(input) {
     gateway = {},
     intent = {},
     knowledge = {},
-    businessConfig
+    businessConfig,
+    requiredClarification = null
   } = input || {};
 
   const config = businessConfig || getConfig(knowledge.businessId || gateway.businessId);
@@ -111,6 +112,19 @@ function evaluate(input) {
   const intentConfidence = typeof intent.confidence === "number" ? intent.confidence : 0;
   const lowConfidence = intentConfidence < 0.5;
   const kbGap = knowledge.gap === true;
+
+  if (requiredClarification?.text) {
+    return decision({
+      action: ACTIONS.CLARIFY,
+      reason: requiredClarification.reason || "Missing required details — ask one clarifying question before backend review.",
+      escalationLabel: null,
+      config,
+      intent,
+      knowledge,
+      reasons: [...reasons, requiredClarification.reason || "required clarification"],
+      clarificationText: requiredClarification.text
+    });
+  }
 
   if ((kbGap && intent.primaryIntent && intent.primaryIntent !== "general") || lowConfidence) {
     return decision({

@@ -6,6 +6,18 @@ module.exports = {
       { customerExternalId: "beauty_customer_amy", displayName: "Amy C.", tier: "trial", notes: "Sensitive skin; prefers evening slots." },
       { customerExternalId: "beauty_customer_may", displayName: "May L.", tier: "package", notes: "Has facial package balance." }
     ],
+    members: [
+      { memberId: "00000001", displayName: "Avery Chan", points: 1 },
+      { memberId: "00000002", displayName: "Bella Wong", points: 2 },
+      { memberId: "00000003", displayName: "Chloe Lee", points: 3 },
+      { memberId: "00000004", displayName: "Daphne Ho", points: 4 },
+      { memberId: "00000005", displayName: "Elaine Ng", points: 5 },
+      { memberId: "00000006", displayName: "Fiona Lau", points: 6 },
+      { memberId: "00000007", displayName: "Grace Yu", points: 7 },
+      { memberId: "00000008", displayName: "Hannah Tsang", points: 8 },
+      { memberId: "00000009", displayName: "Ivy Kwok", points: 9 },
+      { memberId: "00000010", displayName: "Jenny Ma", points: 10 }
+    ],
     availability: [
       { date: "2026-05-09", time: "19:00", service: "facial", available: true, staff: "Amy" },
       { date: "2026-05-09", time: "20:00", service: "facial", available: false, staff: null },

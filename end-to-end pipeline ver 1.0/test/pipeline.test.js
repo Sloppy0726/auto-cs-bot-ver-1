@@ -53,6 +53,12 @@ async function run() {
   });
   assert.equal(paymentQuery.reference, "FPS-IG2001", "payment reference should be extracted");
   assert.equal(paymentQuery.orderId, "IG2001", "order reference should still be extracted");
+  const memberQuery = _internal.inferBackendQuery({
+    normalizedMessage: { businessId: "beauty_demo", rawText: "會員號碼 00000010 想查積分", senderId: "member-test" },
+    intent: { primaryIntent: "membership" },
+    now: new Date("2026-05-20T08:00:00.000Z")
+  });
+  assert.equal(memberQuery.memberId, "00000010", "8-digit member ID should be extracted");
   const chineseBookingQuery = _internal.inferBackendQuery({
     normalizedMessage: { businessId: "beauty_demo", rawText: "想book facial 今晚六點", senderId: "beauty_customer_may" },
     intent: { primaryIntent: "booking" },
@@ -70,10 +76,35 @@ async function run() {
   assert.equal(firstTrialSlotsQuery.service, "facial", "first-trial booking should infer facial");
   assert.equal(firstTrialSlotsQuery.time, undefined, "slot-list booking should not invent an exact time");
 
+  const incompleteBookingQuery = _internal.inferBackendQuery({
+    normalizedMessage: { businessId: "beauty_demo", rawText: "想book facial", senderId: "beauty_incomplete" },
+    intent: { primaryIntent: "booking" },
+    now: new Date("2026-05-20T08:00:00.000Z")
+  });
+  const incompleteBookingClarification = _internal.requiredClarificationForBackendIntent({
+    normalizedMessage: { businessId: "beauty_demo", rawText: "想book facial" },
+    intent: { primaryIntent: "booking" },
+    query: incompleteBookingQuery,
+    language: "mixed"
+  });
+  assert.ok(incompleteBookingClarification.text.includes("日期"), "incomplete beauty booking should ask for date");
+  assert.ok(incompleteBookingClarification.text.includes("時間"), "incomplete beauty booking should ask for time");
+
   const slotPipeline = createPipeline({
     nowFn: () => new Date("2026-05-20T08:00:00.000Z"),
     llmAdapter: async (prompt, context) => ({ text: context.knowledge.bestMatch?.answer || "請問你想了解邊方面？" })
   });
+  const incompleteBooking = await slotPipeline.runMessage({
+    channel: "whatsapp",
+    businessId: "beauty_demo",
+    from: "incomplete-booking-test",
+    text: "想book facial"
+  });
+  assert.equal(incompleteBooking.intent.primaryIntent, "booking", "incomplete booking should still classify as booking");
+  assert.equal(incompleteBooking.decision.action, "clarify", "incomplete booking should clarify before staff review");
+  assert.equal(incompleteBooking.finalStatus, "ready_to_send", "booking clarification should be sendable");
+  assert.equal(incompleteBooking.staffItem, null, "booking clarification should not create handoff staff item");
+
   const firstTrialSlots = await slotPipeline.runMessage({
     channel: "whatsapp",
     businessId: "beauty_demo",
@@ -90,7 +121,7 @@ async function run() {
   assert.ok(adapterCalls.some((context) => context.modelRoute?.model), "draft adapter context should include modelRoute");
 
   assert.ok(pipeline.inbox.list().length >= 2, "staff inbox should collect held items");
-  console.log(`pipeline: ${standardCases.length + 14} tests passed`);
+  console.log(`pipeline: ${standardCases.length + 20} tests passed`);
 }
 
 run().catch((error) => {

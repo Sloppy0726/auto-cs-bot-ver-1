@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { createKnowledgeBase } = require("../src/knowledgeBase");
+const { createKnowledgeBase, _internal } = require("../src/knowledgeBase");
 const { routeMessage } = require("../../privacy gateway ver 1.0/src/privacyGateway");
 const { classifyIntent } = require("../../intent classifier ver 1.0/src/intentClassifier");
 const { standardCases, seed } = require("./knowledgeBase.cases");
@@ -90,4 +90,16 @@ assert.equal(stockResult.bestMatch.id, "igshop_stock", "stock KB entry should ma
 assert.equal(stockResult.bestMatch.requiresBackend, true, "stock KB entry should carry requiresBackend");
 assert.equal(stockResult.backendBound, true, "requiresBackend KB entry must make lookup backendBound");
 
-console.log(`knowledgeBase: ${standardCases.length + 3} tests passed`);
+const beautyClarify = kb.lookup({
+  businessId: "beauty_demo",
+  sanitizedText: "hi",
+  intent: { primaryIntent: "general", language: "en" }
+});
+assert.match(beautyClarify.suggestedClarification, /^Hi, this is Solara Beauty\.\n/, "beauty clarify should greet with company name");
+assert.match(
+  _internal.clarificationFor("general", "zh-HK", "beauty_demo"),
+  /^你好，呢度係 Solara Beauty。\n/,
+  "beauty Chinese clarification should greet with company name"
+);
+
+console.log(`knowledgeBase: ${standardCases.length + 5} tests passed`);
