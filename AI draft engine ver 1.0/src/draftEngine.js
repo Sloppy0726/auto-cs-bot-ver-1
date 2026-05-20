@@ -18,7 +18,8 @@ const TONE_PROFILES = Object.freeze({
   luxury_beauty: "Calm, premium beauty-clinic Cantonese. Reassuring, but never medical or outcome-promising.",
   casual_ig: "Short, friendly IG-shop Cantonese with light English only where natural.",
   education: "Clear, parent-friendly Cantonese. Responsible, patient, and never promising child outcomes.",
-  restaurant: "Friendly local restaurant Cantonese, concise and practical."
+  restaurant: "Friendly local restaurant Cantonese, concise and practical.",
+  mystic_practical: "Warm, calm Cantonese for a BaZi consultation brand. Clear on price and intake steps, never fatalistic or guaranteeing outcomes."
 });
 
 const FORBIDDEN_SURFACES = Object.freeze({
@@ -58,6 +59,23 @@ const FORBIDDEN_SURFACES = Object.freeze({
     /chargeback approved/i,
     /批准.*chargeback/i
   ],
+  extend_package: [
+    /(?:可以|幫你|會).*(?:延期|延長).*?(?:package|套票)/i,
+    /(?:extend|extended).*(?:package|expiry)/i,
+    /無限延期/i
+  ],
+  promise_refund: [
+    /(?:可以|會|安排|批准).*(?:退款|退錢)/i,
+    /(?:refund approved|we will refund|can refund)/i
+  ],
+  transfer_package: [
+    /(?:可以|幫你|會).*(?:轉讓|轉名).*?(?:package|套票)/i,
+    /(?:transfer).*(?:package|sessions)/i
+  ],
+  alter_remaining_sessions: [
+    /(?:加返|加回|補返|更改|改返).*(?:次|sessions?).*(?:package|套票)?/i,
+    /(?:add|change|adjust).*(?:remaining sessions|package balance)/i
+  ],
   give_medical_advice: [
     /medical advice/i,
     /建議你(?:食|用藥|停藥)/i,
@@ -93,15 +111,15 @@ async function defaultLlmAdapter(prompt) {
 }
 
 async function generateDraft(input, options = {}) {
-  const { decision = {}, knowledge = {}, intent = {}, gateway = {}, promotions = null, modelRoute = options.modelRoute || null } = input || {};
+  const { decision = {}, knowledge = {}, intent = {}, gateway = {}, promotions = null, packageFacts = null, modelRoute = options.modelRoute || null } = input || {};
   const action = decision.action;
   const llmAdapter = options.llmAdapter || defaultLlmAdapter;
   const tone = pickTone(decision, knowledge);
-  const citations = citationsFor(decision, knowledge);
+  const citations = citationsFor(decision, knowledge, packageFacts);
   const reasons = [...(decision.reasons || [])];
 
   if (action === ACTIONS.AUTO_SEND) {
-    const text = knowledge.bestMatch?.answer || null;
+    const text = packageFacts?.approvedReplyText || knowledge.autoReplyText || knowledge.bestMatch?.answer || null;
     const guard = validateAgainstForbidden(text, decision.forbiddenCapabilities);
     if (!guard.ok) {
       return buildResult({
@@ -120,7 +138,7 @@ async function generateDraft(input, options = {}) {
       citations,
       tone,
       llmUsed: false,
-      reasons: [...reasons, "auto_send: returned approved KB answer verbatim"]
+      reasons: [...reasons, packageFacts?.approvedReplyText ? "auto_send: returned verified package facts verbatim" : "auto_send: returned approved KB answer verbatim"]
     });
   }
 
@@ -149,7 +167,7 @@ async function generateDraft(input, options = {}) {
 
   if (action === ACTIONS.HANDOFF) {
     const prompt = buildHandoffPrompt({ decision, knowledge, intent, gateway, promotions, tone });
-    const text = await callLlm(llmAdapter, prompt.fullPrompt, {
+    const llm = await callLlm(llmAdapter, prompt.fullPrompt, {
       action,
       decision,
       knowledge,
@@ -161,13 +179,14 @@ async function generateDraft(input, options = {}) {
       userPrompt: prompt.userPrompt,
       cacheSystem: true
     });
-    const guard = validateAgainstForbidden(text, decision.forbiddenCapabilities);
+    const guard = validateAgainstForbidden(llm.text, decision.forbiddenCapabilities);
     return buildResult({
-      text: guard.ok ? text : null,
+      text: guard.ok ? llm.text : null,
       action,
       citations,
       tone,
       llmUsed: true,
+      tokenUsage: llm.usage,
       staffNote: guard.ok ? "Staff-only handoff summary. Do not send to customer." : "Generated handoff summary was withheld by the capability guard.",
       reasons: [
         ...reasons,
@@ -179,7 +198,7 @@ async function generateDraft(input, options = {}) {
 
   if (action === ACTIONS.STAFF_REVIEW) {
     const prompt = buildStaffReviewPrompt({ decision, knowledge, intent, gateway, promotions, tone });
-    const text = await callLlm(llmAdapter, prompt.fullPrompt, {
+    const llm = await callLlm(llmAdapter, prompt.fullPrompt, {
       action,
       decision,
       knowledge,
@@ -191,13 +210,14 @@ async function generateDraft(input, options = {}) {
       userPrompt: prompt.userPrompt,
       cacheSystem: true
     });
-    const guard = validateAgainstForbidden(text, decision.forbiddenCapabilities);
+    const guard = validateAgainstForbidden(llm.text, decision.forbiddenCapabilities);
     return buildResult({
-      text: guard.ok ? text : null,
+      text: guard.ok ? llm.text : null,
       action,
       citations,
       tone,
       llmUsed: true,
+      tokenUsage: llm.usage,
       staffNote: guard.ok ? "Draft candidate for staff review only." : "Generated draft was withheld by the capability guard.",
       reasons: [
         ...reasons,
@@ -298,9 +318,14 @@ function sandwich(systemPrompt, userPrompt) {
 
 async function callLlm(adapter, prompt, context) {
   const result = await adapter(prompt, context);
-  if (typeof result === "string") return result;
-  if (result && typeof result.text === "string") return result.text;
-  return "";
+  if (typeof result === "string") return { text: result, usage: null };
+  if (result && typeof result.text === "string") {
+    return {
+      text: result.text,
+      usage: normalizeTokenUsage(result.usage || result.tokenUsage)
+    };
+  }
+  return { text: "", usage: null };
 }
 
 function validateAgainstForbidden(text, forbiddenCapabilities = []) {
@@ -328,20 +353,33 @@ function validateAgainstForbidden(text, forbiddenCapabilities = []) {
   return { ok: true };
 }
 
-function buildResult({ text, action, citations, tone, llmUsed, reasons, staffNote }) {
+function buildResult({ text, action, citations, tone, llmUsed, tokenUsage, reasons, staffNote }) {
   return {
     text,
     action,
     citations: citations || [],
     tone,
     llmUsed: Boolean(llmUsed),
+    tokenUsage: tokenUsage || null,
     reasons: (reasons || []).filter(Boolean),
     staffNote: staffNote || null
   };
 }
 
-function citationsFor(decision, knowledge) {
-  return unique([...(decision.grounding || []), ...(knowledge.grounding || [])]);
+function normalizeTokenUsage(usage) {
+  if (!usage) return null;
+  const inputTokens = Number(usage.inputTokens ?? usage.input_tokens ?? usage.prompt_tokens ?? usage.promptTokens ?? 0);
+  const outputTokens = Number(usage.outputTokens ?? usage.output_tokens ?? usage.completion_tokens ?? usage.completionTokens ?? 0);
+  if (!Number.isFinite(inputTokens) && !Number.isFinite(outputTokens)) return null;
+  return {
+    inputTokens: Number.isFinite(inputTokens) ? inputTokens : 0,
+    outputTokens: Number.isFinite(outputTokens) ? outputTokens : 0,
+    source: usage.source || "provider"
+  };
+}
+
+function citationsFor(decision, knowledge, packageFacts) {
+  return unique([...(decision.grounding || []), ...(knowledge.grounding || []), ...(packageFacts?.grounding || [])]);
 }
 
 function pickTone(decision, knowledge) {
@@ -403,6 +441,7 @@ module.exports = {
     formatPromotionContext,
     formatPromotionFact,
     formatUntrustedCustomerText,
+    normalizeTokenUsage,
     FORBIDDEN_SURFACES
   }
 };

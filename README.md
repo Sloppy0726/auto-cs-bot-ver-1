@@ -13,6 +13,7 @@ customer channel
   -> privacy filter
   -> privacy gateway
   -> intent classifier
+  -> package ops context
   -> knowledge base
   -> Google Drive promo sync context
   -> business rules
@@ -23,7 +24,7 @@ customer channel
   -> send reply or staff inbox
 ```
 
-Current test total: **889 passing**.
+Current test total: **1927 passing**.
 
 No npm dependencies are required. Everything is plain Node.js stdlib.
 
@@ -34,16 +35,19 @@ No npm dependencies are required. Everything is plain Node.js stdlib.
 | 1 | `privacy filter ver 1.0` | Redacts PII and flags HK-specific risk before any LLM call. |
 | 2 | `privacy gateway ver 1.0` | Routes sanitized messages: send, review, or block. |
 | 3 | `intent classifier ver 1.0` | Classifies Cantonese / English / mixed enquiries into stable intents. |
-| 4 | `knowledge base ver 1.0` | Approved-only business answers and grounding IDs. |
-| 5 | `business rules ver 1.0` | Deterministic policy gate and capability contract. |
-| 6 | `google drive promo sync ver 1.0` | Daily Google Drive promotion sync with Hong Kong time expiry checks. |
-| 7 | `AI draft engine ver 1.0` | Produces grounded drafts or staff-only summaries. |
-| 8 | `safety checker ver 1.0` | Re-validates drafts before anything can be sent. |
-| 9 | `channel adapter ver 1.0` | Normalizes WhatsApp / IG / FB / website payloads and builds outbound payloads. |
-| 10 | `model router ver 1.0` | Chooses no-LLM / Haiku / Sonnet by action and risk. |
-| 11 | `private business backend mock ver 1.0` | Mock booking, order, stock, and payment facts. |
-| 12 | `staff inbox ver 1.0` | In-memory review / handoff queue. |
-| 13 | `end-to-end pipeline ver 1.0` | Orchestrates the whole local workflow. |
+| 4 | `package ops ver 1.0` | Sender-bound prepaid package/session lookup for beauty-package status replies. |
+| 5 | `knowledge base ver 1.0` | Approved-only business answers and grounding IDs. |
+| 6 | `business rules ver 1.0` | Deterministic policy gate and capability contract. |
+| 7 | `google drive promo sync ver 1.0` | Daily Google Drive promotion sync with Hong Kong time expiry checks. |
+| 8 | `AI draft engine ver 1.0` | Produces grounded drafts or staff-only summaries. |
+| 9 | `safety checker ver 1.0` | Re-validates drafts before anything can be sent. |
+| 10 | `channel adapter ver 1.0` | Normalizes WhatsApp / IG / FB / website payloads and builds outbound payloads. |
+| 11 | `model router ver 1.0` | Chooses no-LLM / Haiku / Sonnet by action and risk. |
+| 12 | `private business backend mock ver 1.0` | Mock booking, order, stock, and payment facts. |
+| 13 | `staff inbox ver 1.0` | In-memory review / handoff queue. |
+| 14 | `end-to-end pipeline ver 1.0` | Orchestrates the whole local workflow. |
+| 15 | `usage tracker ver 0.1` | Estimates and records token usage per chat turn. |
+| 16 | `whatsapp web automation prototype ver 0.1` | Burner-number WhatsApp Web automation prototype for internal demos. |
 
 ## Legal and Trust Drafts
 
@@ -112,6 +116,7 @@ Run from the repo root:
 node "privacy filter ver 1.0/test/privacyFilter.test.js"
 node "privacy gateway ver 1.0/test/privacyGateway.test.js"
 node "intent classifier ver 1.0/test/intentClassifier.test.js"
+node "package ops ver 1.0/test/packageOps.test.js"
 node "knowledge base ver 1.0/test/knowledgeBase.test.js"
 node "business rules ver 1.0/test/businessRules.test.js"
 node "google drive promo sync ver 1.0/test/promoSync.test.js"
@@ -122,6 +127,9 @@ node "model router ver 1.0/test/modelRouter.test.js"
 node "private business backend mock ver 1.0/test/businessBackendMock.test.js"
 node "staff inbox ver 1.0/test/staffInbox.test.js"
 node "end-to-end pipeline ver 1.0/test/pipeline.test.js"
+node "end-to-end pipeline ver 1.0/test/server.test.js"
+node "usage tracker ver 0.1/test/tokenUsage.test.js"
+node "whatsapp web automation prototype ver 0.1/test/whatsappWebPilot.test.js"
 ```
 
 ## Side-by-side Reports
@@ -142,6 +150,7 @@ The generated markdown report lives at the module root.
 | `restaurant_demo` | restaurant |
 | `igshop_demo` | Instagram shop |
 | `edu_demo` | education centre |
+| `solara_bazi` | BaZi consultation page |
 
 ## Important Constraints
 

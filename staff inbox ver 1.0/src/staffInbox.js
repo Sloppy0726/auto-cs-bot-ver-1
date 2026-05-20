@@ -69,6 +69,7 @@ function createItem(input, index, nowFn = () => new Date()) {
     escalationLabel: decision.escalationLabel || null,
     staffPacket: decision.staffPacket || null,
     backendFacts: input.backendFacts || null,
+    packageFacts: input.packageFacts || null,
     promotions: input.promotions || null,
     reasons: [...(decision.reasons || []), ...(safety.reasons || [])],
     history: [{ status: STATUSES.OPEN, actor: "system", at: timestamp(nowFn) }],

@@ -146,5 +146,99 @@ module.exports = [
       en: "P3 English: HK$1,280/month (4 lessons). Pay for 10 lessons, get 1 free. Materials HK$120/term.",
       mixed: "P3 English $1,280/月（4堂），10堂送1堂，教材$120/term。"
     }
+  },
+
+  // ---------------- Solara Bazi ----------------
+  {
+    id: "solara_bazi_hours",
+    businessId: "solara_bazi",
+    intent: "hours_location",
+    question: "營業時間 / opening hours",
+    keywords: ["營業", "開舖", "開門", "24小時", "二十四小時", "hours", "open"],
+    tone: "mystic_practical",
+    answers: {
+      "zh-HK": "Solara Bazi 24小時接受查詢，你可以隨時留言。",
+      en: "Solara Bazi accepts enquiries 24 hours a day. You can message us anytime.",
+      mixed: "Solara Bazi 24小時accept enquiry，你可以anytime留言。"
+    }
+  },
+  {
+    id: "solara_bazi_pricing",
+    businessId: "solara_bazi",
+    intent: "pricing",
+    question: "八字服務價目 / BaZi pricing",
+    keywords: ["價目", "價錢", "收費", "幾錢", "幾多錢", "八字", "bazi", "一個問題", "流年", "大運", "詳細批", "price", "pricing"],
+    tone: "mystic_practical",
+    answers: {
+      "zh-HK": "Solara Bazi 價目：HK$100 一個問題、HK$300 一個流年、HK$500 一個大運、HK$1,000 詳細批。",
+      en: "Solara Bazi pricing: HK$100 for one question, HK$300 for annual luck reading, HK$500 for 10-year luck cycle reading, HK$1,000 for a detailed reading.",
+      mixed: "Solara Bazi價目：$100一個問題、$300一個流年、$500一個大運、$1,000詳細批。"
+    }
+  },
+  {
+    id: "solara_bazi_intake",
+    businessId: "solara_bazi",
+    intent: "service_info",
+    question: "開始批八字需要咩資料 / intake details",
+    keywords: ["八字", "命理", "算命", "流年", "大運", "詳細批", "問事", "問問題", "出生", "出生時間", "出生地", "需要咩資料", "點開始", "bazi"],
+    tone: "mystic_practical",
+    answers: {
+      "zh-HK": "如想開始，請先講你想問邊款服務，並準備出生年月日、出生時間、出生地，同你想問嘅主題。出生時間唔準確都接受，不過最好可以準確至分鐘。",
+      en: "To start, please choose the service and prepare your date of birth, birth time, birthplace, and the topic you want to ask about. An uncertain birth time is accepted, but minute-level accuracy is preferred.",
+      mixed: "想開始可以先講想問邊款service，並準備出生年月日、出生時間、出生地，同想問嘅topic。出生時間唔準確都接受，不過最好準確至分鐘。"
+    }
+  },
+  {
+    id: "solara_bazi_payment_methods",
+    businessId: "solara_bazi",
+    intent: "payment",
+    question: "付款方法 / payment methods",
+    keywords: ["付款", "點付款", "收錢", "點收錢", "付款方法", "fps", "轉數快", "payme", "alipay", "支付寶", "payment", "pay"],
+    tone: "mystic_practical",
+    safeAutoSend: true,
+    answers: {
+      "zh-HK": "可以用 FPS、PayMe 或 Alipay 付款。",
+      en: "Payment can be made by FPS, PayMe, or Alipay.",
+      mixed: "可以用 FPS、PayMe 或 Alipay 付款。"
+    }
+  },
+  {
+    id: "solara_bazi_delivery_format",
+    businessId: "solara_bazi",
+    intent: "service_info",
+    question: "交付時間同形式 / delivery time and format",
+    keywords: ["交付", "即日", "幾時有", "幾耐", "文字", "語音", "通話", "形式", "format", "delivery", "same day", "voice", "call"],
+    tone: "mystic_practical",
+    answers: {
+      "zh-HK": "付款後即日交付。詳細批可以用文字、語音或通話形式安排。",
+      en: "Delivery is same-day after payment. Detailed readings can be delivered by text, voice message, or call.",
+      mixed: "付款後即日交付。詳細批可以用文字、語音或通話形式安排。"
+    }
+  },
+  {
+    id: "solara_bazi_scope",
+    businessId: "solara_bazi",
+    intent: "service_info",
+    question: "八字服務範圍 / service scope",
+    keywords: ["包括", "睇咩", "問咩", "有咩可以問", "可以問咩", "感情", "事業", "財運", "運勢", "流年", "大運", "詳細批", "scope"],
+    tone: "mystic_practical",
+    answers: {
+      "zh-HK": "可以問感情、事業、財運、個人方向、流年重點或大運走勢。命理分析只作自我了解同參考，唔會保證結果，亦唔代替法律、醫療或投資意見。",
+      en: "You can ask about relationships, career, wealth themes, personal direction, annual luck, or 10-year luck cycles. BaZi readings are for self-understanding and reference only, not legal, medical, or investment advice.",
+      mixed: "可以問感情、事業、財運、personal direction、流年重點或大運走勢。命理分析只作參考，唔保證結果，亦唔代替legal / medical / investment advice。"
+    }
+  },
+  {
+    id: "solara_bazi_restricted_topics",
+    businessId: "solara_bazi",
+    intent: "service_info",
+    question: "不接問題 / restricted topics",
+    keywords: ["法律", "官司", "合約", "犯法", "告人", "legal", "lawsuit", "contract"],
+    tone: "mystic_practical",
+    answers: {
+      "zh-HK": "法律相關個案唔接。如果係感情、事業、財運、流年、大運或個人方向，可以再講你想問嘅主題。",
+      en: "Legal-related cases are not accepted. For relationships, career, wealth themes, annual luck, 10-year luck cycles, or personal direction, please share the topic you want to ask about.",
+      mixed: "法律相關個案唔接。如果係感情、事業、財運、流年、大運或personal direction，可以再講你想問嘅topic。"
+    }
   }
 ];

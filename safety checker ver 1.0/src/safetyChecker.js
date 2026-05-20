@@ -19,7 +19,7 @@ const PLACEHOLDER_PATTERN = /<HKID>|<CREDIT_CARD>|<PHONE>|<EMAIL>|\[(?:HKID|CRED
 const PII_PATTERN = /[A-Z]\d{6}\([0-9A]\)|\b(?:\d[ -]?){13,19}\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\b(?:\+?852[-\s]?)?[569]\d{3}[-\s]?\d{4}\b/i;
 
 function checkDraft(input = {}) {
-  const { draft = {}, decision = {}, knowledge = {}, intent = {}, gateway = {} } = input;
+  const { draft = {}, decision = {}, knowledge = {}, packageFacts = null, intent = {}, gateway = {} } = input;
   const violations = [];
   const reasons = [];
   const action = draft.action || decision.action || "unknown";
@@ -59,11 +59,11 @@ function checkDraft(input = {}) {
   }
 
   if (action === "auto_send") {
-    const approvedAnswer = knowledge.bestMatch?.answer || "";
+    const approvedAnswer = packageFacts?.approvedReplyText || knowledge.autoReplyText || knowledge.bestMatch?.answer || "";
     if (text !== approvedAnswer) {
-      violations.push(violation("auto_send_not_verbatim", "Auto-send text must match the approved KB answer exactly.", "critical"));
+      violations.push(violation("auto_send_not_verbatim", "Auto-send text must match the approved KB/package answer exactly.", "critical"));
     }
-    if (!hasRequiredCitation(draft, knowledge, decision)) {
+    if (!hasRequiredCitation(draft, knowledge, decision, packageFacts)) {
       violations.push(violation("missing_grounding", "Auto-send must cite the KB grounding entry.", "high"));
     }
   }
@@ -130,8 +130,8 @@ function verdict({ action, violations, repairedText, reasons }) {
   };
 }
 
-function hasRequiredCitation(draft, knowledge, decision) {
-  const required = new Set([...(knowledge.grounding || []), ...(decision.grounding || [])].filter(Boolean));
+function hasRequiredCitation(draft, knowledge, decision, packageFacts) {
+  const required = new Set([...(knowledge.grounding || []), ...(decision.grounding || []), ...(packageFacts?.grounding || [])].filter(Boolean));
   if (required.size === 0) return false;
   const actual = new Set(draft.citations || []);
   for (const id of required) {

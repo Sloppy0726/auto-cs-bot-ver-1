@@ -18,12 +18,21 @@ const ACTIONS = Object.freeze({
 });
 
 const ANGRY_PATTERN = /搞錯|嬲|憤怒|不滿|唔滿意|投訴|退錢|退款|chargeback|refund|complaint|angry|furious|terrible|worst/i;
+const PAYMENT_STATUS_PATTERN = /已(?:經)?(?:付款|付咗款|入數|轉帳|轉賬|pay(?:咗|左)?|paid)|(?:付款|入數|轉帳|轉賬|payme|fps|alipay).*(?:截圖|收唔收到|收到未)|(?:收唔收到|收到未|未收到).*(?:款|付款|錢|payment)|payment sent|paid already|receipt|screenshot/i;
 
 const POLICY_TO_FORBIDDEN = Object.freeze({
   no_medical_claim: ["give_medical_advice", "promise_treatment_result", "diagnose"],
   no_refund_decision: ["decide_refund", "approve_chargeback"],
   deposit_required: ["waive_deposit", "promise_no_deposit"]
 });
+
+const PACKAGE_FORBIDDEN = Object.freeze([
+  "extend_package",
+  "promise_refund",
+  "transfer_package",
+  "alter_remaining_sessions",
+  "promise_treatment_result"
+]);
 
 const INTENT_TO_FORBIDDEN = Object.freeze({
   booking: ["confirm_booking", "promise_slot_availability"],
@@ -49,6 +58,7 @@ function evaluate(input) {
     gateway = {},
     intent = {},
     knowledge = {},
+    packageFacts = null,
     businessConfig
   } = input || {};
 
@@ -65,6 +75,7 @@ function evaluate(input) {
       config,
       intent,
       knowledge,
+      packageFacts,
       reasons: [...reasons, "gateway.route=block_and_handoff"]
     });
   }
@@ -97,12 +108,58 @@ function evaluate(input) {
       config,
       intent,
       knowledge,
+      packageFacts,
       reasons: [
         ...reasons,
         kbForcesHandoff && "kb.handoff=true",
         intentForcesHandoff && `intent=${intent.primaryIntent}`,
         angryHit && "angry/refund signal in text",
         gatewayHighRisk && "gateway high risk"
+      ].filter(Boolean)
+    });
+  }
+
+  if (intent.primaryIntent === "payment" && PAYMENT_STATUS_PATTERN.test(sanitizedText)) {
+    return decision({
+      action: ACTIONS.STAFF_REVIEW,
+      reason: "Payment status or proof needs staff verification before replying.",
+      escalationLabel: null,
+      config,
+      intent,
+      knowledge,
+      packageFacts,
+      reasons: [...reasons, "payment status/proof signal in text"]
+    });
+  }
+
+  if (intent.primaryIntent === "package_status") {
+    if (packageFacts?.autoSendEligible && packageFacts?.approvedReplyText) {
+      return decision({
+        action: ACTIONS.AUTO_SEND,
+        reason: "Verified active package facts can be sent deterministically.",
+        escalationLabel: null,
+        config,
+        intent,
+        knowledge,
+        packageFacts,
+        reasons: [...reasons, "packageFacts.autoSendEligible=true"]
+      });
+    }
+
+    return decision({
+      action: ACTIONS.STAFF_REVIEW,
+      reason: "Package status cannot be answered automatically without verified active package facts.",
+      escalationLabel: null,
+      config,
+      intent,
+      knowledge,
+      packageFacts,
+      reasons: [
+        ...reasons,
+        packageFacts?.found === false && "packageFacts.found=false",
+        packageFacts?.verifiedSender === false && "packageFacts.verifiedSender=false",
+        packageFacts?.riskFlags?.length > 0 && `packageFacts.riskFlags=${packageFacts.riskFlags.join(",")}`,
+        !packageFacts?.approvedReplyText && "packageFacts.approvedReplyText missing"
       ].filter(Boolean)
     });
   }
@@ -122,6 +179,7 @@ function evaluate(input) {
       config,
       intent,
       knowledge,
+      packageFacts,
       reasons: [
         ...reasons,
         kbGap && "kb.gap=true",
@@ -150,6 +208,7 @@ function evaluate(input) {
       config,
       intent,
       knowledge,
+      packageFacts,
       reasons: [...reasons, ...forcedReviewReasons]
     });
   }
@@ -172,6 +231,7 @@ function evaluate(input) {
       config,
       intent,
       knowledge,
+      packageFacts,
       reasons: [
         ...reasons,
         `bestScore=${bestScore}`,
@@ -189,6 +249,7 @@ function evaluate(input) {
     config,
     intent,
     knowledge,
+    packageFacts,
     reasons: [
       ...reasons,
       !intentInAutoList && `intent ${intent.primaryIntent} not in autoSendIntents`,
@@ -201,8 +262,9 @@ function evaluate(input) {
   });
 }
 
-function decision({ action, reason, escalationLabel, config, intent, knowledge, reasons, clarificationText }) {
-  const { allowedCapabilities, forbiddenCapabilities } = deriveCapabilities({ action, intent, knowledge, config });
+function decision({ action, reason, escalationLabel, config, intent, knowledge, packageFacts, reasons, clarificationText }) {
+  const { allowedCapabilities, forbiddenCapabilities } = deriveCapabilities({ action, intent, knowledge, packageFacts, config });
+  const grounding = groundingFor({ knowledge, packageFacts });
 
   return {
     action,
@@ -213,14 +275,14 @@ function decision({ action, reason, escalationLabel, config, intent, knowledge, 
     archetype: config.archetype || null,
     allowedCapabilities,
     forbiddenCapabilities,
-    grounding: knowledge.grounding || [],
+    grounding,
     clarificationText: clarificationText || null,
-    staffPacket: action === "auto_send" ? null : buildStaffPacket({ intent, knowledge, action, escalationLabel, reason }),
+    staffPacket: action === "auto_send" ? null : buildStaffPacket({ intent, knowledge, packageFacts, action, escalationLabel, reason }),
     reasons: reasons.filter(Boolean)
   };
 }
 
-function deriveCapabilities({ action, intent, knowledge, config }) {
+function deriveCapabilities({ action, intent, knowledge, packageFacts, config }) {
   const allowed = new Set();
   const forbidden = new Set(ALWAYS_FORBIDDEN);
 
@@ -232,6 +294,7 @@ function deriveCapabilities({ action, intent, knowledge, config }) {
       allowedCapabilities: ["write_handoff_summary_for_staff"],
       forbiddenCapabilities: [
         ...forbidden,
+        ...PACKAGE_FORBIDDEN,
         "send_to_customer",
         "promise_anything",
         "confirm_booking",
@@ -246,12 +309,17 @@ function deriveCapabilities({ action, intent, knowledge, config }) {
     forbidden.add("provide_specific_facts");
     forbidden.add("quote_prices");
     forbidden.add("confirm_booking");
+    for (const cap of PACKAGE_FORBIDDEN) forbidden.add(cap);
     return finalize(allowed, forbidden);
   }
 
   // staff_review and auto_send: KB-grounded.
   allowed.add("quote_kb_verbatim");
   if (knowledge.bestMatch) allowed.add(`cite_entry:${knowledge.bestMatch.id}`);
+  if (packageFacts?.bestPackage) {
+    allowed.add("quote_package_facts");
+    allowed.add(`cite_package:${packageFacts.bestPackage.id}`);
+  }
   allowed.add("ask_one_clarifying_question");
 
   // Intent-based forbidden.
@@ -273,7 +341,16 @@ function deriveCapabilities({ action, intent, knowledge, config }) {
     allowed.add("propose_options_for_staff_to_confirm");
   }
 
+  if (intent.primaryIntent === "package_status" || packageFacts) {
+    for (const cap of PACKAGE_FORBIDDEN) forbidden.add(cap);
+  }
+
   return finalize(allowed, forbidden);
+}
+
+function groundingFor({ knowledge, packageFacts }) {
+  if (packageFacts?.grounding?.length > 0) return packageFacts.grounding;
+  return knowledge.grounding || [];
 }
 
 function finalize(allowed, forbidden) {
@@ -285,7 +362,7 @@ function finalize(allowed, forbidden) {
   };
 }
 
-function buildStaffPacket({ intent, knowledge, action, escalationLabel, reason }) {
+function buildStaffPacket({ intent, knowledge, packageFacts, action, escalationLabel, reason }) {
   return {
     action,
     escalationLabel: escalationLabel || null,
@@ -296,7 +373,8 @@ function buildStaffPacket({ intent, knowledge, action, escalationLabel, reason }
     bestMatchId: knowledge.bestMatch?.id || null,
     bestMatchAnswer: knowledge.bestMatch?.answer || null,
     grounding: knowledge.grounding || [],
-    backendBound: Boolean(knowledge.backendBound)
+    backendBound: Boolean(knowledge.backendBound),
+    packageFacts: packageFacts || null
   };
 }
 
@@ -304,5 +382,5 @@ module.exports = {
   ACTIONS,
   evaluate,
   // exposed for tests / advanced wiring
-  _internal: { deriveCapabilities, ANGRY_PATTERN, ALWAYS_FORBIDDEN, POLICY_TO_FORBIDDEN, INTENT_TO_FORBIDDEN }
+  _internal: { deriveCapabilities, ANGRY_PATTERN, PAYMENT_STATUS_PATTERN, ALWAYS_FORBIDDEN, POLICY_TO_FORBIDDEN, INTENT_TO_FORBIDDEN }
 };

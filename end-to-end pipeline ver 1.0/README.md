@@ -8,6 +8,7 @@ Orchestrates the workflow from channel payload to outbound reply or staff inbox 
 channel adapter
   -> privacy gateway
   -> intent classifier
+  -> package ops context
   -> knowledge base
   -> Google Drive promo sync context
   -> business rules
@@ -21,6 +22,8 @@ channel adapter
 This follows the architecture diagram: privacy runs before any model, business rules constrain generation, safety checks drafts before send, and private backend facts stay controlled. Order and payment lookups carry the normalized channel `senderId`, so customer-bound backend records are not returned on ID alone.
 
 Promotion context is checked using Hong Kong time (`Asia/Hong_Kong`, UTC+8). Active Google Drive promotions are passed into the draft engine and staff inbox before a reply is generated.
+
+Package Ops context is checked for prepaid beauty-package status questions. Sender-bound package records can produce deterministic remaining-session replies; expired, disputed, or unverified records route to staff review.
 
 ## Main API
 

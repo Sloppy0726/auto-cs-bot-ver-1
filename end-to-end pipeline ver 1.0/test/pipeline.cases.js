@@ -31,6 +31,88 @@ const seedCases = [
     input: { channel: "website", businessId: "beauty_demo", sessionId: "s4", text: "你哋搞錯我個booking，我要退錢。" },
     expectStatus: "staff_review",
     expectAction: "handoff"
+  },
+  {
+    name: "verified beauty package status can auto send",
+    input: { channel: "whatsapp", businessId: "beauty_demo", from: "85261112222", text: "我想問個package仲有幾多次" },
+    expectStatus: "ready_to_send",
+    expectAction: "auto_send",
+    expectPackage: "pkg_may_hydrafacial_active"
+  },
+  {
+    name: "unverified package sender goes staff review",
+    input: { channel: "whatsapp", businessId: "beauty_demo", from: "85269990000", text: "我想問個package仲有幾多次" },
+    expectStatus: "staff_review",
+    expectAction: "staff_review"
+  },
+  {
+    name: "expired package goes staff review",
+    input: { channel: "whatsapp", businessId: "beauty_demo", from: "85263334444", text: "我個HIFU package仲有幾多次" },
+    expectStatus: "staff_review",
+    expectAction: "staff_review",
+    expectPackage: "pkg_carmen_expired"
+  },
+  {
+    name: "package extension request never auto sends",
+    input: { channel: "whatsapp", businessId: "beauty_demo", from: "85261112222", text: "個package可唔可以延期？你之前話可以" },
+    expectStatus: "staff_review",
+    expectAction: "handoff"
+  },
+  {
+    name: "solara bazi pricing can auto send",
+    input: { channel: "whatsapp", businessId: "solara_bazi", from: "bazi-price", text: "詳細批同流年幾錢？" },
+    expectStatus: "ready_to_send",
+    expectAction: "auto_send"
+  },
+  {
+    name: "solara bazi intake can auto send",
+    input: { channel: "whatsapp", businessId: "solara_bazi", from: "bazi-intake", text: "批八字需要咩資料？" },
+    expectStatus: "ready_to_send",
+    expectAction: "auto_send"
+  },
+  {
+    name: "solara bazi health topic goes staff review",
+    input: { channel: "whatsapp", businessId: "solara_bazi", from: "bazi-health", text: "可以睇健康病痛同壽命嗎？" },
+    expectStatus: "staff_review",
+    expectAction: "handoff"
+  },
+  {
+    name: "solara bazi payment methods can auto send",
+    input: { channel: "whatsapp", businessId: "solara_bazi", from: "bazi-payment", text: "可以用FPS PayMe Alipay付款嗎？" },
+    expectStatus: "ready_to_send",
+    expectAction: "auto_send"
+  },
+  {
+    name: "solara bazi delivery format can auto send",
+    input: { channel: "whatsapp", businessId: "solara_bazi", from: "bazi-delivery", text: "詳細批付款後幾時有？可唔可以語音或通話？" },
+    expectStatus: "ready_to_send",
+    expectAction: "auto_send"
+  },
+  {
+    name: "solara bazi legal topic can auto deny",
+    input: { channel: "whatsapp", businessId: "solara_bazi", from: "bazi-legal", text: "可唔可以問法律官司？" },
+    expectStatus: "ready_to_send",
+    expectAction: "auto_send"
+  },
+  {
+    name: "solara bazi payment proof stays staff review",
+    input: { channel: "whatsapp", businessId: "solara_bazi", from: "bazi-paid", text: "我已經PayMe咗，收唔收到？" },
+    expectStatus: "staff_review",
+    expectAction: "staff_review"
+  },
+  {
+    name: "solara bazi stacked payment and pricing can auto send both",
+    input: { channel: "whatsapp", businessId: "solara_bazi", from: "bazi-stacked-price-pay", text: "我想知點收錢同幾多錢" },
+    expectStatus: "ready_to_send",
+    expectAction: "auto_send",
+    expectReplyIncludes: ["Solara Bazi 價目", "FPS、PayMe 或 Alipay"]
+  },
+  {
+    name: "solara bazi stacked payment and scope can auto send both",
+    input: { channel: "whatsapp", businessId: "solara_bazi", from: "bazi-stacked-pay-scope", text: "點收錢同有咩可以問" },
+    expectStatus: "ready_to_send",
+    expectAction: "auto_send",
+    expectReplyIncludes: ["FPS、PayMe 或 Alipay", "可以問感情、事業、財運"]
   }
 ];
 

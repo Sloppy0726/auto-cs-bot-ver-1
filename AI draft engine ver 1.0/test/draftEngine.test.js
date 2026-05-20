@@ -77,6 +77,11 @@ async function run() {
   assert.equal(defaultResult.llmUsed, true, "default stub should mark LLM used for staff_review");
   assert.ok(defaultResult.text.startsWith("[stub] "), "default LLM adapter should return stub text");
 
+  const usageResult = await generateDraft(beautyPricing, {
+    llmAdapter: async () => ({ text: "草稿：請同事覆核價錢。", usage: { input_tokens: 42, output_tokens: 9 } })
+  });
+  assert.deepEqual(usageResult.tokenUsage, { inputTokens: 42, outputTokens: 9, source: "provider" }, "draft should preserve provider token usage");
+
   const promoCalls = [];
   await generateDraft({
     ...beautyPricing,
@@ -117,6 +122,31 @@ async function run() {
   assert.equal(guarded.text, null, "forbidden booking confirmation must be withheld");
   assert.ok(guarded.reasons.some((reason) => reason.includes("confirm_booking")), "guard should name confirm_booking");
 
+  const packageDraft = await generateDraft({
+    decision: {
+      action: "auto_send",
+      suggestedTone: "luxury_beauty",
+      forbiddenCapabilities: ["extend_package", "promise_refund", "transfer_package", "alter_remaining_sessions"],
+      grounding: ["pkg_may_hydrafacial_active"],
+      reasons: ["packageFacts.autoSendEligible=true"]
+    },
+    knowledge: {},
+    intent: { primaryIntent: "package_status" },
+    gateway: { sanitizedText: "我想問個package仲有幾多次" },
+    packageFacts: {
+      approvedReplyText: "May，你而家剩餘 3 次保濕 facial，套票到期日係 2026-07-31。",
+      grounding: ["pkg_may_hydrafacial_active"],
+      bestPackage: { id: "pkg_may_hydrafacial_active" }
+    }
+  }, {
+    llmAdapter: async () => {
+      throw new Error("package auto_send must not call LLM");
+    }
+  });
+  assert.equal(packageDraft.text, "May，你而家剩餘 3 次保濕 facial，套票到期日係 2026-07-31。", "package auto_send should quote package facts");
+  assert.deepEqual(packageDraft.citations, ["pkg_may_hydrafacial_active"], "package auto_send should cite package grounding");
+  assert.equal(packageDraft.llmUsed, false, "package auto_send must be deterministic");
+
   assert.equal(
     _internal.validateAgainstForbidden("會退款畀你", ["decide_refund"]).ok,
     false,
@@ -156,7 +186,7 @@ async function run() {
     "handoff/complaint should choose complex model"
   );
 
-  console.log(`draftEngine: ${standardCases.length + 12} tests passed`);
+  console.log(`draftEngine: ${standardCases.length + 14} tests passed`);
 }
 
 run().catch((error) => {
