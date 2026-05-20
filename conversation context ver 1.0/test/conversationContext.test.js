@@ -32,6 +32,18 @@ assert.equal(
   "pricing-like questions should not be booking-stitched"
 );
 
+assert.equal(
+  stitchText({
+    text: "I would like to do some facial",
+    history: [
+      { incoming: true, text: "想book位" },
+      { incoming: true, text: "hi" }
+    ]
+  }).changed,
+  false,
+  "greeting should break stale booking carry-over for service-only messages"
+);
+
 assert.equal(_internal.inferServiceFromText("腋下脫毛"), "laser", "underarm/laser service should infer laser");
 
 const store = createConversationContextStore();
@@ -76,4 +88,4 @@ const nested = nestedStore.enrichPayload({
 });
 assert.equal(nested.payload.messages[0].text.body, "想book 今晚四點", "WhatsApp API nested text body should be stitched");
 
-console.log("conversationContext: 9 tests passed");
+console.log("conversationContext: 10 tests passed");

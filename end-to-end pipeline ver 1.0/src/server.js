@@ -1093,7 +1093,7 @@ async function localDemoLlmAdapter(prompt, context = {}) {
   if (context.backendFacts?.found) {
     if (intent === "pricing") {
       return {
-        text: `後台草稿：\n${formatPricingPlans(context.backendFacts)}\n\n請同事確認客人需要邊個療程，再提醒效果因人而異及預約需付留位費。`
+        text: formatPricingDraft(context)
       };
     }
 
@@ -1137,7 +1137,16 @@ function factsObject(backendFacts = {}) {
   return Object.fromEntries((backendFacts.facts || []).map((fact) => [fact.key, fact.value]));
 }
 
-function formatPricingPlans(backendFacts = {}) {
+function formatPricingDraft(context = {}) {
+  const language = context.intent?.language || "zh-HK";
+  if (language === "en") {
+    return `Staff draft:\n${formatPricingPlans(context.backendFacts, language)}\n\nPlease confirm which treatment the customer wants, remind them that results vary by person, and mention that a booking deposit is required.`;
+  }
+
+  return `後台草稿：\n${formatPricingPlans(context.backendFacts, language)}\n\n請同事確認客人需要邊個療程，再提醒效果因人而異及預約需付留位費。`;
+}
+
+function formatPricingPlans(backendFacts = {}, language = "zh-HK") {
   const plans = [];
   let current = null;
   for (const fact of backendFacts.facts || []) {
@@ -1149,15 +1158,24 @@ function formatPricingPlans(backendFacts = {}) {
     if (current) current[fact.key] = fact.value;
   }
 
-  if (plans.length === 0) return "未搵到相符價目。";
+  if (plans.length === 0) return language === "en" ? "No matching pricing found." : "未搵到相符價目。";
 
   return plans.map((plan) => {
+    if (language === "en") {
+      const original = plan.originalPriceHkd ? `, original HK$${plan.originalPriceHkd}` : "";
+      const sessions = plan.sessions ? `, ${plan.sessions} session${plan.sessions > 1 ? "s" : ""}` : "";
+      const duration = plan.durationMinutes ? `, around ${plan.durationMinutes} minutes` : "";
+      const deposit = plan.depositHkd ? `, booking deposit HK$${plan.depositHkd}` : "";
+      const notes = plan.notesEn ? `\n  Notes: ${plan.notesEn}` : "";
+      return `- ${plan.planNameEn || plan.planNameZh || plan.planId}: HK$${plan.priceHkd}${original}${sessions}${duration}${deposit}${notes}`;
+    }
+
     const original = plan.originalPriceHkd ? `，原價HK$${plan.originalPriceHkd}` : "";
     const sessions = plan.sessions ? `，${plan.sessions}次` : "";
     const duration = plan.durationMinutes ? `，約${plan.durationMinutes}分鐘` : "";
     const deposit = plan.depositHkd ? `，留位費HK$${plan.depositHkd}` : "";
     const notes = plan.notesZh ? `\n  備註：${plan.notesZh}` : "";
-    return `- ${plan.planNameZh || plan.planId}: HK$${plan.priceHkd}${original}${sessions}${duration}${deposit}${notes}`;
+    return `- ${plan.planNameZh || plan.planNameEn || plan.planId}: HK$${plan.priceHkd}${original}${sessions}${duration}${deposit}${notes}`;
   }).join("\n");
 }
 

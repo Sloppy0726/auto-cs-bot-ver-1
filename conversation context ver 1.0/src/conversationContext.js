@@ -58,12 +58,17 @@ function stitchText(input = {}) {
   if (!looksLikeBookingFollowup(text)) return unchanged(text);
   if (hasBookingIntent(text) && inferServiceFromText(text) && hasDateToken(text)) return unchanged(text);
 
-  const previousBooking = latestPreviousIncoming(history, (message) => {
+  const recent = history.slice(-lookbackMessages);
+  const lastIncoming = latestPreviousIncoming(recent, () => true);
+  if (inferServiceFromText(text) && !hasDateOrTime(text) && isGreeting(messageText(lastIncoming))) {
+    return unchanged(text);
+  }
+
+  const previousBooking = latestPreviousIncoming(recent, (message) => {
     return hasBookingIntent(messageText(message)) || askedForBookingDetails(messageText(message));
   });
   if (!previousBooking) return unchanged(text);
 
-  const recent = history.slice(-lookbackMessages);
   const service = inferServiceFromText(text) || inferRecentService(recent);
   const date = hasDateToken(text) ? null : inferRecentDateToken(recent);
   const time = hasTimeToken(text) ? null : inferRecentTimeToken(recent);
@@ -162,6 +167,10 @@ function hasGeneralQuestionIntent(text) {
   return /幾點開|幾點收|營業|開門|收工|hours|open|close/i.test(text || "");
 }
 
+function isGreeting(text) {
+  return /^(hi|hello|hey|你好|哈囉|halo|喂|早晨|午安|晚安)\s*[!.。！?？]*$/i.test(String(text || "").trim());
+}
+
 function inferRecentService(history) {
   return inferServiceFromText(history.map((message) => messageText(message)).join(" "));
 }
@@ -217,6 +226,7 @@ module.exports = {
     inferRecentDateToken,
     inferRecentTimeToken,
     hasBookingIntent,
-    looksLikeBookingFollowup
+    looksLikeBookingFollowup,
+    isGreeting
   }
 };

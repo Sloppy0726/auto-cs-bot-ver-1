@@ -156,7 +156,8 @@ function lookupPricing(data, query) {
     const serviceMatches = !service || String(item.service || "").toLowerCase() === service;
     const planMatches = !plan
       || String(item.planId || "").toLowerCase() === plan
-      || String(item.planNameZh || "").toLowerCase().includes(plan);
+      || String(item.planNameZh || "").toLowerCase().includes(plan)
+      || String(item.planNameEn || "").toLowerCase().includes(plan);
     return serviceMatches && planMatches;
   });
 
@@ -198,13 +199,16 @@ function pricingFacts(record) {
     { key: "planId", value: record.planId },
     { key: "service", value: record.service },
     { key: "planNameZh", value: record.planNameZh },
+    { key: "planNameEn", value: record.planNameEn },
     { key: "descriptionZh", value: record.descriptionZh },
+    { key: "descriptionEn", value: record.descriptionEn },
     { key: "priceHkd", value: record.priceHkd },
     { key: "originalPriceHkd", value: record.originalPriceHkd },
     { key: "durationMinutes", value: record.durationMinutes },
     { key: "sessions", value: record.sessions },
     { key: "depositHkd", value: record.depositHkd },
-    { key: "notesZh", value: record.notesZh }
+    { key: "notesZh", value: record.notesZh },
+    { key: "notesEn", value: record.notesEn }
   ].filter((fact) => fact.value !== undefined && fact.value !== null);
 }
 

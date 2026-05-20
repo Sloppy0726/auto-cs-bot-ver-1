@@ -43,6 +43,10 @@ assert.ok(
   beautyPricing.facts.some((fact) => fact.key === "planNameZh" && fact.value === "面部護理五次套票"),
   "beauty pricing should include Chinese plan names"
 );
+assert.ok(
+  beautyPricing.facts.some((fact) => fact.key === "planNameEn" && fact.value === "Five-Session Facial Package"),
+  "beauty pricing should include English plan names"
+);
 
 const tomorrowFacialSlots = backend.checkAvailability({ businessId: "beauty_demo", date: "2026-05-21", service: "facial" });
 assert.equal(tomorrowFacialSlots.found, true, "beauty slot-list lookup should find tomorrow facial records");

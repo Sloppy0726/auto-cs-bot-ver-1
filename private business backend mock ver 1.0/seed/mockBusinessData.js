@@ -24,49 +24,61 @@ module.exports = {
         planId: "BEAUTY-FACIAL-TRIAL",
         service: "facial",
         planNameZh: "首次體驗面部護理",
+        planNameEn: "First-Trial Facial Treatment",
         descriptionZh: "適合第一次到店客人，包含基本皮膚狀態分析、深層清潔、保濕導入及舒緩面膜。",
+        descriptionEn: "For first-time customers. Includes a basic skin condition check, deep cleansing, hydration infusion, and a calming mask.",
         priceHkd: 380,
         originalPriceHkd: 680,
         durationMinutes: 75,
         sessions: 1,
         depositHkd: 200,
-        notesZh: "只限新客一次；預約需先付留位費，療程當日可扣回。"
+        notesZh: "只限新客一次；預約需先付留位費，療程當日可扣回。",
+        notesEn: "One-time offer for new customers only. A booking deposit is required and can be deducted on the treatment day."
       },
       {
         planId: "BEAUTY-FACIAL-SINGLE",
         service: "facial",
         planNameZh: "皇牌保濕修護護理",
+        planNameEn: "Signature Hydrating Repair Facial",
         descriptionZh: "針對乾燥、暗啞及屏障不穩肌膚，重點做補水、舒緩及修護。",
+        descriptionEn: "Focused on hydration, calming, and barrier support for dry, dull, or stressed skin.",
         priceHkd: 680,
         originalPriceHkd: null,
         durationMinutes: 90,
         sessions: 1,
         depositHkd: 200,
-        notesZh: "效果因人而異，療程前會先做皮膚狀態評估。"
+        notesZh: "效果因人而異，療程前會先做皮膚狀態評估。",
+        notesEn: "Results vary by person. A skin condition check will be done before treatment."
       },
       {
         planId: "BEAUTY-FACIAL-5",
         service: "facial",
         planNameZh: "面部護理五次套票",
+        planNameEn: "Five-Session Facial Package",
         descriptionZh: "適合想定期保養的客人，可按皮膚狀態安排保濕、舒緩或清潔護理。",
+        descriptionEn: "For regular maintenance. Sessions can be arranged around hydration, calming, or cleansing needs based on skin condition.",
         priceHkd: 2980,
         originalPriceHkd: 3400,
         durationMinutes: 90,
         sessions: 5,
         depositHkd: 200,
-        notesZh: "套票有效期六個月；不可轉讓，不保證指定效果。"
+        notesZh: "套票有效期六個月；不可轉讓，不保證指定效果。",
+        notesEn: "Valid for six months. Non-transferable. Specific results are not guaranteed."
       },
       {
         planId: "BEAUTY-LASER-UNDERARM",
         service: "laser",
         planNameZh: "腋下脫毛單次護理",
+        planNameEn: "Underarm Laser Hair Removal Single Session",
         descriptionZh: "適合想了解脫毛流程的客人，療程前需由同事確認膚況及禁忌事項。",
+        descriptionEn: "For customers who want to understand the laser hair removal process. Staff must confirm skin condition and contraindications before treatment.",
         priceHkd: 480,
         originalPriceHkd: 680,
         durationMinutes: 30,
         sessions: 1,
         depositHkd: 200,
-        notesZh: "懷孕、皮膚敏感、傷口或用藥情況需先由真人同事跟進。"
+        notesZh: "懷孕、皮膚敏感、傷口或用藥情況需先由真人同事跟進。",
+        notesEn: "Pregnancy, skin sensitivity, wounds, or medication use must be reviewed by staff first."
       }
     ],
     stock: [

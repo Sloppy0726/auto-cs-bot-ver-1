@@ -150,6 +150,7 @@ function staffReviewNotice(botResponse) {
   const intent = botResponse?.debug?.intent?.primaryIntent || "general";
   if (intent === "pricing") return pricingReviewNotice(botResponse);
   if (intent === "booking" || intent === "reschedule") return bookingReviewNotice(botResponse);
+  if (intent === "service_info" || intent === "aftercare") return serviceInfoReviewNotice(botResponse);
 
   const reason = customerFacingReason(intent, botResponse);
   const staffItemId = botResponse?.staffItemId ? `\n跟進編號：${botResponse.staffItemId}` : "";
@@ -160,16 +161,49 @@ function staffReviewNotice(botResponse) {
   ].join("\n");
 }
 
+function serviceInfoReviewNotice(botResponse) {
+  const draftText = botResponse?.debug?.draft?.text || botResponse?.debug?.knowledge?.bestMatchAnswer || "";
+  const staffItemId = botResponse?.staffItemId ? `\n跟進編號：${botResponse.staffItemId}` : "";
+  if (draftText) {
+    return [
+      draftText,
+      "以上只係一般參考，實際適合邊個療程要視乎皮膚狀態；同事可以再幫你做最後確認。" + staffItemId
+    ].join("\n\n");
+  }
+
+  return [
+    "我會交俾真人同事幫你確認邊個療程比較適合。",
+    "原因：療程推介要視乎皮膚狀態，避免直接答錯或講到保證效果。" + staffItemId
+  ].join("\n");
+}
+
 function pricingReviewNotice(botResponse) {
   const plans = pricingPlans(botResponse?.debug?.backendFacts);
+  const language = botResponse?.debug?.intent?.language || "zh-HK";
+  const english = language === "en";
   const staffItemId = botResponse?.staffItemId ? `\n跟進編號：${botResponse.staffItemId}` : "";
 
   if (plans.length > 0) {
+    if (english) {
+      return [
+        "Here are the current test pricing details:",
+        plans.map((plan) => formatPricingPlan(plan, language)).join("\n"),
+        "The most suitable option depends on your skin condition and the latest shop arrangement. If you would like to book, I can hand this to staff for confirmation." + staffItemId
+      ].join("\n\n");
+    }
+
     return [
       "以下係目前測試資料入面嘅價目參考：",
-      plans.map(formatPricingPlan).join("\n"),
+      plans.map((plan) => formatPricingPlan(plan, language)).join("\n"),
       "實際適合邊個方案，要視乎皮膚狀態同店內最新安排；如你想預約，我可以再交俾同事幫你確認。" + staffItemId
     ].join("\n\n");
+  }
+
+  if (english) {
+    return [
+      "I could not find matching pricing details yet.",
+      "I will hand this to staff to confirm the latest plans and fees for you." + staffItemId
+    ].join("\n");
   }
 
   return [
@@ -281,14 +315,24 @@ function pricingPlans(backendFacts = {}) {
   return plans;
 }
 
-function formatPricingPlan(plan) {
+function formatPricingPlan(plan, language = "zh-HK") {
+  if (language === "en") {
+    const original = plan.originalPriceHkd ? ` (original HK$${plan.originalPriceHkd})` : "";
+    const sessions = plan.sessions ? `${plan.sessions} session${plan.sessions > 1 ? "s" : ""}` : "";
+    const duration = plan.durationMinutes ? `around ${plan.durationMinutes} minutes` : "";
+    const detail = [sessions, duration].filter(Boolean).join(", ");
+    const deposit = plan.depositHkd ? `; booking deposit HK$${plan.depositHkd}` : "";
+    const notes = plan.notesEn ? `\n  Notes: ${plan.notesEn}` : "";
+    return `• ${plan.planNameEn || plan.planNameZh || plan.planId}: HK$${plan.priceHkd}${original}${detail ? `, ${detail}` : ""}${deposit}${notes}`;
+  }
+
   const original = plan.originalPriceHkd ? `（原價HK$${plan.originalPriceHkd}）` : "";
   const sessions = plan.sessions ? `${plan.sessions}次` : "";
   const duration = plan.durationMinutes ? `約${plan.durationMinutes}分鐘` : "";
   const detail = [sessions, duration].filter(Boolean).join("，");
   const deposit = plan.depositHkd ? `；留位費HK$${plan.depositHkd}` : "";
   const notes = plan.notesZh ? `\n  備註：${plan.notesZh}` : "";
-  return `• ${plan.planNameZh || plan.planId}: HK$${plan.priceHkd}${original}${detail ? `，${detail}` : ""}${deposit}${notes}`;
+  return `• ${plan.planNameZh || plan.planNameEn || plan.planId}: HK$${plan.priceHkd}${original}${detail ? `，${detail}` : ""}${deposit}${notes}`;
 }
 
 function formatService(service) {

@@ -89,7 +89,7 @@ const intentRules = [
     intent: "service_info",
     confidence: 0.76,
     reason: "Matched service information keyword",
-    pattern: /療程|服務|做咩|包括|需時|效果|underarm|腋下|laser|facial|HIFU|脫毛|nail|spa|service|treatment/i
+    pattern: /療程|服務|做咩|包括|需時|效果|推介|推薦|建議|介紹|recommend|recommendation|underarm|腋下|laser|facial|HIFU|脫毛|nail|spa|service|treatment/i
   }
 ];
 

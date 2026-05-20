@@ -60,6 +60,20 @@ module.exports = [
     }
   },
   {
+    id: "beauty_service_recommendation",
+    businessId: "beauty_demo",
+    intent: "service_info",
+    question: "療程推介 / treatment recommendation",
+    keywords: ["推介", "推薦", "建議", "介紹", "recommend", "recommendation", "facial", "plan"],
+    tone: "luxury_beauty",
+    policyRef: "no_medical_claim",
+    answers: {
+      "zh-HK": "如果你係第一次嚟，通常會建議先做免費皮膚狀態評估，再按膚況揀療程。想先體驗面部護理，可以考慮首次體驗面部護理；如果主要想定期保養，就可以了解皇牌保濕修護護理或五次套票。",
+      en: "For first-time customers, we usually suggest starting with a free skin assessment, then choosing a treatment based on your skin condition. If you want to try a facial first, you can consider the first-trial facial. For regular maintenance, you can look at the signature hydrating repair facial or the 5-session package.",
+      mixed: "如果第一次嚟，建議先做free skin assessment，再按膚況揀plan。想試facial可以考慮首次體驗；想regular保養可以睇皇牌保濕修護或5次package。"
+    }
+  },
+  {
     id: "beauty_booking_policy",
     businessId: "beauty_demo",
     intent: "booking",

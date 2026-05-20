@@ -131,6 +131,14 @@ const scenarioFamilies = [
     expectHandoff: false
   },
   {
+    label: "beauty service recommendation",
+    businessId: "beauty_demo",
+    inputs: ["推介呢？", "Any recommendations?", "有咩療程建議？", "facial有咩推薦？", "第一次嚟有咩介紹？"],
+    expectBestMatchId: "beauty_service_recommendation",
+    expectGap: false,
+    expectHandoff: false
+  },
+  {
     label: "restaurant hours",
     businessId: "restaurant_demo",
     inputs: ["你哋幾點開門？", "lunch幾點開始？", "星期一幾點開門？", "dinner幾點open?", "營業時間幾點？"],
