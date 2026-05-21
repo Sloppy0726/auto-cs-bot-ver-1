@@ -2,7 +2,10 @@
 
 const http = require("node:http");
 const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
 const { createPipeline } = require("./pipeline");
+const { createOpenAIAdapters } = require("./openaiAdapter");
 const { createConversationContextStore } = require("../../conversation context ver 1.0/src/conversationContext");
 const fakeBusinessData = require("../../private business backend mock ver 1.0/seed/mockBusinessData");
 
@@ -1062,23 +1065,68 @@ function localConsoleHtml() {
 }
 
 function startWebhookServer(config = {}) {
+  loadLocalEnvFiles(config.envFiles);
   const host = config.host || process.env.HOST || DEFAULT_HOST;
   const port = Number(config.port || process.env.PORT || DEFAULT_PORT);
   const nodeEnv = config.nodeEnv || process.env.NODE_ENV;
   const hasWebhookSecret = Boolean(config.webhookSecret || process.env.WEBHOOK_SECRET);
   const allowUnsignedWebhooks = config.allowUnsignedWebhooks ?? (!hasWebhookSecret && nodeEnv !== "production");
   const webhookBusinessId = config.webhookBusinessId || process.env.WEBHOOK_BUSINESS_ID || null;
+  const openAIAdapters = createOpenAIAdapters(config.openAI || {});
+  const allowLocalDemoLlm = config.allowLocalDemoLlm ?? process.env.ALLOW_LOCAL_DEMO_LLM === "true";
+  if (!config.llmAdapter && !openAIAdapters.llmAdapter && !allowLocalDemoLlm) {
+    throw new Error("OPENAI_API_KEY is required to start the bot. Set it in whatsapp-web-test-bridge/.env, or set ALLOW_LOCAL_DEMO_LLM=true for offline demo mode.");
+  }
+  const llmAdapter = config.llmAdapter || openAIAdapters.llmAdapter || localDemoLlmAdapter;
+  const llmIntentAnalyzer = config.llmIntentAnalyzer || openAIAdapters.llmIntentAnalyzer || null;
+  const llmMode = openAIAdapters.llmAdapter ? `openai:${process.env.OPENAI_MODEL || process.env.OPENAI_DRAFT_MODEL || "gpt-4.1-mini"}` : "local-demo";
+  const llmIntentMode = config.llmIntentMode || process.env.OPENAI_INTENT_MODE || "always";
   const server = createWebhookServer({
     ...config,
     allowUnsignedWebhooks,
     webhookBusinessId,
-    llmAdapter: config.llmAdapter || localDemoLlmAdapter
+    llmAdapter,
+    llmIntentAnalyzer,
+    llmIntentMode
   });
 
   return server.listen(port, host, () => {
     const mode = allowUnsignedWebhooks ? "unsigned local mode" : "signed webhook mode";
     console.log(`Webhook server listening at http://${host}:${port}/webhook (${mode}, businessId=${webhookBusinessId || "payload-selected"})`);
+    console.log(`LLM mode: ${llmMode}; intent analyzer: ${llmIntentAnalyzer ? llmIntentMode : "deterministic"}`);
   });
+}
+
+function loadLocalEnvFiles(files) {
+  const envFiles = files || [
+    path.join(process.cwd(), ".env"),
+    path.join(process.cwd(), "whatsapp-web-test-bridge", ".env")
+  ];
+  for (const file of envFiles) loadEnvFile(file);
+}
+
+function loadEnvFile(filePath) {
+  try {
+    const text = fs.readFileSync(filePath, "utf8");
+    for (const line of text.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+      if (!match) continue;
+      const [, key, rawValue] = match;
+      if (process.env[key] !== undefined) continue;
+      process.env[key] = unquoteEnvValue(rawValue.trim());
+    }
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+}
+
+function unquoteEnvValue(value) {
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    return value.slice(1, -1);
+  }
+  return value;
 }
 
 async function localDemoLlmAdapter(prompt, context = {}) {

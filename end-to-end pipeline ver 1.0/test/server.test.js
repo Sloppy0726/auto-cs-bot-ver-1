@@ -2,7 +2,7 @@
 
 const assert = require("node:assert/strict");
 const http = require("node:http");
-const { createWebhookServer, _internal } = require("../src/server");
+const { createWebhookServer, startWebhookServer, _internal } = require("../src/server");
 
 (async () => {
   assert.equal(_internal.statusCodeForError(new SyntaxError("bad json")), 400, "SyntaxError should be treated as bad request");
@@ -13,6 +13,19 @@ const { createWebhookServer, _internal } = require("../src/server");
   assert.equal(_internal.publicErrorMessage(new Error("database unavailable"), 500), "internal_server_error", "500s should not expose internal messages");
   assert.equal(_internal.publicErrorMessage(Object.assign(new Error("invalid_webhook_signature"), { statusCode: 401 }), 401), "unauthorized", "auth failures should not expose verifier details");
   assert.equal(_internal.publicErrorMessage(new SyntaxError("bad json"), 400), "bad_request", "bad requests should not expose parser details");
+  const originalApiKey = process.env.OPENAI_API_KEY;
+  const originalAllowDemo = process.env.ALLOW_LOCAL_DEMO_LLM;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.ALLOW_LOCAL_DEMO_LLM;
+  assert.throws(
+    () => startWebhookServer({ port: 0, envFiles: [] }),
+    /OPENAI_API_KEY is required/,
+    "default server startup should require an LLM-backed adapter"
+  );
+  if (originalApiKey === undefined) delete process.env.OPENAI_API_KEY;
+  else process.env.OPENAI_API_KEY = originalApiKey;
+  if (originalAllowDemo === undefined) delete process.env.ALLOW_LOCAL_DEMO_LLM;
+  else process.env.ALLOW_LOCAL_DEMO_LLM = originalAllowDemo;
 
   const body = JSON.stringify({ channel: "website", businessId: "restaurant_demo", sessionId: "s1", text: "hello" });
   const timestamp = "1778400000";
@@ -95,7 +108,7 @@ const { createWebhookServer, _internal } = require("../src/server");
   await assertServerRejectsDeclaredOversizeBody({ body, secret, timestamp, signature });
   await assertServerStitchesApiConversationContext();
 
-  console.log("server: 30 tests passed");
+  console.log("server: 31 tests passed");
 })();
 
 function requestWithHeaders(headers) {

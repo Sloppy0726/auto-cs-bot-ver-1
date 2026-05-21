@@ -59,6 +59,11 @@ async function run() {
     now: new Date("2026-05-20T08:00:00.000Z")
   });
   assert.equal(memberQuery.memberId, "00000010", "8-digit member ID should be extracted");
+  assert.equal(
+    _internal.intentClassifierOptions({ llmIntentAnalyzer: async () => ({}) }).confidenceThreshold,
+    0.99,
+    "LLM intent analyzer should default to always-on mode"
+  );
   const chineseBookingQuery = _internal.inferBackendQuery({
     normalizedMessage: { businessId: "beauty_demo", rawText: "想book facial 今晚六點", senderId: "beauty_customer_may" },
     intent: { primaryIntent: "booking" },
@@ -121,7 +126,7 @@ async function run() {
   assert.ok(adapterCalls.some((context) => context.modelRoute?.model), "draft adapter context should include modelRoute");
 
   assert.ok(pipeline.inbox.list().length >= 2, "staff inbox should collect held items");
-  console.log(`pipeline: ${standardCases.length + 20} tests passed`);
+  console.log(`pipeline: ${standardCases.length + 21} tests passed`);
 }
 
 run().catch((error) => {

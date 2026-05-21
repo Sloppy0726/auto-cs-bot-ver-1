@@ -25,11 +25,12 @@ function createPipeline(config = {}) {
   const inbox = config.staffInbox || createStaffInbox();
   const promotionStore = config.promotionStore || createPromotionStore({ entries: config.promotionEntries || promoSeed });
   const llmAdapter = config.llmAdapter;
+  const llmIntentAnalyzer = config.llmIntentAnalyzer;
   const nowFn = config.nowFn || (() => new Date());
 
   return {
     async runMessage(input) {
-      return runMessage(input, { kb, backend, inbox, promotionStore, llmAdapter, nowFn, config });
+      return runMessage(input, { kb, backend, inbox, promotionStore, llmAdapter, llmIntentAnalyzer, nowFn, config });
     },
     inbox,
     backend,
@@ -51,7 +52,7 @@ async function runMessage(input = {}, deps = {}) {
   }
 
   const gateway = routeMessage(normalizedMessage.rawText);
-  const intent = await classifyIntent(gateway);
+  const intent = await classifyIntent(gateway, intentClassifierOptions(deps));
   const knowledge = deps.kb.lookup({ businessId: normalizedMessage.businessId, sanitizedText: gateway.sanitizedText, intent });
   const promotions = deps.promotionStore.lookup({
     businessId: normalizedMessage.businessId,
@@ -101,6 +102,15 @@ async function runMessage(input = {}, deps = {}) {
     finalStatus,
     errors: []
   });
+}
+
+function intentClassifierOptions(deps = {}) {
+  if (typeof deps.llmIntentAnalyzer !== "function") return {};
+  const mode = deps.config?.llmIntentMode || process.env.OPENAI_INTENT_MODE || "always";
+  return {
+    llmClassifier: deps.llmIntentAnalyzer,
+    confidenceThreshold: mode === "always" ? 0.99 : undefined
+  };
 }
 
 function inferBackendQuery({ normalizedMessage, intent, now }) {
@@ -274,5 +284,5 @@ function result(payload) {
 module.exports = {
   createPipeline,
   runMessage,
-  _internal: { inferBackendQuery, inferPartySize, inferRequestedDate, inferRequestedTime, requiredClarificationForBackendIntent }
+  _internal: { inferBackendQuery, inferPartySize, inferRequestedDate, inferRequestedTime, requiredClarificationForBackendIntent, intentClassifierOptions }
 };

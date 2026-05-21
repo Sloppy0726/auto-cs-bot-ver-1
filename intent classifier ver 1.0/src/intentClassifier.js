@@ -129,13 +129,12 @@ function classifyIntent(gatewayOutput, options = {}) {
   }
 
   return Promise.resolve(options.llmClassifier(buildLLMIntentInput(normalizedInput, deterministicResult)))
-    .then((llmResult) => normalizeIntent({
+    .then((llmResult) => mergeLlmIntentResult(deterministicResult, llmResult))
+    .catch((error) => ({
       ...deterministicResult,
-      ...llmResult,
-      source: "llm",
       reasons: [
         ...deterministicResult.reasons,
-        ...(Array.isArray(llmResult?.reasons) ? llmResult.reasons : ["LLM classifier used for ambiguous message"])
+        `LLM classifier failed; used deterministic result: ${error.message}`
       ]
     }));
 }
@@ -315,6 +314,36 @@ function buildLLMIntentInput(gatewayOutput, deterministicResult) {
   };
 }
 
+function mergeLlmIntentResult(deterministicResult, llmResult = {}) {
+  const protectedPrimaryIntent = deterministicResult.needsHumanReview
+    && ["complaint", "sensitive_health", "child_data", "human_request"].includes(deterministicResult.primaryIntent);
+  const merged = normalizeIntent({
+    ...deterministicResult,
+    ...llmResult,
+    primaryIntent: protectedPrimaryIntent ? deterministicResult.primaryIntent : (llmResult.primaryIntent || deterministicResult.primaryIntent),
+    riskLevel: highestRiskLevel(deterministicResult.riskLevel, llmResult.riskLevel),
+    needsHumanReview: deterministicResult.needsHumanReview || Boolean(llmResult.needsHumanReview),
+    source: "llm",
+    reasons: [
+      ...deterministicResult.reasons,
+      ...(Array.isArray(llmResult?.reasons) ? llmResult.reasons : ["LLM classifier used for ambiguous message"])
+    ]
+  });
+
+  if (protectedPrimaryIntent && llmResult.primaryIntent && llmResult.primaryIntent !== deterministicResult.primaryIntent) {
+    merged.reasons.push(`Protected deterministic safety intent ${deterministicResult.primaryIntent} over LLM intent ${llmResult.primaryIntent}`);
+  }
+  return merged;
+}
+
+function highestRiskLevel(...levels) {
+  const order = ["none", "low", "medium", "high", "blocked"];
+  return levels.reduce((highest, level) => {
+    const normalized = normalizeRiskLevel(level);
+    return order.indexOf(normalized) > order.indexOf(highest) ? normalized : highest;
+  }, "none");
+}
+
 function clamp(value) {
   return Math.max(0.1, Math.min(0.99, value));
 }
@@ -323,5 +352,6 @@ module.exports = {
   classifyIntent,
   classifyDeterministically,
   buildLLMIntentInput,
-  VALID_INTENTS: Array.from(VALID_INTENTS)
+  VALID_INTENTS: Array.from(VALID_INTENTS),
+  _internal: { mergeLlmIntentResult, highestRiskLevel }
 };
