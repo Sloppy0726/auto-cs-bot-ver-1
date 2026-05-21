@@ -60,8 +60,12 @@ function checkDraft(input = {}) {
 
   if (action === "auto_send") {
     const approvedAnswer = knowledge.bestMatch?.answer || "";
-    if (text !== approvedAnswer) {
-      violations.push(violation("auto_send_not_verbatim", "Auto-send text must match the approved KB answer exactly.", "critical"));
+    const approvedSuffix = draft.approvedSuffix || "";
+    const allowed = approvedSuffix
+      ? approvedAnswer + "\n\n" + approvedSuffix
+      : approvedAnswer;
+    if (text !== allowed) {
+      violations.push(violation("auto_send_not_verbatim", "Auto-send text must match the approved KB answer exactly (plus any approved suffix).", "critical"));
     }
     if (!hasRequiredCitation(draft, knowledge, decision)) {
       violations.push(violation("missing_grounding", "Auto-send must cite the KB grounding entry.", "high"));

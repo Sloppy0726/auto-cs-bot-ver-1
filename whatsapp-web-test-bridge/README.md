@@ -40,7 +40,7 @@ Edit `.env` if needed. For the salon demo, keep:
 WA_BRIDGE_BUSINESS_ID=beauty_demo
 ```
 
-For live LLM calls, set `OPENAI_OAUTH_TOKEN` in `.env`. The bot sends it as a bearer token for OpenAI requests.
+For live LLM calls, set `CLAUDE_CODE_OAUTH_TOKEN` in `.env`. Generate it with `claude setup-token` (Claude Pro/Max/Enterprise subscription). The bot sends it as a bearer token against the Anthropic Messages API. `OPENAI_OAUTH_TOKEN` is still accepted as a fallback when no Claude token is set.
 
 Start both the local bot server and bridge:
 
@@ -68,17 +68,21 @@ npm run stop
 
 ## Important Safety Switch
 
-Fresh clones default to:
+Default:
+
+```bash
+WA_BRIDGE_SEND_REPLIES=true
+```
+
+The bridge drafts the reply into WhatsApp Web's composer and clicks Send automatically. The bot is then operating on a live WhatsApp account without human review per message — only run this on accounts where that is acceptable.
+
+To require a human to press Send, flip the switch in `.env`:
 
 ```bash
 WA_BRIDGE_SEND_REPLIES=false
 ```
 
-That means the bridge drafts replies into WhatsApp Web but does not click Send. For your own test account, set this in `.env`:
-
-```bash
-WA_BRIDGE_SEND_REPLIES=true
-```
+When false, the bridge still drafts the reply into the composer for you to inspect and send manually.
 
 Staff-review outputs can still be converted into customer-facing handoff messages when:
 

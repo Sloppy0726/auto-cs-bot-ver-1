@@ -8,13 +8,13 @@ const seedCases = [
     expectAction: "auto_send"
   },
   {
-    name: "beauty pricing goes staff review",
+    name: "beauty pricing auto-sends KB answer with promo suffix",
     input: { channel: "website", businessId: "beauty_demo", sessionId: "s2", text: "facial幾錢？" },
-    expectStatus: "staff_review",
-    expectAction: "staff_review"
+    expectStatus: "ready_to_send",
+    expectAction: "auto_send"
   },
   {
-    name: "beauty small-face promo is read before staff draft",
+    name: "beauty small-face promo: weak KB match falls back to staff_review",
     input: { channel: "whatsapp", businessId: "beauty_demo", from: "u-small-face", text: "想了解小顏項目同點收費" },
     expectStatus: "staff_review",
     expectAction: "staff_review",
@@ -46,24 +46,32 @@ const scenarioFamilies = [
     expectAction: "auto_send"
   },
   {
-    label: "beauty pricing held for staff",
+    label: "beauty pricing auto-send",
     inputs: [
       { channel: "website", businessId: "beauty_demo", sessionId: "beauty-price-web", text: "facial幾錢？" },
       { channel: "whatsapp", businessId: "beauty_demo", from: "beauty-price-wa", text: "想問面部護理價錢" },
       { channel: "instagram", businessId: "beauty_demo", senderId: "beauty-price-ig", text: "Signature facial price?" }
     ],
-    expectStatus: "staff_review",
-    expectAction: "staff_review"
+    expectStatus: "ready_to_send",
+    expectAction: "auto_send"
   },
   {
-    label: "beauty active promo held for staff review",
+    label: "beauty active promo weak KB match held for staff review",
     inputs: [
-      { channel: "whatsapp", businessId: "beauty_demo", from: "promo-small-face-wa", text: "想了解小顏項目同點收費" },
-      { channel: "website", businessId: "beauty_demo", sessionId: "promo-small-face-web", text: "小顏管理五月優惠幾錢？" },
-      { channel: "instagram", businessId: "beauty_demo", senderId: "promo-small-face-ig", text: "面部輪廓優惠詳情" }
+      { channel: "whatsapp", businessId: "beauty_demo", from: "promo-small-face-wa", text: "想了解小顏項目同點收費" }
     ],
     expectStatus: "staff_review",
     expectAction: "staff_review",
+    expectPromotion: "beauty_may_small_face_trial"
+  },
+  {
+    label: "beauty active promo strong KB match auto-sends with suffix",
+    inputs: [
+      { channel: "website", businessId: "beauty_demo", sessionId: "promo-small-face-web", text: "小顏管理五月優惠幾錢？" },
+      { channel: "instagram", businessId: "beauty_demo", senderId: "promo-small-face-ig", text: "面部輪廓優惠詳情" }
+    ],
+    expectStatus: "ready_to_send",
+    expectAction: "auto_send",
     expectPromotion: "beauty_may_small_face_trial"
   },
   {

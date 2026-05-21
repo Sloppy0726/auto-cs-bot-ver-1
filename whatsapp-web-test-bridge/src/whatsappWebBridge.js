@@ -4,6 +4,10 @@ const { execFile } = require("node:child_process");
 const { stitchText } = require("../../conversation context ver 1.0/src/conversationContext");
 const { createHandoffState, DEFAULT_TTL_MS } = require("./handoffState");
 const { isCustomerAcknowledgement, looksLikeBridgeAuthored } = require("./messageHeuristics");
+const {
+  buildOpenNextChatNeedingAttentionScript,
+  buildReadSidebarSnapshotScript
+} = require("./sidebarScripts");
 
 const BOT_URL = process.env.BOT_URL || "http://127.0.0.1:3000/webhook";
 const BUSINESS_ID = process.env.WA_BRIDGE_BUSINESS_ID || "restaurant_demo";
@@ -32,6 +36,7 @@ let lastDraftedFingerprint = null;
 let lastOpenedUnreadPreview = null;
 let timer = null;
 let tickInFlight = false;
+const chatRowFingerprints = new Map();
 
 main().catch((error) => {
   console.error("[wa-bridge] fatal:", error.message);
@@ -41,13 +46,17 @@ main().catch((error) => {
 async function main() {
   const snapshot = await readWhatsAppSnapshot();
   lastFingerprint = REPLY_LATEST_ON_START ? null : latestIncoming(snapshot)?.fingerprint || null;
+  const seed = await readSidebarSnapshot();
+  for (const [key, value] of Object.entries(seed.snapshot || {})) {
+    chatRowFingerprints.set(key, value);
+  }
   console.log(`[wa-bridge] watching Safari WhatsApp Web chat`);
   console.log(`[wa-bridge] bot=${BOT_URL} businessId=${BUSINESS_ID} draftReplies=${DRAFT_REPLIES} sendReplies=${SEND_REPLIES} sendHeldDrafts=${SEND_HELD_DRAFTS}`);
   console.log(`[wa-bridge] handoffPause=${HANDOFF_PAUSE_ENABLED} ttlHours=${Math.round(HANDOFF_PAUSE_TTL_MS / 60 / 60 / 1000)} intents=${Array.from(HANDOFF_PAUSE_INTENTS).join(",")}`);
-  console.log(`[wa-bridge] currentChat=${snapshot.chatTitle || "unknown"} existingLast=${lastFingerprint || "none"}`);
+  console.log(`[wa-bridge] currentChat=${snapshot.chatTitle || "unknown"} existingLast=${lastFingerprint || "none"} seededChats=${chatRowFingerprints.size}`);
   console.log("[wa-bridge] waiting for the next incoming message...");
 
-  await tick();
+  await tick().catch((error) => console.error("[wa-bridge] tick:", error.message));
   timer = setInterval(() => {
     if (tickInFlight) return;
     tickInFlight = true;
@@ -64,12 +73,16 @@ async function tick() {
   let snapshot = await readWhatsAppSnapshot();
   syncStaffReplyForSnapshot(snapshot);
   let incoming = latestIncoming(snapshot);
-  if (incoming && incoming.fingerprint === lastFingerprint) return;
   if (!incoming || incoming.fingerprint === lastFingerprint) {
-    const unread = await openLatestUnreadChat(lastOpenedUnreadPreview);
-    if (unread.opened) {
-      lastOpenedUnreadPreview = unread.preview || null;
-      console.log(`[wa-bridge] opened unread chat: ${unread.preview || "unknown"}`);
+    const attention = await openNextChatNeedingAttention({
+      seenFingerprints: Object.fromEntries(chatRowFingerprints),
+      activeChatTitle: snapshot.chatTitle || null,
+      cooldownPreview: lastOpenedUnreadPreview
+    });
+    mergeChatFingerprints(attention.snapshot);
+    if (attention.opened) {
+      lastOpenedUnreadPreview = attention.preview || null;
+      console.log(`[wa-bridge] opened chat: ${attention.chatKey || attention.preview || "unknown"} (${attention.reason || "attention"})`);
       await sleep(1200);
       snapshot = await readWhatsAppSnapshot();
       syncStaffReplyForSnapshot(snapshot);
@@ -316,34 +329,50 @@ function pricingReviewNotice(botResponse) {
   const language = botResponse?.debug?.intent?.language || "zh-HK";
   const english = language === "en";
   const staffItemId = botResponse?.staffItemId ? `\n跟進編號：${botResponse.staffItemId}` : "";
+  const promoBlock = activePromoBlock(botResponse, language);
 
   if (plans.length > 0) {
     if (english) {
       return [
         "Here are the current test pricing details:",
         plans.map((plan) => formatPricingPlan(plan, language)).join("\n"),
+        promoBlock,
         "The most suitable option depends on your skin condition and the latest shop arrangement. If you would like to book, I can hand this to staff for confirmation." + staffItemId
-      ].join("\n\n");
+      ].filter(Boolean).join("\n\n");
     }
 
     return [
       "以下係目前測試資料入面嘅價目參考：",
       plans.map((plan) => formatPricingPlan(plan, language)).join("\n"),
+      promoBlock,
       "實際適合邊個方案，要視乎皮膚狀態同店內最新安排；如你想預約，我可以再交俾同事幫你確認。" + staffItemId
-    ].join("\n\n");
+    ].filter(Boolean).join("\n\n");
   }
 
   if (english) {
     return [
       "I could not find matching pricing details yet.",
+      promoBlock,
       "I will hand this to staff to confirm the latest plans and fees for you." + staffItemId
-    ].join("\n");
+    ].filter(Boolean).join("\n\n");
   }
 
   return [
     "我暫時未搵到相符嘅價目資料。",
+    promoBlock,
     "我會交俾真人同事幫你確認最新方案同收費，再回覆你。" + staffItemId
-  ].join("\n");
+  ].filter(Boolean).join("\n\n");
+}
+
+function activePromoBlock(botResponse, language = "zh-HK") {
+  const best = botResponse?.debug?.promotions?.bestPromotion;
+  if (!best?.summary) return null;
+  if (language === "en") {
+    const heading = best.title ? `Current promotion — ${best.title}:` : "Current promotion:";
+    return [heading, best.summary].join("\n");
+  }
+  const heading = best.title ? `現時優惠 — ${best.title}：` : "現時優惠：";
+  return [heading, best.summary].join("\n");
 }
 
 function bookingReviewNotice(botResponse) {
@@ -580,42 +609,23 @@ async function clickSendButton() {
   if (!result.ok) throw new Error(result.reason || "send_failed");
 }
 
-async function openLatestUnreadChat(cooldownPreview = null) {
-  return JSON.parse(await safariJs(`(() => {
-    const cooldownPreview = ${JSON.stringify(cooldownPreview)};
-    const rows = [...document.querySelectorAll('[role="row"]')];
-    const unreadRow = rows.find((row) => {
-      const text = row.innerText || '';
-      const aria = [
-        row.getAttribute('aria-label') || '',
-        ...[...row.querySelectorAll('[aria-label]')].map((el) => el.getAttribute('aria-label') || '')
-      ].join(' ');
-      const hasUnread = /未讀|未读|unread/i.test(text + ' ' + aria);
-      const looksLikeChat = /上午|下午|AM|PM|\\d{1,2}:\\d{2}/i.test(text);
-      return hasUnread && looksLikeChat;
-    });
-    if (!unreadRow) return JSON.stringify({ opened: false });
-    const preview = (unreadRow.innerText || '').trim().replace(/\\s+/g, ' ').slice(0, 140);
-    if (cooldownPreview && preview === cooldownPreview) {
-      return JSON.stringify({ opened: false, skipped: true, preview });
-    }
-    unreadRow.scrollIntoView({ block: 'center' });
-    const rect = unreadRow.getBoundingClientRect();
-    const x = rect.left + Math.min(rect.width - 8, Math.max(8, rect.width / 2));
-    const y = rect.top + Math.min(rect.height - 8, Math.max(8, rect.height / 2));
-    const target = document.elementFromPoint(x, y) || unreadRow;
-    for (const type of ['mouseover', 'mousemove', 'mousedown', 'mouseup', 'click']) {
-      target.dispatchEvent(new MouseEvent(type, {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-        clientX: x,
-        clientY: y,
-        button: 0
-      }));
-    }
-    return JSON.stringify({ opened: true, preview });
-  })()`));
+async function openNextChatNeedingAttention({ seenFingerprints = {}, activeChatTitle = null, cooldownPreview = null } = {}) {
+  return JSON.parse(await safariJs(buildOpenNextChatNeedingAttentionScript({
+    seenFingerprints,
+    activeChatTitle,
+    cooldownPreview
+  })));
+}
+
+async function readSidebarSnapshot() {
+  return JSON.parse(await safariJs(buildReadSidebarSnapshotScript()));
+}
+
+function mergeChatFingerprints(snapshot) {
+  if (!snapshot) return;
+  for (const [key, value] of Object.entries(snapshot)) {
+    chatRowFingerprints.set(key, value);
+  }
 }
 
 function sleep(ms) {
@@ -623,9 +633,30 @@ function sleep(ms) {
 }
 
 function safariJs(source) {
+  const visibilityPrelude = "try {"
+    + " Object.defineProperty(document, 'visibilityState', { configurable: true, get: function () { return 'visible'; } });"
+    + " Object.defineProperty(document, 'hidden', { configurable: true, get: function () { return false; } });"
+    + " document.hasFocus = function () { return true; };"
+    + " document.dispatchEvent(new Event('visibilitychange'));"
+    + "} catch (e) {}";
+  const wrapped = `(function () { ${visibilityPrelude} return (${source}); })()`;
+  const appleScript = [
+    `tell application "Safari"`,
+    `  set targetDoc to missing value`,
+    `  repeat with d in documents`,
+    `    if URL of d starts with "https://web.whatsapp.com" then`,
+    `      set targetDoc to d`,
+    `      exit repeat`,
+    `    end if`,
+    `  end repeat`,
+    `  if targetDoc is missing value then`,
+    `    return do JavaScript ${JSON.stringify(wrapped)} in front document`,
+    `  end if`,
+    `  return do JavaScript ${JSON.stringify(wrapped)} in targetDoc`,
+    `end tell`
+  ].join("\n");
   return new Promise((resolve, reject) => {
-    const command = `tell application "Safari" to do JavaScript ${JSON.stringify(source)} in front document`;
-    execFile("osascript", ["-e", command], { timeout: 10000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile("osascript", ["-e", appleScript], { timeout: 10000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
         reject(new Error((stderr || error.message).trim()));
         return;

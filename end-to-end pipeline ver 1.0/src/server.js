@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { createPipeline } = require("./pipeline");
 const { createOpenAIAdapters } = require("./openaiAdapter");
+const { createClaudeAdapters } = require("./claudeAdapter");
 const { createConversationContextStore } = require("../../conversation context ver 1.0/src/conversationContext");
 const fakeBusinessData = require("../../private business backend mock ver 1.0/seed/mockBusinessData");
 
@@ -286,6 +287,24 @@ function publicWebhookResponse(result, payload = {}, config = {}, contextResult 
         grounding: result.knowledge?.grounding || []
       },
       backendFacts: result.backendFacts,
+      promotions: result.promotions
+        ? {
+            bestPromotion: result.promotions.bestPromotion
+              ? {
+                  id: result.promotions.bestPromotion.id,
+                  title: result.promotions.bestPromotion.title || null,
+                  summary: result.promotions.bestPromotion.summary || null,
+                  expiresOn: result.promotions.bestPromotion.expiresOn || null
+                }
+              : null,
+            activePromotions: (result.promotions.activePromotions || []).map((promo) => ({
+              id: promo.id,
+              title: promo.title || null,
+              summary: promo.summary || null,
+              expiresOn: promo.expiresOn || null
+            }))
+          }
+        : null,
       draft: result.draft,
       decision: {
         action: result.decision?.action || null,
@@ -1072,15 +1091,20 @@ function startWebhookServer(config = {}) {
   const hasWebhookSecret = Boolean(config.webhookSecret || process.env.WEBHOOK_SECRET);
   const allowUnsignedWebhooks = config.allowUnsignedWebhooks ?? (!hasWebhookSecret && nodeEnv !== "production");
   const webhookBusinessId = config.webhookBusinessId || process.env.WEBHOOK_BUSINESS_ID || null;
+  const claudeAdapters = createClaudeAdapters(config.claude || {});
   const openAIAdapters = createOpenAIAdapters(config.openAI || {});
   const allowLocalDemoLlm = config.allowLocalDemoLlm ?? process.env.ALLOW_LOCAL_DEMO_LLM === "true";
-  if (!config.llmAdapter && !openAIAdapters.llmAdapter && !allowLocalDemoLlm) {
-    throw new Error("OPENAI_OAUTH_TOKEN is required to start the bot. Set it in whatsapp-web-test-bridge/.env, or set ALLOW_LOCAL_DEMO_LLM=true for offline demo mode.");
+  if (!config.llmAdapter && !claudeAdapters.llmAdapter && !openAIAdapters.llmAdapter && !allowLocalDemoLlm) {
+    throw new Error("CLAUDE_CODE_OAUTH_TOKEN or OPENAI_OAUTH_TOKEN is required to start the bot. Set one in whatsapp-web-test-bridge/.env, or set ALLOW_LOCAL_DEMO_LLM=true for offline demo mode.");
   }
-  const llmAdapter = config.llmAdapter || openAIAdapters.llmAdapter || localDemoLlmAdapter;
-  const llmIntentAnalyzer = config.llmIntentAnalyzer || openAIAdapters.llmIntentAnalyzer || null;
-  const llmMode = openAIAdapters.llmAdapter ? `openai:${process.env.OPENAI_MODEL || process.env.OPENAI_DRAFT_MODEL || "gpt-4.1-mini"}` : "local-demo";
-  const llmIntentMode = config.llmIntentMode || process.env.OPENAI_INTENT_MODE || "always";
+  const llmAdapter = config.llmAdapter || claudeAdapters.llmAdapter || openAIAdapters.llmAdapter || localDemoLlmAdapter;
+  const llmIntentAnalyzer = config.llmIntentAnalyzer || claudeAdapters.llmIntentAnalyzer || openAIAdapters.llmIntentAnalyzer || null;
+  const llmMode = claudeAdapters.llmAdapter
+    ? `claude:${process.env.CLAUDE_MODEL || process.env.CLAUDE_DRAFT_MODEL || "claude-haiku-4-5-20251001"}`
+    : openAIAdapters.llmAdapter
+      ? `openai:${process.env.OPENAI_MODEL || process.env.OPENAI_DRAFT_MODEL || "gpt-4.1-mini"}`
+      : "local-demo";
+  const llmIntentMode = config.llmIntentMode || process.env.LLM_INTENT_MODE || process.env.OPENAI_INTENT_MODE || "always";
   const server = createWebhookServer({
     ...config,
     allowUnsignedWebhooks,

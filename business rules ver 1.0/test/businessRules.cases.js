@@ -20,10 +20,10 @@ const seedCases = [
     expectMustAllow: ["quote_kb_verbatim"]
   },
   {
-    name: "beauty pricing: askStaffBeforePromise + reviewIntents → staff_review",
+    name: "beauty pricing: autoSendIntents → auto_send with KB-grounded forbid",
     businessId: "beauty_demo",
     input: "facial幾錢？",
-    expectAction: "staff_review",
+    expectAction: "auto_send",
     expectMustForbid: ["give_medical_advice", "invent_prices"]
   },
   {
@@ -101,10 +101,10 @@ const scenarioFamilies = [
     expectMustAllow: ["quote_kb_verbatim"]
   },
   {
-    label: "beauty pricing staff review",
+    label: "beauty pricing auto-send",
     businessId: "beauty_demo",
     inputs: ["facial幾錢？", "想問面部護理價錢", "Signature facial price?", "首次體驗facial幾錢"],
-    expectAction: "staff_review",
+    expectAction: "auto_send",
     expectMustForbid: ["give_medical_advice", "invent_prices"]
   },
   {

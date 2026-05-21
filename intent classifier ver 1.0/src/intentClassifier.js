@@ -24,7 +24,7 @@ const intentRules = [
     intent: "pricing",
     confidence: 0.9,
     reason: "Matched pricing keyword",
-    pattern: /幾錢|幾多錢|價錢|價目|收費|費用|方案|price|pricing|how much|cost|\bfees?\b|rate|rates|\bcharges?\b|plans?|trial|promotion|discount|offer|優惠|package|套票/i
+    pattern: /幾錢|幾多錢|價錢|價目|收費|費用|方案|price|pricing|how much|cost|\bfees?\b|rate|rates|\bcharges?\b|trial|promotion|discount|offer|優惠|package|套票/i
   },
   {
     intent: "reschedule",

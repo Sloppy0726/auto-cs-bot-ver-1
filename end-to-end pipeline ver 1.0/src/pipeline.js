@@ -106,7 +106,7 @@ async function runMessage(input = {}, deps = {}) {
 
 function intentClassifierOptions(deps = {}) {
   if (typeof deps.llmIntentAnalyzer !== "function") return {};
-  const mode = deps.config?.llmIntentMode || process.env.OPENAI_INTENT_MODE || "always";
+  const mode = deps.config?.llmIntentMode || process.env.LLM_INTENT_MODE || process.env.OPENAI_INTENT_MODE || "always";
   return {
     llmClassifier: deps.llmIntentAnalyzer,
     confidenceThreshold: mode === "always" ? 0.99 : undefined

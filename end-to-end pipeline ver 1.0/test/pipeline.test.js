@@ -31,7 +31,9 @@ async function run() {
     }
     if (c.expectPromotion) {
       assert.equal(result.promotions.bestPromotion?.id, c.expectPromotion, `${c.name}: promotion mismatch`);
-      assert.equal(result.staffItem.promotions.bestPromotion.id, c.expectPromotion, `${c.name}: staff item promotion mismatch`);
+      if (result.staffItem) {
+        assert.equal(result.staffItem.promotions.bestPromotion.id, c.expectPromotion, `${c.name}: staff item promotion mismatch`);
+      }
     }
   }
 

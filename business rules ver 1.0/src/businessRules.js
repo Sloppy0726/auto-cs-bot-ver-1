@@ -149,7 +149,11 @@ function evaluate(input) {
   const forcedReviewReasons = [];
   if (knowledge.backendBound) forcedReviewReasons.push("knowledge.backendBound=true");
   const bestPolicyRef = knowledge.bestMatch?.policyRef;
-  if (bestPolicyRef && config.policies?.includes(bestPolicyRef)) {
+  // If the owner has opted intent into auto_send, the policy still applies as a
+  // content constraint via forbidden capabilities (no medical claim, etc.),
+  // but does not by itself force staff review.
+  const intentOptedIntoAutoSend = (config.autoSendIntents || []).includes(intent.primaryIntent);
+  if (bestPolicyRef && config.policies?.includes(bestPolicyRef) && !intentOptedIntoAutoSend) {
     forcedReviewReasons.push(`policyRef=${bestPolicyRef}`);
   }
   if (gateway.route === "review_before_llm") forcedReviewReasons.push("gateway.route=review_before_llm");
@@ -174,7 +178,12 @@ function evaluate(input) {
   const passScore = bestScore >= 0.7;
   const passConfidence = intentConfidence >= 0.7;
   const noRiskHints = (intent.riskLevel === "none" || intent.riskLevel === "low");
-  const numberNeedsReview = intent.primaryIntent !== "hours_location";
+  // Intents the owner explicitly opted into auto-send have KB answers whose numbers
+  // are pre-approved (e.g. published prices, hours). Don't trip askStaffBeforePromise
+  // on numbers in those answers. For everything else (booking slot counts, payment
+  // amounts, etc.) the staff review still happens.
+  const intentApprovedForNumbers = (config.autoSendIntents || []).includes(intent.primaryIntent);
+  const numberNeedsReview = !intentApprovedForNumbers;
   const askStaffTrip = config.askStaffBeforePromise
     && numberNeedsReview
     && knowledge.bestMatch
