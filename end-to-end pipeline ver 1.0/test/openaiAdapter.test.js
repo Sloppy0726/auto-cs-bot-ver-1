@@ -6,7 +6,7 @@ const { createOpenAIAdapters, _internal } = require("../src/openaiAdapter");
 async function run() {
   const calls = [];
   const fetchImpl = async (url, request) => {
-    calls.push({ url, body: JSON.parse(request.body) });
+    calls.push({ url, headers: request.headers, body: JSON.parse(request.body) });
     const isIntent = request.body.includes("expectedJsonShape");
     return {
       ok: true,
@@ -35,7 +35,7 @@ async function run() {
   };
 
   const adapters = createOpenAIAdapters({
-    apiKey: "test-key",
+    oauthToken: "test-oauth-token",
     draftModel: "gpt-test-draft",
     intentModel: "gpt-test-intent",
     organization: "org_test",
@@ -59,10 +59,15 @@ async function run() {
 
   assert.equal(calls.length, 2);
   assert.equal(calls[0].url, "https://api.openai.com/v1/chat/completions");
+  assert.equal(calls[0].headers.authorization, "Bearer test-oauth-token");
   assert.equal(calls[0].body.model, "gpt-test-draft");
   assert.equal(calls[1].body.model, "gpt-test-intent");
+  assert.equal(
+    _internal.openAIHeaders({ oauthToken: "Bearer oauth-prefixed-token" }).authorization,
+    "Bearer oauth-prefixed-token"
+  );
   assert.deepEqual(
-    _internal.openAIHeaders({ apiKey: "key", organization: "org_1", project: "proj_1" }),
+    _internal.openAIHeaders({ oauthToken: "key", organization: "org_1", project: "proj_1" }),
     {
       authorization: "Bearer key",
       "content-type": "application/json",
@@ -70,9 +75,10 @@ async function run() {
       "OpenAI-Project": "proj_1"
     }
   );
+  assert.deepEqual(createOpenAIAdapters({ fetchImpl }), {});
   assert.deepEqual(_internal.parseJsonObject("prefix {\"primaryIntent\":\"pricing\"} suffix"), { primaryIntent: "pricing" });
 
-  console.log("openaiAdapter: 13 tests passed");
+  console.log("openaiAdapter: 15 tests passed");
 }
 
 run().catch((error) => {

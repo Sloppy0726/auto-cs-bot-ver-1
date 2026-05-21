@@ -40,6 +40,8 @@ const result = await pipeline.runMessage({
 
 `src/server.js` exposes `createWebhookServer()` using Node's built-in `http` module. It supports `POST /webhook`. Signed mode requires `x-webhook-timestamp` and `x-webhook-signature`; the signature is HMAC-SHA256 over `timestamp.rawBody`. For tenant isolation, configure per-business `webhookSecrets` or set `webhookBusinessId` with a single `webhookSecret` so the verified request is bound to a server-side `businessId` before the pipeline runs. Tenant-scoped payloads are rejected when the signed credential is not bound to a business. The server rejects non-JSON content types, oversized declared bodies, and slow body reads before running the pipeline.
 
+For LLM calls, set `OPENAI_OAUTH_TOKEN`. OAuth tokens are sent as `Authorization: Bearer <token>`.
+
 ## Run
 
 ```bash

@@ -13,17 +13,17 @@ const { createWebhookServer, startWebhookServer, _internal } = require("../src/s
   assert.equal(_internal.publicErrorMessage(new Error("database unavailable"), 500), "internal_server_error", "500s should not expose internal messages");
   assert.equal(_internal.publicErrorMessage(Object.assign(new Error("invalid_webhook_signature"), { statusCode: 401 }), 401), "unauthorized", "auth failures should not expose verifier details");
   assert.equal(_internal.publicErrorMessage(new SyntaxError("bad json"), 400), "bad_request", "bad requests should not expose parser details");
-  const originalApiKey = process.env.OPENAI_API_KEY;
+  const originalOauthToken = process.env.OPENAI_OAUTH_TOKEN;
   const originalAllowDemo = process.env.ALLOW_LOCAL_DEMO_LLM;
-  delete process.env.OPENAI_API_KEY;
+  delete process.env.OPENAI_OAUTH_TOKEN;
   delete process.env.ALLOW_LOCAL_DEMO_LLM;
   assert.throws(
     () => startWebhookServer({ port: 0, envFiles: [] }),
-    /OPENAI_API_KEY is required/,
+    /OPENAI_OAUTH_TOKEN is required/,
     "default server startup should require an LLM-backed adapter"
   );
-  if (originalApiKey === undefined) delete process.env.OPENAI_API_KEY;
-  else process.env.OPENAI_API_KEY = originalApiKey;
+  if (originalOauthToken === undefined) delete process.env.OPENAI_OAUTH_TOKEN;
+  else process.env.OPENAI_OAUTH_TOKEN = originalOauthToken;
   if (originalAllowDemo === undefined) delete process.env.ALLOW_LOCAL_DEMO_LLM;
   else process.env.ALLOW_LOCAL_DEMO_LLM = originalAllowDemo;
 

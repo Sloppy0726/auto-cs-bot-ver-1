@@ -40,6 +40,8 @@ Edit `.env` if needed. For the salon demo, keep:
 WA_BRIDGE_BUSINESS_ID=beauty_demo
 ```
 
+For live LLM calls, set `OPENAI_OAUTH_TOKEN` in `.env`. The bot sends it as a bearer token for OpenAI requests.
+
 Start both the local bot server and bridge:
 
 ```bash

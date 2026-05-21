@@ -108,6 +108,8 @@ cp .env.example .env
 npm start
 ```
 
+For live LLM calls, put `OPENAI_OAUTH_TOKEN` in `whatsapp-web-test-bridge/.env`. The bot sends it as a bearer token for OpenAI requests.
+
 The packaged starter runs the local bot server if needed, starts the WhatsApp Web bridge in `screen`, and writes logs under `whatsapp-web-test-bridge/logs/`. See [`whatsapp-web-test-bridge/README.md`](whatsapp-web-test-bridge/README.md) for setup, safety switches, and troubleshooting.
 
 Example:

@@ -6,11 +6,11 @@ const DEFAULT_MODEL = "gpt-4.1-mini";
 const DEFAULT_TIMEOUT_MS = 20_000;
 
 function createOpenAIAdapters(config = {}) {
-  const apiKey = config.apiKey || process.env.OPENAI_API_KEY;
-  if (!apiKey) return {};
+  const oauthToken = config.oauthToken || process.env.OPENAI_OAUTH_TOKEN;
+  if (!oauthToken) return {};
 
   const client = createOpenAIChatClient({
-    apiKey,
+    oauthToken,
     baseUrl: config.baseUrl || process.env.OPENAI_BASE_URL,
     organization: config.organization || process.env.OPENAI_ORGANIZATION,
     project: config.project || process.env.OPENAI_PROJECT,
@@ -126,14 +126,14 @@ function createIntentAnalyzer({ client, model }) {
 }
 
 function createOpenAIChatClient(config = {}) {
-  const apiKey = config.apiKey;
+  const oauthToken = config.oauthToken;
   const baseUrl = String(config.baseUrl || "https://api.openai.com/v1").replace(/\/+$/, "");
   const fetchImpl = config.fetchImpl || globalThis.fetch;
   const timeoutMs = config.timeoutMs || DEFAULT_TIMEOUT_MS;
   const organization = config.organization || null;
   const project = config.project || null;
 
-  if (!apiKey) throw new Error("OPENAI_API_KEY is required");
+  if (!oauthToken) throw new Error("OPENAI_OAUTH_TOKEN is required");
   if (typeof fetchImpl !== "function") throw new Error("fetch is required for OpenAI adapter");
 
   return {
@@ -143,7 +143,7 @@ function createOpenAIChatClient(config = {}) {
       try {
         const response = await fetchImpl(`${baseUrl}/chat/completions`, {
           method: "POST",
-          headers: openAIHeaders({ apiKey, organization, project }),
+          headers: openAIHeaders({ oauthToken, organization, project }),
           body: JSON.stringify({
             model: request.model,
             messages: request.messages,
@@ -166,14 +166,20 @@ function createOpenAIChatClient(config = {}) {
   };
 }
 
-function openAIHeaders({ apiKey, organization, project }) {
+function openAIHeaders({ oauthToken, organization, project }) {
   const headers = {
-    authorization: `Bearer ${apiKey}`,
+    authorization: authorizationHeaderForToken(oauthToken),
     "content-type": "application/json"
   };
   if (organization) headers["OpenAI-Organization"] = organization;
   if (project) headers["OpenAI-Project"] = project;
   return headers;
+}
+
+function authorizationHeaderForToken(token) {
+  const trimmed = String(token || "").trim();
+  if (/^Bearer\s+/i.test(trimmed)) return trimmed;
+  return `Bearer ${trimmed}`;
 }
 
 function normalizeIntentJson(content) {
@@ -209,5 +215,5 @@ function parseJsonObject(content) {
 module.exports = {
   createOpenAIAdapters,
   createOpenAIChatClient,
-  _internal: { createDraftAdapter, createIntentAnalyzer, normalizeIntentJson, parseJsonObject, formatApprovedContext, openAIHeaders, DEFAULT_MODEL }
+  _internal: { createDraftAdapter, createIntentAnalyzer, normalizeIntentJson, parseJsonObject, formatApprovedContext, openAIHeaders, authorizationHeaderForToken, DEFAULT_MODEL }
 };

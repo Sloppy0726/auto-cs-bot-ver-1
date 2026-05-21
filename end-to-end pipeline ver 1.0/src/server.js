@@ -1075,7 +1075,7 @@ function startWebhookServer(config = {}) {
   const openAIAdapters = createOpenAIAdapters(config.openAI || {});
   const allowLocalDemoLlm = config.allowLocalDemoLlm ?? process.env.ALLOW_LOCAL_DEMO_LLM === "true";
   if (!config.llmAdapter && !openAIAdapters.llmAdapter && !allowLocalDemoLlm) {
-    throw new Error("OPENAI_API_KEY is required to start the bot. Set it in whatsapp-web-test-bridge/.env, or set ALLOW_LOCAL_DEMO_LLM=true for offline demo mode.");
+    throw new Error("OPENAI_OAUTH_TOKEN is required to start the bot. Set it in whatsapp-web-test-bridge/.env, or set ALLOW_LOCAL_DEMO_LLM=true for offline demo mode.");
   }
   const llmAdapter = config.llmAdapter || openAIAdapters.llmAdapter || localDemoLlmAdapter;
   const llmIntentAnalyzer = config.llmIntentAnalyzer || openAIAdapters.llmIntentAnalyzer || null;
