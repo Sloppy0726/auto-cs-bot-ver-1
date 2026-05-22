@@ -15,19 +15,27 @@ const { createWebhookServer, startWebhookServer, _internal } = require("../src/s
   assert.equal(_internal.publicErrorMessage(new SyntaxError("bad json"), 400), "bad_request", "bad requests should not expose parser details");
   const originalOauthToken = process.env.OPENAI_OAUTH_TOKEN;
   const originalClaudeToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  const originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
+  const originalAnthropicAuthToken = process.env.ANTHROPIC_AUTH_TOKEN;
   const originalAllowDemo = process.env.ALLOW_LOCAL_DEMO_LLM;
   delete process.env.OPENAI_OAUTH_TOKEN;
   delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_AUTH_TOKEN;
   delete process.env.ALLOW_LOCAL_DEMO_LLM;
   assert.throws(
     () => startWebhookServer({ port: 0, envFiles: [] }),
-    /CLAUDE_CODE_OAUTH_TOKEN or OPENAI_OAUTH_TOKEN is required/,
+    /CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or OPENAI_OAUTH_TOKEN is required/,
     "default server startup should require an LLM-backed adapter"
   );
   if (originalOauthToken === undefined) delete process.env.OPENAI_OAUTH_TOKEN;
   else process.env.OPENAI_OAUTH_TOKEN = originalOauthToken;
   if (originalClaudeToken === undefined) delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
   else process.env.CLAUDE_CODE_OAUTH_TOKEN = originalClaudeToken;
+  if (originalAnthropicKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+  else process.env.ANTHROPIC_API_KEY = originalAnthropicKey;
+  if (originalAnthropicAuthToken === undefined) delete process.env.ANTHROPIC_AUTH_TOKEN;
+  else process.env.ANTHROPIC_AUTH_TOKEN = originalAnthropicAuthToken;
   if (originalAllowDemo === undefined) delete process.env.ALLOW_LOCAL_DEMO_LLM;
   else process.env.ALLOW_LOCAL_DEMO_LLM = originalAllowDemo;
 

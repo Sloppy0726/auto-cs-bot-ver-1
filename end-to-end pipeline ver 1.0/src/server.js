@@ -1229,7 +1229,7 @@ function startWebhookServer(config = {}) {
   const openAIAdapters = createOpenAIAdapters(config.openAI || {});
   const allowLocalDemoLlm = config.allowLocalDemoLlm ?? process.env.ALLOW_LOCAL_DEMO_LLM === "true";
   if (!config.llmAdapter && !claudeAdapters.llmAdapter && !openAIAdapters.llmAdapter && !allowLocalDemoLlm) {
-    throw new Error("CLAUDE_CODE_OAUTH_TOKEN or OPENAI_OAUTH_TOKEN is required to start the bot. Set one in whatsapp-web-test-bridge/.env, or set ALLOW_LOCAL_DEMO_LLM=true for offline demo mode.");
+    throw new Error("CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or OPENAI_OAUTH_TOKEN is required to start the bot. Set one in whatsapp-web-test-bridge/.env, or set ALLOW_LOCAL_DEMO_LLM=true for offline demo mode.");
   }
   const realLlmAdapter = config.llmAdapter || claudeAdapters.llmAdapter || openAIAdapters.llmAdapter || null;
   const llmAdapter = realLlmAdapter || localDemoLlmAdapter;
@@ -1303,7 +1303,7 @@ function loadEnvFile(filePath) {
     for (const line of text.split(/\r?\n/)) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith("#")) continue;
-      const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+      const match = trimmed.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
       if (!match) continue;
       const [, key, rawValue] = match;
       if (process.env[key] !== undefined) continue;

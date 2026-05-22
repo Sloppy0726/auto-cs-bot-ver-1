@@ -108,7 +108,7 @@ cp .env.example .env
 npm start
 ```
 
-For live LLM calls, put `CLAUDE_CODE_OAUTH_TOKEN` in `whatsapp-web-test-bridge/.env`. Generate it with `claude setup-token` (Claude Pro/Max/Enterprise subscription). The bot sends it as a bearer token for Anthropic Messages API requests, with the `anthropic-beta: oauth-2025-04-20` header. `OPENAI_OAUTH_TOKEN` still works as a fallback if no Claude token is set.
+For live LLM calls, put proxy-style `ANTHROPIC_BASE_URL` plus `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, or `ANTHROPIC_API_KEY` in `whatsapp-web-test-bridge/.env`. Generate the OAuth token with `claude setup-token` (Claude Pro/Max/Enterprise subscription), or create an API key in the Anthropic Console. The bot tries the proxy auth token first, falls back to Claude OAuth if the proxy request fails, then tries a direct Anthropic API key, and only then falls back to `OPENAI_OAUTH_TOKEN` if no Claude credential is configured.
 
 The packaged starter runs the local bot server if needed, starts the WhatsApp Web bridge in `screen`, and writes logs under `whatsapp-web-test-bridge/logs/`. See [`whatsapp-web-test-bridge/README.md`](whatsapp-web-test-bridge/README.md) for setup, safety switches, and troubleshooting.
 

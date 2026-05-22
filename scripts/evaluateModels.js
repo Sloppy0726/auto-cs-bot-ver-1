@@ -2,13 +2,14 @@
 
 // Live model comparison harness.
 // Runs a fixed scenario set through the bot pipeline with different LLM models
-// wired in via the Claude OAuth adapter, scores each output, and writes a
+// wired in via the Claude adapter, scores each output, and writes a
 // readable markdown report.
 //
 // Usage:
 //   node scripts/evaluateModels.js
 //
-// Requires CLAUDE_CODE_OAUTH_TOKEN in whatsapp-web-test-bridge/.env (or env).
+// Requires ANTHROPIC_AUTH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, or ANTHROPIC_API_KEY in
+// whatsapp-web-test-bridge/.env (or env).
 
 const fs = require("node:fs");
 const path = require("node:path");
@@ -88,9 +89,9 @@ const SCENARIOS = [
 async function main() {
   loadLocalEnv();
 
-  const claudeToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
-  if (!claudeToken) {
-    console.error("CLAUDE_CODE_OAUTH_TOKEN not set. Run `claude setup-token` and put the token in whatsapp-web-test-bridge/.env.");
+  const hasClaudeCredential = Boolean(process.env.ANTHROPIC_AUTH_TOKEN || process.env.CLAUDE_CODE_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY);
+  if (!hasClaudeCredential) {
+    console.error("ANTHROPIC_AUTH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, or ANTHROPIC_API_KEY not set. Put one in whatsapp-web-test-bridge/.env.");
     process.exit(1);
   }
 
@@ -148,6 +149,9 @@ function createAdaptersForModel(model) {
   if (model.provider === "claude") {
     return createClaudeAdapters({
       oauthToken: process.env.CLAUDE_CODE_OAUTH_TOKEN,
+      apiKey: process.env.ANTHROPIC_API_KEY,
+      authToken: process.env.ANTHROPIC_AUTH_TOKEN,
+      baseUrl: process.env.ANTHROPIC_BASE_URL || process.env.CLAUDE_BASE_URL,
       draftModel: model.id,
       intentModel: model.id,
       timeoutMs: 60_000

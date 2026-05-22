@@ -40,7 +40,7 @@ Edit `.env` if needed. For the salon demo, keep:
 WA_BRIDGE_BUSINESS_ID=beauty_demo
 ```
 
-For live LLM calls, set `CLAUDE_CODE_OAUTH_TOKEN` in `.env`. Generate it with `claude setup-token` (Claude Pro/Max/Enterprise subscription). The bot sends it as a bearer token against the Anthropic Messages API. `OPENAI_OAUTH_TOKEN` is still accepted as a fallback when no Claude token is set.
+For live LLM calls, set proxy-style `ANTHROPIC_BASE_URL` plus `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, or `ANTHROPIC_API_KEY` in `.env`. Generate the OAuth token with `claude setup-token` (Claude Pro/Max/Enterprise subscription), or create an API key in the Anthropic Console. The bot tries the proxy auth token first, falls back to Claude OAuth if the proxy request fails, then tries a direct Anthropic API key, and only then falls back to `OPENAI_OAUTH_TOKEN` if no Claude credential is configured.
 
 Start both the local bot server and bridge:
 

@@ -11,11 +11,15 @@ const CLAUDE_CODE_SYSTEM_PREFIX = "You are Claude Code, Anthropic's official CLI
 
 function createClaudeAdapters(config = {}) {
   const oauthToken = config.oauthToken || process.env.CLAUDE_CODE_OAUTH_TOKEN;
-  if (!oauthToken) return {};
+  const apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY;
+  const authToken = config.authToken || process.env.ANTHROPIC_AUTH_TOKEN;
+  if (!oauthToken && !apiKey && !authToken) return {};
 
   const client = createClaudeMessagesClient({
     oauthToken,
-    baseUrl: config.baseUrl || process.env.CLAUDE_BASE_URL,
+    apiKey,
+    authToken,
+    baseUrl: config.baseUrl || process.env.CLAUDE_BASE_URL || process.env.ANTHROPIC_BASE_URL,
     apiVersion: config.apiVersion || process.env.CLAUDE_API_VERSION,
     betaHeader: config.betaHeader || process.env.CLAUDE_OAUTH_BETA,
     fetchImpl: config.fetchImpl,
@@ -41,6 +45,7 @@ function createDraftAdapter({ client, model }) {
       temperature: 0.2,
       maxTokens: 600,
       system: buildSystemBlocks(callerSystem),
+      apiKeySystem: buildSystemBlocks(callerSystem, { includeClaudeCodePrefix: false }),
       messages: [
         { role: "user", content: [{ type: "text", text: userPrompt }] }
       ]
@@ -88,6 +93,7 @@ function createIntentAnalyzer({ client, model }) {
       temperature: 0,
       maxTokens: 600,
       system: buildSystemBlocks(callerSystem),
+      apiKeySystem: buildSystemBlocks(callerSystem, { includeClaudeCodePrefix: false }),
       messages: [
         { role: "user", content: [{ type: "text", text: userPayload }] }
       ]
@@ -96,8 +102,13 @@ function createIntentAnalyzer({ client, model }) {
   };
 }
 
-function buildSystemBlocks(callerSystem) {
+function buildSystemBlocks(callerSystem, options = {}) {
+  const includeClaudeCodePrefix = options.includeClaudeCodePrefix !== false;
   const callerText = String(callerSystem || "").trim();
+  if (!includeClaudeCodePrefix) {
+    const apiKeyText = stripClaudeCodePrefix(callerText);
+    return apiKeyText ? [{ type: "text", text: apiKeyText }] : [];
+  }
   if (callerText.startsWith(CLAUDE_CODE_SYSTEM_PREFIX)) {
     return [{ type: "text", text: callerText }];
   }
@@ -105,6 +116,12 @@ function buildSystemBlocks(callerSystem) {
     { type: "text", text: CLAUDE_CODE_SYSTEM_PREFIX },
     { type: "text", text: callerText }
   ];
+}
+
+function stripClaudeCodePrefix(text) {
+  const value = String(text || "").trim();
+  if (!value.startsWith(CLAUDE_CODE_SYSTEM_PREFIX)) return value;
+  return value.slice(CLAUDE_CODE_SYSTEM_PREFIX.length).trim();
 }
 
 function formatApprovedContext(context = {}) {
@@ -136,46 +153,104 @@ function formatApprovedContext(context = {}) {
 
 function createClaudeMessagesClient(config = {}) {
   const oauthToken = config.oauthToken;
-  const baseUrl = String(config.baseUrl || "https://api.anthropic.com/v1").replace(/\/+$/, "");
+  const apiKey = config.apiKey;
+  const authToken = config.authToken;
+  const baseUrl = normalizeClaudeBaseUrl(config.baseUrl || "https://api.anthropic.com/v1");
   const fetchImpl = config.fetchImpl || globalThis.fetch;
   const timeoutMs = config.timeoutMs || DEFAULT_TIMEOUT_MS;
   const apiVersion = config.apiVersion || DEFAULT_API_VERSION;
   const betaHeader = config.betaHeader || DEFAULT_OAUTH_BETA;
+  const credentials = claudeCredentials({ oauthToken, apiKey, authToken });
 
-  if (!oauthToken) throw new Error("CLAUDE_CODE_OAUTH_TOKEN is required");
+  if (credentials.length === 0) throw new Error("CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, or ANTHROPIC_AUTH_TOKEN is required");
   if (typeof fetchImpl !== "function") throw new Error("fetch is required for Claude adapter");
 
   return {
     async createMessage(request) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const requestBody = {
-          model: request.model,
-          max_tokens: request.maxTokens,
-          system: request.system,
-          messages: request.messages
-        };
-        if (request.temperature !== undefined && !modelDeprecatesTemperature(request.model)) {
-          requestBody.temperature = request.temperature;
+      const failures = [];
+      for (const credential of credentials) {
+        try {
+          return await sendClaudeMessage({
+            credential,
+            request,
+            baseUrl,
+            fetchImpl,
+            timeoutMs,
+            apiVersion,
+            betaHeader
+          });
+        } catch (error) {
+          failures.push({ credential, error });
         }
-        const response = await fetchImpl(`${baseUrl}/messages`, {
-          method: "POST",
-          headers: claudeHeaders({ oauthToken, apiVersion, betaHeader }),
-          body: JSON.stringify(requestBody),
-          signal: controller.signal
-        });
-        const responseBody = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          const detail = responseBody?.error?.message || response.statusText || "Claude request failed";
-          throw new Error(`claude_${response.status}: ${detail}`);
-        }
-        return extractText(responseBody);
-      } finally {
-        clearTimeout(timeout);
       }
+      throw combinedCredentialError(failures);
     }
   };
+}
+
+function claudeCredentials({ oauthToken, apiKey, authToken } = {}) {
+  const credentials = [];
+  if (String(authToken || "").trim()) credentials.push({ type: "auth_token", value: authToken });
+  if (String(oauthToken || "").trim()) credentials.push({ type: "oauth", value: oauthToken });
+  if (String(apiKey || "").trim()) credentials.push({ type: "api_key", value: apiKey });
+  return credentials;
+}
+
+function normalizeClaudeBaseUrl(baseUrl) {
+  const trimmed = String(baseUrl || "https://api.anthropic.com/v1").trim().replace(/\/+$/, "");
+  try {
+    const parsed = new URL(trimmed);
+    if (!parsed.pathname || parsed.pathname === "/") return `${trimmed}/v1`;
+  } catch {
+    return trimmed;
+  }
+  return trimmed;
+}
+
+async function sendClaudeMessage({ credential, request, baseUrl, fetchImpl, timeoutMs, apiVersion, betaHeader }) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const requestBody = buildRequestBody({ request, authType: credential.type });
+    const response = await fetchImpl(`${baseUrl}/messages`, {
+      method: "POST",
+      headers: claudeHeaders({ credential, apiVersion, betaHeader }),
+      body: JSON.stringify(requestBody),
+      signal: controller.signal
+    });
+    const responseBody = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const detail = responseBody?.error?.message || response.statusText || "Claude request failed";
+      throw new Error(`claude_${response.status}: ${detail}`);
+    }
+    return extractText(responseBody);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function buildRequestBody({ request, authType }) {
+  const system = authType === "oauth"
+    ? request.system
+    : request.apiKeySystem || request.system;
+  const requestBody = {
+    model: request.model,
+    max_tokens: request.maxTokens,
+    messages: request.messages
+  };
+  if (system && (!Array.isArray(system) || system.length > 0)) requestBody.system = system;
+  if (request.temperature !== undefined && !modelDeprecatesTemperature(request.model)) {
+    requestBody.temperature = request.temperature;
+  }
+  return requestBody;
+}
+
+function combinedCredentialError(failures) {
+  if (failures.length === 1) return failures[0].error;
+  const detail = failures
+    .map((failure) => `${failure.credential.type} failed: ${failure.error.message}`)
+    .join("; ");
+  return new Error(`claude_all_credentials_failed: ${detail}`);
 }
 
 function modelDeprecatesTemperature(model) {
@@ -183,14 +258,25 @@ function modelDeprecatesTemperature(model) {
   return /claude-opus-4-7/.test(id);
 }
 
-function claudeHeaders({ oauthToken, apiVersion, betaHeader } = {}) {
-  const resolvedBeta = betaHeader === undefined ? DEFAULT_OAUTH_BETA : betaHeader;
+function claudeHeaders({ oauthToken, apiKey, authToken, credential, apiVersion, betaHeader } = {}) {
+  const resolvedCredential = credential || (authToken
+      ? { type: "auth_token", value: authToken }
+      : oauthToken
+        ? { type: "oauth", value: oauthToken }
+        : { type: "api_key", value: apiKey });
   const headers = {
-    authorization: authorizationHeaderForToken(oauthToken),
     "content-type": "application/json",
     "anthropic-version": apiVersion || DEFAULT_API_VERSION
   };
-  if (resolvedBeta) headers["anthropic-beta"] = resolvedBeta;
+  if (resolvedCredential.type === "api_key") {
+    headers["x-api-key"] = String(resolvedCredential.value || "").trim();
+    return headers;
+  }
+  headers.authorization = authorizationHeaderForToken(resolvedCredential.value);
+  if (resolvedCredential.type === "oauth") {
+    const resolvedBeta = betaHeader === undefined ? DEFAULT_OAUTH_BETA : betaHeader;
+    if (resolvedBeta) headers["anthropic-beta"] = resolvedBeta;
+  }
   return headers;
 }
 
@@ -244,6 +330,12 @@ module.exports = {
     createDraftAdapter,
     createIntentAnalyzer,
     buildSystemBlocks,
+    stripClaudeCodePrefix,
+    claudeCredentials,
+    normalizeClaudeBaseUrl,
+    sendClaudeMessage,
+    buildRequestBody,
+    combinedCredentialError,
     claudeHeaders,
     authorizationHeaderForToken,
     extractText,
