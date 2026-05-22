@@ -37,6 +37,8 @@ let lastOpenedUnreadPreview = null;
 let timer = null;
 let tickInFlight = false;
 const chatRowFingerprints = new Map();
+const bridgeSentFingerprints = new Set();
+const BRIDGE_SENT_FINGERPRINT_CAP = 200;
 
 main().catch((error) => {
   console.error("[wa-bridge] fatal:", error.message);
@@ -141,6 +143,7 @@ async function tick() {
         console.log(`[wa-bridge] sent staff-review handoff notice. staffItemId=${botResponse.staffItemId || "none"}`);
         if (draftText) console.log(`[wa-bridge] staff draft: ${draftText}`);
         pauseIfHandoffNeeded({ incoming, snapshot, botResponse, noticeText });
+        await recordBridgeSentMessage(chatKeyFor(incoming, snapshot));
         return;
       }
       console.log(`[wa-bridge] drafted staff-review handoff notice. staffItemId=${botResponse.staffItemId || "none"}`);
@@ -167,6 +170,7 @@ async function tick() {
     await sleep(500);
     await clickSendButton();
     console.log("[wa-bridge] sent reply through WhatsApp Web.");
+    await recordBridgeSentMessage(chatKey);
     return;
   }
   console.log("[wa-bridge] drafted reply into WhatsApp Web message box; review it and press Send manually.");
@@ -221,8 +225,12 @@ function syncStaffReplyForSnapshot(snapshot) {
   const outgoing = latestOutgoing(snapshot);
   if (!outgoing?.text) return;
   if (outgoing.fingerprint === activeHandoff.botHandoffFingerprint) return;
+  if (bridgeSentFingerprints.has(outgoing.fingerprint)) return;
   if (outgoing.text === activeHandoff.botHandoffText) return;
-  if (looksLikeBridgeAuthored(outgoing.text)) return;
+  if (looksLikeBridgeAuthored(outgoing.text)) {
+    console.log(`[wa-bridge] sync: skipping suspected bridge-authored outgoing in chat=${chatKey}: ${outgoing.text.slice(0, 80)}`);
+    return;
+  }
 
   const record = handoffState.markStaffReply(chatKey, {
     text: outgoing.text,
@@ -230,6 +238,28 @@ function syncStaffReplyForSnapshot(snapshot) {
   });
   if (record) {
     console.log(`[wa-bridge] detected staff reply in handoff chat=${chatKey}; next acknowledgement will stay silent, then bot resumes.`);
+  }
+}
+
+async function recordBridgeSentMessage(chatKey) {
+  try {
+    await sleep(900);
+    const postSnapshot = await readWhatsAppSnapshot();
+    const sent = latestOutgoing(postSnapshot);
+    if (!sent?.fingerprint) return;
+    bridgeSentFingerprints.add(sent.fingerprint);
+    if (bridgeSentFingerprints.size > BRIDGE_SENT_FINGERPRINT_CAP) {
+      const oldest = bridgeSentFingerprints.values().next().value;
+      bridgeSentFingerprints.delete(oldest);
+    }
+    if (chatKey) {
+      const active = handoffState.active(chatKey);
+      if (active && !active.botHandoffFingerprint) {
+        handoffState.setBotHandoffFingerprint?.(chatKey, sent.fingerprint);
+      }
+    }
+  } catch (error) {
+    console.log(`[wa-bridge] could not capture sent-message fingerprint: ${error.message}`);
   }
 }
 

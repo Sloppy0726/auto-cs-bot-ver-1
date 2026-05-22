@@ -26,11 +26,12 @@ function createPipeline(config = {}) {
   const promotionStore = config.promotionStore || createPromotionStore({ entries: config.promotionEntries || promoSeed });
   const llmAdapter = config.llmAdapter;
   const llmIntentAnalyzer = config.llmIntentAnalyzer;
+  const paraphraser = config.paraphraser;
   const nowFn = config.nowFn || (() => new Date());
 
   return {
     async runMessage(input) {
-      return runMessage(input, { kb, backend, inbox, promotionStore, llmAdapter, llmIntentAnalyzer, nowFn, config });
+      return runMessage(input, { kb, backend, inbox, promotionStore, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
     },
     inbox,
     backend,
@@ -62,20 +63,26 @@ async function runMessage(input = {}, deps = {}) {
   });
   const businessConfig = getConfig(normalizedMessage.businessId);
   const backendQuery = inferBackendQuery({ normalizedMessage, intent, now: deps.nowFn() });
-  const requiredClarification = requiredClarificationForBackendIntent({
-    normalizedMessage,
-    intent,
-    query: backendQuery,
-    language: knowledge.language || intent.language
-  });
-  const decision = evaluate({ gateway, intent, knowledge, businessConfig, requiredClarification });
   const backendFacts = deps.backend.getMinimalFacts({
     businessId: normalizedMessage.businessId,
     intent,
     query: backendQuery
   });
+  const requiredClarification = requiredClarificationForBackendIntent({
+    normalizedMessage,
+    intent,
+    query: backendQuery,
+    language: knowledge.language || intent.language
+  }) || inferAvailabilityResponse({
+    normalizedMessage,
+    intent,
+    query: backendQuery,
+    backendFacts,
+    language: knowledge.language || intent.language
+  });
+  const decision = evaluate({ gateway, intent, knowledge, businessConfig, requiredClarification });
   const modelRoute = routeModel({ decision, intent, gateway });
-  const draft = await generateDraft({ decision, knowledge, intent, gateway, promotions, backendFacts, modelRoute }, { llmAdapter: deps.llmAdapter, modelRoute });
+  const draft = await generateDraft({ decision, knowledge, intent, gateway, promotions, backendFacts, modelRoute }, { llmAdapter: deps.llmAdapter, paraphraser: deps.paraphraser, modelRoute });
   const safety = checkDraft({ draft, decision, knowledge, intent, gateway });
 
   let staffItem = null;
@@ -141,6 +148,19 @@ function inferBackendQuery({ normalizedMessage, intent, now }) {
   return query;
 }
 
+function asksForAvailableTimes(text) {
+  if (!text) return false;
+  const value = String(text);
+  if (/有咩時間|咩時間|有咩時段|咩時段|有冇時間|有冇時段|有冇位|仲有冇位|有冇空/.test(value)) return true;
+  if (/\bavailable\s+(times?|slots?|openings?)\b/i.test(value)) return true;
+  if (/\bwhat\s+(times?|slots?|openings?)\b/i.test(value)) return true;
+  if (/\b(is|are)\s+there\s+(a\s+)?(slot|time|opening)/i.test(value)) return true;
+  // "Any P3 English slots on …", "facial slots", "openings", "any times for …"
+  if (/\b(any|which|open|free|all)\b[^.?!]{0,40}\b(slots?|openings?|availability|times?)\b/i.test(value)) return true;
+  if (/\b(slots?|openings?|availability)\b/i.test(value)) return true;
+  return false;
+}
+
 function requiredClarificationForBackendIntent({ normalizedMessage, intent, query, language }) {
   if (!["booking", "reschedule"].includes(intent.primaryIntent)) return null;
 
@@ -148,11 +168,11 @@ function requiredClarificationForBackendIntent({ normalizedMessage, intent, quer
   const text = normalizedMessage.rawText || "";
   const missing = [];
   const needsService = businessId === "beauty_demo" || businessId === "edu_demo";
-  const asksForAvailableTimes = /有咩時間|咩時間|有咩時段|咩時段|available\s*(times?|slots?)|what\s*(times?|slots?)/i.test(text);
+  const wantsSlots = asksForAvailableTimes(text);
 
   if (needsService && !query.service) missing.push("service");
   if (!query.date) missing.push("date");
-  if (!query.time && !asksForAvailableTimes) missing.push("time");
+  if (!query.time && !wantsSlots) missing.push("time");
 
   if (missing.length === 0) return null;
 
@@ -162,33 +182,85 @@ function requiredClarificationForBackendIntent({ normalizedMessage, intent, quer
   };
 }
 
+function inferAvailabilityResponse({ normalizedMessage, intent, query, backendFacts, language }) {
+  if (!["booking", "reschedule"].includes(intent.primaryIntent)) return null;
+  if (!backendFacts?.found) return null;
+  if (query.time) return null;  // Customer already picked a time; route to staff_review for confirmation.
+  if (!asksForAvailableTimes(normalizedMessage.rawText || "")) return null;
+
+  const facts = factsObject(backendFacts);
+  const slots = Array.isArray(facts.availableSlots) ? facts.availableSlots : null;
+  const sessions = Array.isArray(facts.availableSessions) ? facts.availableSessions : null;
+  if (!slots || slots.length === 0) return null;
+
+  return {
+    reason: "availability_check_with_slots",
+    text: availabilityResponseText({ language, facts, slots, sessions, query })
+  };
+}
+
+function availabilityResponseText({ language, facts, slots, sessions, query }) {
+  const english = language === "en";
+  const date = facts.date || query.date;
+  const service = facts.service || query.service;
+  const partySize = facts.partySize || query.partySize;
+  const slotDisplay = formatSlotsForDisplay(slots, sessions);
+
+  if (english) {
+    const headParts = [date, formatServiceEn(service), partySize ? `for ${partySize}` : null].filter(Boolean);
+    const head = headParts.join(" ") || "your requested date";
+    return `For ${head}, currently available slots: ${slotDisplay.join(", ")}. Which time would you like? Staff will confirm before we hold the slot for you.`;
+  }
+
+  const headParts = [date, formatServiceZh(service), partySize ? `${partySize}位` : null].filter(Boolean);
+  const head = headParts.join(" ") || "你查詢嘅日期";
+  return `我幫你睇咗，${head} 暫時見到以下時段：${slotDisplay.join("、")}。請問你想揀邊個時間？我哋會由真人同事再次確認後正式幫你留位。`;
+}
+
+function formatSlotsForDisplay(slots, sessions) {
+  if (!Array.isArray(sessions) || sessions.length !== slots.length) return slots;
+  return sessions.map((session, index) => {
+    if (session && session.endTime) return `${session.time}–${session.endTime}`;
+    return slots[index];
+  });
+}
+
+function formatServiceZh(service) {
+  if (!service) return null;
+  const map = { facial: "facial", laser: "脫毛", assessment: "皮膚評估", p3_english: "P3 英文評估" };
+  return map[service] || service;
+}
+
+function formatServiceEn(service) {
+  if (!service) return null;
+  const map = { facial: "facial", laser: "laser hair removal", assessment: "skin assessment", p3_english: "P3 English assessment" };
+  return map[service] || service;
+}
+
+function factsObject(backendFacts = {}) {
+  return Object.fromEntries((backendFacts.facts || []).map((fact) => [fact.key, fact.value]));
+}
+
 function bookingClarificationText({ businessId, language, missing }) {
   const english = language === "en";
-  const greeting = businessId === "beauty_demo"
-    ? (english ? "Hi, this is Solara Beauty." : "你好，呢度係 Solara Beauty。")
-    : null;
   const needsService = missing.includes("service");
   const needsDate = missing.includes("date");
   const needsTime = missing.includes("time");
 
-  let question;
   if (english) {
     const parts = [
       needsService && "treatment",
       needsDate && "date",
       needsTime && "time"
     ].filter(Boolean);
-    question = `Sure. Please share the ${joinEnglishList(parts)} you would like to book.`;
-  } else {
-    const parts = [
-      needsService && "療程",
-      needsDate && "日期",
-      needsTime && "時間"
-    ].filter(Boolean);
-    question = `可以呀，請問你想預約邊個${parts.join("、")}？`;
+    return `Sure. Please share the ${joinEnglishList(parts)} you would like to book.`;
   }
-
-  return [greeting, question].filter(Boolean).join("\n");
+  const parts = [
+    needsService && "療程",
+    needsDate && "日期",
+    needsTime && "時間"
+  ].filter(Boolean);
+  return `可以呀，請問你想預約邊個${parts.join("、")}？`;
 }
 
 function joinEnglishList(parts) {
@@ -206,20 +278,72 @@ function inferRequestedDate(text, now) {
     return hkDateKey(date);
   }
 
+  if (/後日|後天|day after tomorrow/i.test(text)) {
+    const date = new Date(now);
+    date.setUTCDate(date.getUTCDate() + 2);
+    return hkDateKey(date);
+  }
+
   const isoDate = text.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
   if (isoDate) return isoDate[1];
+
+  // Chinese M月D號 / M月D日 / M月D号 / M月D
+  const cnMonthDay = text.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*[日號号]?/);
+  if (cnMonthDay) {
+    return normalizeMonthDay(Number(cnMonthDay[1]), Number(cnMonthDay[2]), now);
+  }
+
+  // Slash form M/D (avoid matching the M/D inside "5/25 18:30" times — but HH:MM has colon, not slash, so safe)
+  const slash = text.match(/(?:^|[^\d/])(\d{1,2})\/(\d{1,2})(?!\d)/);
+  if (slash) {
+    return normalizeMonthDay(Number(slash[1]), Number(slash[2]), now);
+  }
 
   return null;
 }
 
+function normalizeMonthDay(month, day, now) {
+  if (!Number.isInteger(month) || month < 1 || month > 12) return null;
+  if (!Number.isInteger(day) || day < 1 || day > 31) return null;
+  const today = hkDateKey(now);
+  const year = Number(today.slice(0, 4));
+  let candidate = isoFromYmd(year, month, day);
+  if (candidate < today) candidate = isoFromYmd(year + 1, month, day);
+  return candidate;
+}
+
+function isoFromYmd(year, month, day) {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 function inferRequestedTime(text) {
-  const numericTime = text.match(/(?:^|[^\d])(\d{1,2})(?::(\d{2}))?\s*(?:點|時)?(?:\s*(半))?/);
-  if (numericTime) {
-    const hour = normalizeHour(Number(numericTime[1]), text);
-    const minute = numericTime[2] || (numericTime[3] ? "30" : "00");
+  // HH:MM (explicit colon)
+  const colonTime = text.match(/(?:^|[^\d])(\d{1,2}):(\d{2})\b/);
+  if (colonTime) {
+    const hour = normalizeHour(Number(colonTime[1]), text);
+    return `${String(hour).padStart(2, "0")}:${colonTime[2]}`;
+  }
+
+  // HH[:MM] am/pm
+  const ampmTime = text.match(/(?:^|[^\d])(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+  if (ampmTime) {
+    let hour = Number(ampmTime[1]);
+    const minute = ampmTime[2] || "00";
+    const isPm = /pm/i.test(ampmTime[3]);
+    if (isPm && hour < 12) hour += 12;
+    else if (!isPm && hour === 12) hour = 0;
     return `${String(hour).padStart(2, "0")}:${minute}`;
   }
 
+  // HH 點/時 (digit form, optional 半)
+  const dotMarker = text.match(/(?:^|[^\d])(\d{1,2})\s*(?:點|時)(?:\s*(半))?/);
+  if (dotMarker) {
+    const hour = normalizeHour(Number(dotMarker[1]), text);
+    const minute = dotMarker[2] ? "30" : "00";
+    return `${String(hour).padStart(2, "0")}:${minute}`;
+  }
+
+  // Chinese-number 點/時 (optional 半)
   const chineseNumber = "一兩二三四五六七八九十";
   const chineseTime = text.match(new RegExp(`([${chineseNumber}])\\s*(?:點|時)(?:\\s*(半))?`));
   if (chineseTime) {
@@ -284,5 +408,5 @@ function result(payload) {
 module.exports = {
   createPipeline,
   runMessage,
-  _internal: { inferBackendQuery, inferPartySize, inferRequestedDate, inferRequestedTime, requiredClarificationForBackendIntent, intentClassifierOptions }
+  _internal: { inferBackendQuery, inferPartySize, inferRequestedDate, inferRequestedTime, requiredClarificationForBackendIntent, inferAvailabilityResponse, intentClassifierOptions }
 };

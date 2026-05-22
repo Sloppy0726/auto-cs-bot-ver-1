@@ -7,10 +7,22 @@ const defaultData = require("../seed/mockBusinessData");
 
 function createBusinessBackend(config = {}) {
   const data = clone(config.data || defaultData);
+  const availabilityStore = config.availabilityStore || null;
+
+  function checkAvailabilityImpl(query) {
+    if (availabilityStore) return checkAvailabilityFromStore(availabilityStore, query || {});
+    return checkAvailability(data, query || {});
+  }
+
+  function getMinimalFactsImpl(input) {
+    if (availabilityStore && input?.intent?.primaryIntent && ["booking", "reschedule"].includes(input.intent.primaryIntent)) {
+      return getMinimalFactsFromStore(availabilityStore, input || {});
+    }
+    return getMinimalFacts(data, input || {});
+  }
+
   return {
-    checkAvailability(query) {
-      return checkAvailability(data, query || {});
-    },
+    checkAvailability: checkAvailabilityImpl,
     lookupOrder(query) {
       return lookupOrder(data, query || {});
     },
@@ -26,10 +38,64 @@ function createBusinessBackend(config = {}) {
     lookupMember(query) {
       return lookupMember(data, query || {});
     },
-    getMinimalFacts(input) {
-      return getMinimalFacts(data, input || {});
-    }
+    getMinimalFacts: getMinimalFactsImpl
   };
+}
+
+function checkAvailabilityFromStore(store, query) {
+  if (!query.businessId || !query.date) {
+    return { found: false, available: null, facts: [], reason: "businessId and date required" };
+  }
+  const result = store.listFreeSlots({
+    businessId: query.businessId,
+    date: query.date,
+    service: query.service,
+    partySize: query.partySize,
+    durationMinutes: query.durationMinutes
+  });
+  const free = Array.isArray(result.freeSlots) ? result.freeSlots : [];
+
+  if (query.time) {
+    const match = free.find((slot) => slot.time === query.time);
+    return {
+      found: true,
+      available: Boolean(match),
+      facts: minimalFacts({
+        date: query.date,
+        time: query.time,
+        service: query.service,
+        partySize: query.partySize,
+        available: Boolean(match),
+        durationMinutes: match?.durationMinutes || null,
+        endTime: match?.endTime || null
+      }, ["date", "time", "service", "partySize", "available", "durationMinutes", "endTime"]),
+      reason: match ? "Time is inside opening hours and free." : "Time is closed or already booked."
+    };
+  }
+
+  const availableSlots = free.map((slot) => slot.time);
+  const availableSessions = free.map((slot) => ({
+    time: slot.time,
+    durationMinutes: slot.durationMinutes,
+    endTime: slot.endTime
+  }));
+  return {
+    found: true,
+    available: free.length > 0,
+    facts: minimalFacts({
+      date: query.date,
+      service: query.service,
+      partySize: query.partySize,
+      availableSlots,
+      availableSessions
+    }, ["date", "service", "partySize", "availableSlots", "availableSessions"]),
+    reason: result.reason || `${free.length} free start time(s)`
+  };
+}
+
+function getMinimalFactsFromStore(store, input) {
+  const query = input.query || { businessId: input.businessId };
+  return checkAvailabilityFromStore(store, query);
 }
 
 function checkAvailability(data, query) {
@@ -79,10 +145,14 @@ function listAvailability(data, query) {
         && (!query.partySize || item.partySize === query.partySize);
     })
     .sort((left, right) => String(left.time).localeCompare(String(right.time)));
-  const availableSlots = records
-    .filter((item) => item.available)
-    .map((item) => item.time);
-  const facts = minimalFacts({ ...query, availableSlots }, ["date", "service", "partySize", "availableSlots"]);
+  const openRecords = records.filter((item) => item.available);
+  const availableSlots = openRecords.map((item) => item.time);
+  const availableSessions = openRecords.map((item) => ({
+    time: item.time,
+    durationMinutes: Number.isInteger(item.durationMinutes) ? item.durationMinutes : null,
+    endTime: Number.isInteger(item.durationMinutes) ? addMinutesToTime(item.time, item.durationMinutes) : null
+  }));
+  const facts = minimalFacts({ ...query, availableSlots, availableSessions }, ["date", "service", "partySize", "availableSlots", "availableSessions"]);
 
   if (records.length === 0) {
     return {
@@ -248,6 +318,17 @@ function memberFacts(record) {
     { key: "freeTreatmentsAvailable", value: freeTreatmentsAvailable },
     { key: "pointsUntilNextReward", value: pointsUntilNextReward }
   ];
+}
+
+function addMinutesToTime(timeStr, minutes) {
+  const parts = String(timeStr || "").split(":");
+  const h = Number(parts[0]);
+  const m = Number(parts[1]);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  const total = h * 60 + m + Number(minutes || 0);
+  const eh = Math.floor(total / 60) % 24;
+  const em = ((total % 60) + 60) % 60;
+  return String(eh).padStart(2, "0") + ":" + String(em).padStart(2, "0");
 }
 
 function clone(value) {

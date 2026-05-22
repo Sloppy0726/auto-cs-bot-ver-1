@@ -55,6 +55,20 @@ function createHandoffState(options = {}) {
     return existed;
   }
 
+  function setBotHandoffFingerprint(chatKey, fingerprint) {
+    if (!enabled) return null;
+    const key = normalizeChatKey(chatKey);
+    if (!key || !fingerprint) return null;
+    const state = prune(load());
+    const record = state.paused[key];
+    if (!record) return null;
+    if (record.botHandoffFingerprint === fingerprint) return record;
+    record.botHandoffFingerprint = fingerprint;
+    state.paused[key] = record;
+    save(state);
+    return record;
+  }
+
   function markStaffReply(chatKey, details = {}) {
     if (!enabled) return null;
     const key = normalizeChatKey(chatKey);
@@ -107,7 +121,7 @@ function createHandoffState(options = {}) {
     fs.writeFileSync(filePath, JSON.stringify(normalizeState(state), null, 2));
   }
 
-  return { active, pause, release, markStaffReply, clear, load: () => prune(load()) };
+  return { active, pause, release, markStaffReply, setBotHandoffFingerprint, clear, load: () => prune(load()) };
 }
 
 function normalizeState(state) {

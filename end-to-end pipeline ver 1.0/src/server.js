@@ -7,6 +7,10 @@ const path = require("node:path");
 const { createPipeline } = require("./pipeline");
 const { createOpenAIAdapters } = require("./openaiAdapter");
 const { createClaudeAdapters } = require("./claudeAdapter");
+const { buildParaphrasePrompt } = require("../../AI draft engine ver 1.0/src/draftEngine");
+const { createBusinessBackend } = require("../../private business backend mock ver 1.0/src/businessBackendMock");
+const { createAvailabilityStore } = require("../../private business backend mock ver 1.0/src/availabilityStore");
+const mockBusinessSeed = require("../../private business backend mock ver 1.0/seed/mockBusinessData");
 const { createConversationContextStore } = require("../../conversation context ver 1.0/src/conversationContext");
 const fakeBusinessData = require("../../private business backend mock ver 1.0/seed/mockBusinessData");
 
@@ -18,6 +22,7 @@ const DEFAULT_PORT = 3000;
 
 function createWebhookServer(config = {}) {
   const pipeline = config.pipeline || createPipeline(config);
+  const availabilityStore = config.availabilityStore || null;
   const conversationContextStore = config.conversationContextStore === false
     ? null
     : (config.conversationContextStore || createConversationContextStore(config.conversationContext || {}));
@@ -27,8 +32,18 @@ function createWebhookServer(config = {}) {
       return;
     }
 
+    if (req.method === "GET" && req.url === "/admin") {
+      writeHtml(res, 200, adminSlotsHtml());
+      return;
+    }
+
     if (req.method === "GET" && req.url === "/debug/fake-db") {
       writeJson(res, 200, summarizeFakeDatabase(fakeBusinessData));
+      return;
+    }
+
+    if (req.url && req.url.startsWith("/admin/")) {
+      await handleAdminRequest(req, res, { availabilityStore, config });
       return;
     }
 
@@ -333,6 +348,123 @@ function publicWebhookResponse(result, payload = {}, config = {}, contextResult 
   }
 
   return response;
+}
+
+async function handleAdminRequest(req, res, { availabilityStore, config }) {
+  try {
+    if (!availabilityStore) {
+      writeJson(res, 503, { error: "availability_store_disabled" });
+      return;
+    }
+    const auth = verifyAdminRequest(req, config);
+    if (auth.error) {
+      writeJson(res, auth.status || 401, { error: auth.error });
+      return;
+    }
+
+    const url = parseAdminPath(req.url || "");
+    if (!url || !url.resource) {
+      writeJson(res, 404, { error: "not_found" });
+      return;
+    }
+
+    const readPayload = async () => {
+      const body = await readBody(req, config.maxBodyBytes, config.bodyTimeoutMs);
+      return parseJson(body);
+    };
+
+    // Opening hours: GET/PUT  /admin/opening-hours/:businessId
+    if (url.resource === "opening-hours" && url.businessId && !url.id) {
+      if (req.method === "GET") {
+        writeJson(res, 200, { businessId: url.businessId, openingHours: availabilityStore.getOpeningHours(url.businessId) });
+        return;
+      }
+      if (req.method === "PUT") {
+        const payload = await readPayload();
+        const result = availabilityStore.setOpeningHours(url.businessId, payload.openingHours || payload);
+        writeJson(res, result.ok ? 200 : 400, result.ok ? result : { error: result.error });
+        return;
+      }
+    }
+
+    // Closed periods: GET/POST/DELETE
+    if (url.resource === "closed-periods") {
+      if (req.method === "GET" && url.businessId && !url.id) {
+        writeJson(res, 200, { businessId: url.businessId, closedPeriods: availabilityStore.listClosedPeriods(url.businessId) });
+        return;
+      }
+      if (req.method === "POST" && url.businessId && !url.id) {
+        const payload = await readPayload();
+        const result = availabilityStore.addClosedPeriod(url.businessId, payload);
+        writeJson(res, result.ok ? 201 : 400, result.ok ? result : { error: result.error });
+        return;
+      }
+      if (req.method === "DELETE" && url.businessId && url.id) {
+        const result = availabilityStore.removeClosedPeriod(url.businessId, url.id);
+        writeJson(res, result.ok ? 200 : 404, result.ok ? result : { error: result.error });
+        return;
+      }
+    }
+
+    // Bookings: GET/POST/PATCH/DELETE
+    if (url.resource === "bookings") {
+      if (req.method === "GET" && url.businessId && !url.id) {
+        writeJson(res, 200, { businessId: url.businessId, bookings: availabilityStore.listBookings(url.businessId) });
+        return;
+      }
+      if (req.method === "POST" && url.businessId && !url.id) {
+        const payload = await readPayload();
+        const result = availabilityStore.addBooking(url.businessId, payload);
+        writeJson(res, result.ok ? 201 : 400, result.ok ? result : { error: result.error });
+        return;
+      }
+      if (req.method === "PATCH" && url.businessId && url.id) {
+        const payload = await readPayload();
+        const result = availabilityStore.updateBooking(url.businessId, url.id, payload);
+        writeJson(res, result.ok ? 200 : (result.error === "booking not found" ? 404 : 400), result.ok ? result : { error: result.error });
+        return;
+      }
+      if (req.method === "DELETE" && url.businessId && url.id) {
+        const result = availabilityStore.removeBooking(url.businessId, url.id);
+        writeJson(res, result.ok ? 200 : 404, result.ok ? result : { error: result.error });
+        return;
+      }
+    }
+
+    // Read-only debug dump of the whole store
+    if (url.resource === "store" && req.method === "GET") {
+      writeJson(res, 200, { businesses: availabilityStore.listAll() });
+      return;
+    }
+
+    writeJson(res, 405, { error: "method_not_allowed" });
+  } catch (error) {
+    const statusCode = statusCodeForError(error);
+    writeJson(res, statusCode, { error: publicErrorMessage(error, statusCode) });
+  }
+}
+
+function parseAdminPath(url) {
+  const [pathOnly] = String(url || "").split("?");
+  const parts = pathOnly.replace(/^\/+|\/+$/g, "").split("/");
+  if (parts[0] !== "admin") return null;
+  return {
+    resource: parts[1] ? decodeURIComponent(parts[1]) : null,
+    businessId: parts[2] ? decodeURIComponent(parts[2]) : null,
+    id: parts[3] ? decodeURIComponent(parts[3]) : null
+  };
+}
+
+function verifyAdminRequest(req, config = {}) {
+  const expected = config.adminToken || process.env.ADMIN_TOKEN || null;
+  const provided = getHeader(req, "x-admin-token") || null;
+  if (expected) {
+    if (!provided || provided !== expected) return { error: "unauthorized", status: 401 };
+    return {};
+  }
+  const nodeEnv = config.nodeEnv || process.env.NODE_ENV;
+  if (nodeEnv === "production") return { error: "admin_token_required", status: 401 };
+  return {};
 }
 
 function summarizeFakeDatabase(data) {
@@ -790,6 +922,8 @@ function webChatHtml() {
 </html>`;
 }
 
+function adminSlotsHtml() { return require("./adminHtml").adminSlotsHtml(); }
+
 function localConsoleHtml() {
   return `<!doctype html>
 <html lang="en">
@@ -1097,8 +1231,14 @@ function startWebhookServer(config = {}) {
   if (!config.llmAdapter && !claudeAdapters.llmAdapter && !openAIAdapters.llmAdapter && !allowLocalDemoLlm) {
     throw new Error("CLAUDE_CODE_OAUTH_TOKEN or OPENAI_OAUTH_TOKEN is required to start the bot. Set one in whatsapp-web-test-bridge/.env, or set ALLOW_LOCAL_DEMO_LLM=true for offline demo mode.");
   }
-  const llmAdapter = config.llmAdapter || claudeAdapters.llmAdapter || openAIAdapters.llmAdapter || localDemoLlmAdapter;
+  const realLlmAdapter = config.llmAdapter || claudeAdapters.llmAdapter || openAIAdapters.llmAdapter || null;
+  const llmAdapter = realLlmAdapter || localDemoLlmAdapter;
   const llmIntentAnalyzer = config.llmIntentAnalyzer || claudeAdapters.llmIntentAnalyzer || openAIAdapters.llmIntentAnalyzer || null;
+  const paraphraseDisabled = config.paraphraseEnabled === false || process.env.PARAPHRASE_ENABLED === "false";
+  const paraphraser = config.paraphraser
+    || (realLlmAdapter && !paraphraseDisabled ? createParaphraser(realLlmAdapter) : null);
+  const availabilityStore = config.availabilityStore || createAvailabilityStore({ seed: mockBusinessSeed });
+  const backend = config.backend || createBusinessBackend({ availabilityStore });
   const llmMode = claudeAdapters.llmAdapter
     ? `claude:${process.env.CLAUDE_MODEL || process.env.CLAUDE_DRAFT_MODEL || "claude-haiku-4-5-20251001"}`
     : openAIAdapters.llmAdapter
@@ -1111,14 +1251,42 @@ function startWebhookServer(config = {}) {
     webhookBusinessId,
     llmAdapter,
     llmIntentAnalyzer,
-    llmIntentMode
+    llmIntentMode,
+    paraphraser,
+    backend,
+    availabilityStore
   });
 
   return server.listen(port, host, () => {
     const mode = allowUnsignedWebhooks ? "unsigned local mode" : "signed webhook mode";
     console.log(`Webhook server listening at http://${host}:${port}/webhook (${mode}, businessId=${webhookBusinessId || "payload-selected"})`);
-    console.log(`LLM mode: ${llmMode}; intent analyzer: ${llmIntentAnalyzer ? llmIntentMode : "deterministic"}`);
+    console.log(`LLM mode: ${llmMode}; intent analyzer: ${llmIntentAnalyzer ? llmIntentMode : "deterministic"}; paraphraser: ${paraphraser ? "on" : "off"}`);
+    const adminAuth = (config.adminToken || process.env.ADMIN_TOKEN) ? "token required" : (nodeEnv === "production" ? "blocked (set ADMIN_TOKEN)" : "open (local dev)");
+    console.log(`Admin slots page: http://${host}:${port}/admin  (auth: ${adminAuth})`);
   });
+}
+
+function createParaphraser(llmAdapter) {
+  return async function paraphrase(context = {}) {
+    const prompt = buildParaphrasePrompt({
+      text: context.text,
+      intent: context.intent,
+      gateway: context.gateway
+    });
+    return llmAdapter(prompt.fullPrompt, {
+      action: "paraphrase",
+      decision: context.decision,
+      intent: context.intent,
+      knowledge: context.knowledge,
+      gateway: context.gateway,
+      promotions: context.promotions,
+      backendFacts: context.backendFacts,
+      modelRoute: context.modelRoute,
+      systemPrompt: prompt.systemPrompt,
+      userPrompt: prompt.userPrompt,
+      cacheSystem: true
+    });
+  };
 }
 
 function loadLocalEnvFiles(files) {

@@ -289,4 +289,173 @@ Use these for human review of inputs, expected behavior, actual behavior, and po
 - Promo parsing/HK date logic: `google drive promo sync ver 1.0/src/promoSync.js` and `google drive promo sync ver 1.0/src/hkTime.js`
 - Sender-bound mock backend: `private business backend mock ver 1.0/src/businessBackendMock.js`
 
+---
+
+## 13. Session Addendum — 2026-05-23 (Claude session, switching to Codex)
+
+This section captures everything that landed in this session. None of it has been committed yet; `git status` shows uncommitted M's plus two new files plus a new `state/` directory.
+
+### 13.1 What landed
+
+Six feature changes, all on `main`, all uncommitted:
+
+| # | Feature | Key files |
+|---|---|---|
+| 1 | LLM paraphraser for canned replies | `AI draft engine ver 1.0/src/draftEngine.js`, `end-to-end pipeline ver 1.0/src/pipeline.js`, `end-to-end pipeline ver 1.0/src/server.js`, `safety checker ver 1.0/src/safetyChecker.js` |
+| 2 | Bot pathway: customer asks for available times, bot replies with slot list (clarify, ready_to_send) | `end-to-end pipeline ver 1.0/src/pipeline.js` (`inferAvailabilityResponse`, `asksForAvailableTimes`) |
+| 3 | Per-slot session duration (beauty only) | `AI draft engine ver 1.0/src/draftEngine.js` (fact-preservation now catches HH:MM and HH:MM–HH:MM), `private business backend mock ver 1.0/src/businessBackendMock.js` (emits `availableSessions`) |
+| 4 | Admin /admin web page with table + calendar view | `end-to-end pipeline ver 1.0/src/adminHtml.js` (NEW, ~600 lines self-contained HTML/CSS/JS) and admin HTTP endpoints in `server.js` |
+| 5 | **Full refactor: per-slot availability → opening-hours + bookings + closed-periods model** | `private business backend mock ver 1.0/src/availabilityStore.js` (NEW), `private business backend mock ver 1.0/src/businessBackendMock.js` (new branch when `availabilityStore` is wired) |
+| 6 | Bridge robustness fixes | `whatsapp-web-test-bridge/src/whatsappWebBridge.js`, `whatsapp-web-test-bridge/src/handoffState.js`, `whatsapp-web-test-bridge/src/messageHeuristics.js` |
+| 7 | Chinese date parsing + no-greeting-spam | `end-to-end pipeline ver 1.0/src/pipeline.js` (`inferRequestedDate`, `bookingClarificationText`, `asksForAvailableTimes`) |
+
+All 484 existing tests still pass at session end (`draftEngine 112 · pipeline 121 · server 31 · safetyChecker 102 · businessBackendMock 118`). No new test files were added — please add them when committing.
+
+### 13.2 New runtime state
+
+The bridge runs both server and WhatsApp bridge as detached `screen` sessions named `auto-cs-bot-server` and `auto-cs-whatsapp-web-bridge`. Stop/start with:
+
+```bash
+npm run bridge:whatsapp-web:stop
+npm run bridge:whatsapp-web:start
+npm run bridge:whatsapp-web:status   # also tails recent bridge log
+```
+
+Live URLs (when running):
+- `http://127.0.0.1:3000/webhook` — webhook receiver
+- `http://127.0.0.1:3000/` — web chat test page
+- `http://127.0.0.1:3000/admin` — slot admin (table + calendar)
+
+### 13.3 Data shape change (important)
+
+`private business backend mock ver 1.0/state/availability.json` is now persistent on-disk state, created on first server start, with shape:
+
+```json
+{
+  "businesses": {
+    "beauty_demo": {
+      "openingHours": {
+        "0": [{"open":"11:00","close":"19:00"}],
+        "1": [{"open":"11:00","close":"21:00"}],
+        "...": "0=Sun through 6=Sat, each is array of windows"
+      },
+      "closedPeriods": [
+        {"id":"close_…","date":"2026-05-25","start":"13:00","end":"14:00","reason":"lunch"}
+      ],
+      "bookings": [
+        {"id":"book_…","date":"2026-05-25","time":"14:00","service":"facial","durationMinutes":75,"customer":"…","notes":"…"}
+      ]
+    },
+    "restaurant_demo": { "...": "same shape, bookings use partySize instead of service" },
+    "edu_demo":        { "...": "same shape" },
+    "igshop_demo":     { "...": "empty openingHours, no bookings" }
+  }
+}
+```
+
+The legacy per-slot `availability: [...]` arrays in `private business backend mock ver 1.0/seed/mockBusinessData.js` are still there for unit tests but are **only used when no `availabilityStore` is wired**. The running server always wires the store, so the seed availability arrays are effectively dead at runtime.
+
+`server.js` calls `createBusinessBackend({ availabilityStore })`. Tests that call `createBusinessBackend()` with no args keep the legacy in-memory path — that's why all 484 tests still pass.
+
+### 13.4 Admin HTTP endpoints
+
+Auth: `x-admin-token` header matching `ADMIN_TOKEN` env. In local dev (`NODE_ENV !== "production"` with no token set), endpoints are open.
+
+| Endpoint | Methods | Notes |
+|---|---|---|
+| `/admin/opening-hours/:businessId` | GET, PUT | PUT body: `{"openingHours": {"0":[...], "1":[...], ...}}` |
+| `/admin/closed-periods/:businessId` | GET, POST | POST body: `{"date","start","end","reason"}` |
+| `/admin/closed-periods/:businessId/:id` | DELETE | |
+| `/admin/bookings/:businessId` | GET, POST | POST body: `{"date","time","service"|"partySize","durationMinutes","customer","notes"}` |
+| `/admin/bookings/:businessId/:id` | PATCH, DELETE | |
+| `/admin/store` | GET | Debug dump of entire store |
+
+Validation in `availabilityStore.validateOpeningHours/validateClosedPeriod/validateBooking` — rejects bad HH:MM/dates and out-of-range partySize/durationMinutes.
+
+### 13.5 Free-slot computation (new model)
+
+`store.listFreeSlots({businessId, date, service, durationMinutes, partySize})` returns `{found, freeSlots:[{time, durationMinutes, endTime}], reason}`. Algorithm:
+
+1. Get opening windows for `date`'s day-of-week.
+2. Subtract any `closedPeriods` whose `date` matches.
+3. Subtract any `bookings` on that date (intersection counted by `[time, time+durationMinutes]`).
+4. Walk remaining open windows in 30-min steps, yielding start times where `t + sessionDuration ≤ window.end`.
+
+`sessionDuration` comes from explicit `durationMinutes`, else `defaultDurationForService(service)` (`facial:75, laser:30, assessment:20, p3_english:45, default:30`).
+
+`createBusinessBackend` exposes this as `checkAvailability(query)` → returns `{found, available, facts:[{key,value}], reason}` so the pipeline integration is unchanged in shape.
+
+### 13.6 Paraphraser pipeline (added end-to-end)
+
+`AI draft engine ver 1.0/src/draftEngine.js` now accepts an optional `paraphraser` adapter. For `auto_send` and `clarify` actions, after the canned text is built, the engine calls the paraphraser, validates the output preserves all fact tokens (prices, times like `HH:MM`, dates `YYYY-MM-DD`, member IDs, bracketed placeholders, time ranges `HH:MM–HH:MM`), and falls back to the verbatim canned text on any failure (LLM unavailable, fact mismatch, forbidden surface).
+
+`safety checker ver 1.0/src/safetyChecker.js` was updated to accept `draft.paraphrased=true` + `draft.approvedSource` and re-validate fact preservation, instead of demanding byte-equal match.
+
+`end-to-end pipeline ver 1.0/src/server.js` wires the paraphraser using the real LLM adapter when one is present (claude/openai), not the offline demo stub. Disable with `PARAPHRASE_ENABLED=false`.
+
+### 13.7 Bridge fixes worth knowing about
+
+- `whatsapp-web-test-bridge/src/whatsappWebBridge.js` now tracks fingerprints of messages it sent itself (`bridgeSentFingerprints` Set, capped at 200), persists the first handoff notice's fingerprint into `handoff.json` as `botHandoffFingerprint`. `syncStaffReplyForSnapshot` checks the fingerprint set first before falling back to text heuristics.
+- `whatsapp-web-test-bridge/src/messageHeuristics.js` — `looksLikeBridgeAuthored` softened: dropped `留位費` (a real Cantonese term staff would naturally type) and `真人同事`; tightened `跟進編號：staff_` to require digits.
+
+Known **non-bug** about Safari: WhatsApp Web tab hibernation. Modern Safari aggressively discards inactive background tabs; the bridge can't reach a discarded tab via AppleScript. Workaround for the user: pin the WhatsApp Web tab in Safari, or keep the window non-minimized. The bridge does NOT need the tab to be the foreground/active tab, but it does need the JS context to be alive.
+
+### 13.8 Customer-facing UX changes worth knowing about
+
+- **Greeting removed from booking clarifications.** Previously every clarify-during-booking message started with `你好，呢度係 Solara Beauty。` (or English equivalent). Now the clarify text is just the question. Greeting was annoying on every back-and-forth turn.
+- **Chinese date parsing** in `inferRequestedDate`:
+  - `5月25號` / `5月25日` / `5月25` / `5月25号` → `2026-05-25`
+  - Slash form `5/25` / `12/25` → ISO date
+  - Year auto-bumps if the resulting date is before today's HK date
+  - Also added `後日 / day after tomorrow` → today+2
+- **`有冇位` lists slots.** `asksForAvailableTimes` regex extended to catch `有冇位 / 仲有冇位 / 有冇空 / is there a slot/time/opening` so customers asking "do you have a spot?" go straight to a slot list rather than being asked for a specific time they don't have.
+- **`inferRequestedTime` tightened.** Naked digits like `4位` or `P3` no longer mis-parse as `04:00` / `03:00`. Now requires `:MM`, `am/pm`, or `點/時`. Pre-existing bug that was poisoning the backend query.
+
+### 13.9 Known issues / TODOs at session end
+
+1. **Tests for new code haven't been written.** The store, the paraphraser pipeline, the free-slot computation, and the admin endpoints all lack dedicated test files. Recommend adding before commit. The existing 484 tests still pass because they cover the legacy in-memory path.
+2. **No conflict detection in `addBooking`.** Staff can add two bookings that overlap each other. Backend's free-slot calc handles overlap correctly (whichever booking blocks first), but UX-wise the admin should reject or warn on conflicts.
+3. **Calendar overlap rendering limitation.** If two beauty bookings start at the *same* `(date, time)`, they stack in the same cell — fine. If a second booking starts *inside* a longer one's rowspan, the inner one doesn't render in the calendar (its start cell is consumed). Still listed in the bookings table. Rare for a single salon; would need lateral splitting to fix.
+4. **No "no slots today, try another day?" message.** When `availableSlots` is empty (date fully booked or closed day), `inferAvailabilityResponse` returns null and the request falls through to staff_review. UX could be improved with an explicit "no openings on that date" reply.
+5. **`addBooking` validates only fields, not opening-hours overlap.** Staff can book outside opening hours; the free-slot calc just won't show those bookings (they're invisible since they're outside the open window subtraction). Either reject these or document.
+6. **Per-staff resource modeling.** Currently treats the salon as a single resource pool. Per-staff calendars (Amy vs Joey) is the obvious next iteration — user explicitly deferred this in scoping.
+7. **`mockBusinessData.js` availability arrays still contain seeded slots from the old model.** Tests use them. Once tests are rewritten for the new model, the seed can be wiped.
+8. **HANDOFF.md test counts in section 4 are stale.** They reflect a pre-session count of 2,113 across all suites. Current relevant suites total ~484 (draft+pipeline+server+safety+backend).
+
+### 13.10 New & changed files (uncommitted)
+
+```
+M  AI draft engine ver 1.0/src/draftEngine.js
+M  end-to-end pipeline ver 1.0/src/pipeline.js
+M  end-to-end pipeline ver 1.0/src/server.js
+M  private business backend mock ver 1.0/seed/mockBusinessData.js
+M  private business backend mock ver 1.0/src/businessBackendMock.js
+M  safety checker ver 1.0/src/safetyChecker.js
+M  whatsapp-web-test-bridge/src/handoffState.js
+M  whatsapp-web-test-bridge/src/messageHeuristics.js
+M  whatsapp-web-test-bridge/src/whatsappWebBridge.js
+?? end-to-end pipeline ver 1.0/src/adminHtml.js
+?? private business backend mock ver 1.0/src/availabilityStore.js
+?? private business backend mock ver 1.0/state/        ← runtime-generated, gitignore-worthy
+```
+
+Run `git diff` for line-level changes. The two NEW source files (`availabilityStore.js`, `adminHtml.js`) are the bulk of the new logic.
+
+### 13.11 Suggested next moves for the next session
+
+In rough priority order:
+
+1. **Add `private business backend mock ver 1.0/state/` to `.gitignore`** — it's runtime-generated user state, not source.
+2. **Write tests** for the new code paths:
+   - `availabilityStore` unit tests (validation, free-slot math including overlap subtraction, year-bump in `normalizeMonthDay`)
+   - Pipeline integration test using a store-backed backend
+   - Admin endpoint integration tests
+3. **Commit the session's changes.** Suggest splitting into 3-4 commits along feature boundaries (paraphraser / show-slots pathway / admin UI / bookings-model refactor / bridge fixes).
+4. **Resolve issues 2, 4, 5 from §13.9** — conflict detection, no-slots fallback message, out-of-hours booking rejection.
+5. **Update §4 (test counts) and §1 (last-verified date) of this handoff** once tests are added.
+
+End of session addendum.
+
+---
+
 End of handoff.

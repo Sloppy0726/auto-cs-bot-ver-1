@@ -21,7 +21,7 @@ function isCustomerAcknowledgement(text) {
 
 function looksLikeBridgeAuthored(text) {
   const value = String(text || "");
-  return /跟進編號：staff_|交俾同事跟進|真人同事|留位費|以上只係一般參考|以下係目前測試資料|後台草稿：|我幫你睇咗/.test(value);
+  return /跟進編號：staff_\d+|交俾同事跟進|交俾真人同事|以上只係一般參考|以下係目前測試資料|後台草稿：|我幫你睇咗/.test(value);
 }
 
 module.exports = {
