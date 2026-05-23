@@ -21,8 +21,14 @@ function createBusinessBackend(config = {}) {
     return getMinimalFacts(data, input || {});
   }
 
+  function findNextAvailableDatesImpl(query) {
+    if (!availabilityStore || typeof availabilityStore.findNextAvailableDates !== "function") return [];
+    return availabilityStore.findNextAvailableDates(query || {});
+  }
+
   return {
     checkAvailability: checkAvailabilityImpl,
+    findNextAvailableDates: findNextAvailableDatesImpl,
     lookupOrder(query) {
       return lookupOrder(data, query || {});
     },

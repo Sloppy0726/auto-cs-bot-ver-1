@@ -172,6 +172,20 @@ function createAvailabilityStore(options = {}) {
     };
   }
 
+  function findNextAvailableDates({ businessId, fromDate, service, partySize, durationMinutes, maxDays = 7, maxResults = 3 } = {}) {
+    if (!businessId || !fromDate || !ISO_DATE.test(fromDate)) return [];
+    const out = [];
+    for (let i = 1; i <= maxDays && out.length < maxResults; i++) {
+      const date = shiftDateStr(fromDate, i);
+      const result = listFreeSlots({ businessId, date, service, partySize, durationMinutes });
+      const slots = Array.isArray(result.freeSlots) ? result.freeSlots : [];
+      if (slots.length > 0) {
+        out.push({ date, freeCount: slots.length, firstSlot: slots[0] });
+      }
+    }
+    return out;
+  }
+
   function listAll() {
     return loadAll().businesses;
   }
@@ -184,10 +198,19 @@ function createAvailabilityStore(options = {}) {
     getOpeningHours, setOpeningHours,
     listClosedPeriods, addClosedPeriod, removeClosedPeriod,
     listBookings, addBooking, updateBooking, removeBooking,
-    listFreeSlots,
+    listFreeSlots, findNextAvailableDates,
     listAll, reset,
     _filePath: filePath
   };
+}
+
+function shiftDateStr(dateStr, days) {
+  const d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 // ----------- helpers / defaults -----------

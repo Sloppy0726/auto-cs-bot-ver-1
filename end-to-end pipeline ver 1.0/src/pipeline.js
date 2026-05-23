@@ -78,6 +78,7 @@ async function runMessage(input = {}, deps = {}) {
     intent,
     query: backendQuery,
     backendFacts,
+    backend: deps.backend,
     language: knowledge.language || intent.language
   });
   const decision = evaluate({ gateway, intent, knowledge, businessConfig, requiredClarification });
@@ -188,7 +189,7 @@ function requiredClarificationForBackendIntent({ normalizedMessage, intent, quer
   };
 }
 
-function inferAvailabilityResponse({ normalizedMessage, intent, query, backendFacts, language }) {
+function inferAvailabilityResponse({ normalizedMessage, intent, query, backendFacts, backend, language }) {
   if (!["booking", "reschedule"].includes(intent.primaryIntent)) return null;
   if (!backendFacts?.found) return null;
   if (query.time) return null;  // Customer already picked a time; route to staff_review for confirmation.
@@ -197,12 +198,51 @@ function inferAvailabilityResponse({ normalizedMessage, intent, query, backendFa
   const facts = factsObject(backendFacts);
   const slots = Array.isArray(facts.availableSlots) ? facts.availableSlots : null;
   const sessions = Array.isArray(facts.availableSessions) ? facts.availableSessions : null;
-  if (!slots || slots.length === 0) return null;
+
+  if (!slots || slots.length === 0) {
+    // Asked for slots on a date with zero availability (fully booked or closed day).
+    // Try to surface the next 1-3 dates that DO have openings instead of going silent.
+    const suggestions = typeof backend?.findNextAvailableDates === "function"
+      ? (backend.findNextAvailableDates({
+          businessId: normalizedMessage.businessId,
+          fromDate: query.date,
+          service: query.service,
+          partySize: query.partySize,
+          maxDays: 7,
+          maxResults: 3
+        }) || [])
+      : [];
+    if (suggestions.length === 0) return null;  // Nothing useful to offer; let staff_review handle it.
+    return {
+      reason: "availability_check_no_slots_with_suggestions",
+      text: noSlotsResponseText({ language, query, suggestions })
+    };
+  }
 
   return {
     reason: "availability_check_with_slots",
     text: availabilityResponseText({ language, facts, slots, sessions, query })
   };
+}
+
+function noSlotsResponseText({ language, query, suggestions }) {
+  const english = language === "en";
+  const date = query.date;
+  const service = query.service;
+  const partySize = query.partySize;
+
+  if (english) {
+    const headParts = [date, formatServiceEn(service), partySize ? `for ${partySize}` : null].filter(Boolean);
+    const head = headParts.join(" ") || "that date";
+    const altList = suggestions.map((s) => `${s.date} (from ${s.firstSlot.time})`).join(", ");
+    const plural = suggestions.length > 1 ? "s" : "";
+    return `Sorry, ${head} is fully booked or outside opening hours. The next available date${plural}: ${altList}. Which one works for you?`;
+  }
+
+  const headParts = [date, formatServiceZh(service), partySize ? `${partySize}位` : null].filter(Boolean);
+  const head = headParts.join(" ") || "你查詢嘅日期";
+  const altList = suggestions.map((s) => `${s.date}（最早 ${s.firstSlot.time}）`).join("、");
+  return `唔好意思，${head} 暫時冇位或者已過營業時間。最近有時段嘅日期：${altList}。請問你想揀邊一日？`;
 }
 
 function availabilityResponseText({ language, facts, slots, sessions, query }) {
