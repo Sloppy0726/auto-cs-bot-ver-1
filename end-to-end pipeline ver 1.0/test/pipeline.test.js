@@ -47,6 +47,13 @@ async function run() {
   assert.equal(_internal.inferPartySize("今晚兩位"), 2, "Chinese headcount should be extracted");
   assert.equal(_internal.inferRequestedTime("今晚六點"), "18:00", "Chinese evening time should be extracted");
   assert.equal(_internal.inferRequestedTime("下午六點半"), "18:30", "Chinese half-hour time should be extracted");
+  assert.equal(_internal.inferRequestedTime("2點"), null, "bare 2 o'clock should not be forced to 02:00");
+  assert.deepEqual(
+    _internal.inferRequestedTimeDetails("2點"),
+    { time: null, ambiguous: true, hour: 2, text: "2點" },
+    "bare 2 o'clock should be marked ambiguous"
+  );
+  assert.equal(_internal.inferRequestedTime("下午2點"), "14:00", "explicit afternoon 2 o'clock should resolve to 14:00");
 
   const paymentQuery = _internal.inferBackendQuery({
     normalizedMessage: { businessId: "igshop_demo", rawText: "I paid FPS-IG2001 for order IG2001", senderId: "local-browser-demo" },
@@ -97,6 +104,24 @@ async function run() {
   assert.ok(incompleteBookingClarification.text.includes("日期"), "incomplete beauty booking should ask for date");
   assert.ok(incompleteBookingClarification.text.includes("時間"), "incomplete beauty booking should ask for time");
 
+  const ambiguousTimeQuery = _internal.inferBackendQuery({
+    normalizedMessage: { businessId: "beauty_demo", rawText: "想book facial 5月25號 2點", senderId: "ambiguous-time" },
+    intent: { primaryIntent: "booking" },
+    now: new Date("2026-05-20T08:00:00.000Z")
+  });
+  assert.equal(ambiguousTimeQuery.date, "2026-05-25", "ambiguous time query should still carry date");
+  assert.equal(ambiguousTimeQuery.service, "facial", "ambiguous time query should still carry service");
+  assert.equal(ambiguousTimeQuery.time, undefined, "ambiguous time query should not send 02:00 to backend");
+  assert.equal(ambiguousTimeQuery.ambiguousTime, true, "ambiguous time query should be marked for clarification");
+  const ambiguousTimeClarification = _internal.requiredClarificationForBackendIntent({
+    normalizedMessage: { businessId: "beauty_demo", rawText: "想book facial 5月25號 2點" },
+    intent: { primaryIntent: "booking" },
+    query: ambiguousTimeQuery,
+    language: "zh-HK"
+  });
+  assert.ok(ambiguousTimeClarification.text.includes("上午"), "ambiguous time clarification should ask morning/afternoon/evening");
+  assert.ok(ambiguousTimeClarification.text.includes("下午"), "ambiguous time clarification should ask morning/afternoon/evening");
+
   const slotPipeline = createPipeline({
     nowFn: () => new Date("2026-05-20T08:00:00.000Z"),
     llmAdapter: async (prompt, context) => ({ text: context.knowledge.bestMatch?.answer || "請問你想了解邊方面？" })
@@ -125,10 +150,20 @@ async function run() {
     ["13:00", "18:30"],
     "available-times booking should list matching slots"
   );
+  const ambiguousTimeBooking = await slotPipeline.runMessage({
+    channel: "whatsapp",
+    businessId: "beauty_demo",
+    from: "ambiguous-time-pipeline",
+    text: "想book facial 5月25號 2點"
+  });
+  assert.equal(ambiguousTimeBooking.decision.action, "clarify", "ambiguous booking time should clarify");
+  assert.equal(ambiguousTimeBooking.finalStatus, "ready_to_send", "ambiguous booking time clarification should be sendable");
+  assert.ok(ambiguousTimeBooking.draft.text.includes("上午"), "ambiguous booking reply should ask which part of day");
+  assert.equal(ambiguousTimeBooking.staffItem, null, "ambiguous booking time should not create handoff staff item");
   assert.ok(adapterCalls.some((context) => context.modelRoute?.model), "draft adapter context should include modelRoute");
 
   assert.ok(pipeline.inbox.list().length >= 2, "staff inbox should collect held items");
-  console.log(`pipeline: ${standardCases.length + 21} tests passed`);
+  console.log(`pipeline: ${standardCases.length + 34} tests passed`);
 }
 
 run().catch((error) => {

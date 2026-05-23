@@ -127,11 +127,17 @@ function inferBackendQuery({ normalizedMessage, intent, now }) {
     senderId: normalizedMessage.senderId
   };
   const date = inferRequestedDate(text, now || new Date());
-  const time = inferRequestedTime(text);
+  const timeDetails = inferRequestedTimeDetails(text);
   const partySize = inferPartySize(text);
   if (date) query.date = date;
   if (partySize) query.partySize = partySize;
-  if (time) query.time = time;
+  if (timeDetails?.ambiguous) {
+    query.ambiguousTime = true;
+    query.ambiguousTimeText = timeDetails.text;
+    query.ambiguousTimeHour = timeDetails.hour;
+  } else if (timeDetails?.time) {
+    query.time = timeDetails.time;
+  }
   if (/facial|面部|護理|首次|第一次|體驗|trial/i.test(text)) query.service = "facial";
   if (/assessment|評估/i.test(text)) query.service = "assessment";
   if (/p3|小三|english|英文/i.test(text)) query.service = "p3_english";
@@ -172,13 +178,13 @@ function requiredClarificationForBackendIntent({ normalizedMessage, intent, quer
 
   if (needsService && !query.service) missing.push("service");
   if (!query.date) missing.push("date");
-  if (!query.time && !wantsSlots) missing.push("time");
+  if ((query.ambiguousTime || !query.time) && !wantsSlots) missing.push("time");
 
   if (missing.length === 0) return null;
 
   return {
     reason: `booking missing ${missing.join(",")}`,
-    text: bookingClarificationText({ businessId, language, missing })
+    text: bookingClarificationText({ businessId, language, missing, query })
   };
 }
 
@@ -241,11 +247,13 @@ function factsObject(backendFacts = {}) {
   return Object.fromEntries((backendFacts.facts || []).map((fact) => [fact.key, fact.value]));
 }
 
-function bookingClarificationText({ businessId, language, missing }) {
+function bookingClarificationText({ businessId, language, missing, query }) {
   const english = language === "en";
+  const hasAmbiguousTime = Boolean(query?.ambiguousTime);
   const needsService = missing.includes("service");
   const needsDate = missing.includes("date");
-  const needsTime = missing.includes("time");
+  const needsTime = missing.includes("time") && !hasAmbiguousTime;
+  const ambiguousTimeText = query?.ambiguousTimeText || (english ? "that time" : "呢個時間");
 
   if (english) {
     const parts = [
@@ -253,6 +261,10 @@ function bookingClarificationText({ businessId, language, missing }) {
       needsDate && "date",
       needsTime && "time"
     ].filter(Boolean);
+    if (hasAmbiguousTime) {
+      const details = parts.length > 0 ? ` Please also share the ${joinEnglishList(parts)}.` : "";
+      return `Just to confirm, does ${ambiguousTimeText} mean morning, afternoon, or evening?${details}`;
+    }
     return `Sure. Please share the ${joinEnglishList(parts)} you would like to book.`;
   }
   const parts = [
@@ -260,6 +272,10 @@ function bookingClarificationText({ businessId, language, missing }) {
     needsDate && "日期",
     needsTime && "時間"
   ].filter(Boolean);
+  if (hasAmbiguousTime) {
+    const details = parts.length > 0 ? `另外請問你想預約邊個${parts.join("、")}？` : "";
+    return `可以呀，請問你講嘅${ambiguousTimeText}係上午、下午定晚上？${details}`;
+  }
   return `可以呀，請問你想預約邊個${parts.join("、")}？`;
 }
 
@@ -317,11 +333,20 @@ function isoFromYmd(year, month, day) {
 }
 
 function inferRequestedTime(text) {
+  const details = inferRequestedTimeDetails(text);
+  return details && !details.ambiguous ? details.time : null;
+}
+
+function inferRequestedTimeDetails(text) {
   // HH:MM (explicit colon)
   const colonTime = text.match(/(?:^|[^\d])(\d{1,2}):(\d{2})\b/);
   if (colonTime) {
     const hour = normalizeHour(Number(colonTime[1]), text);
-    return `${String(hour).padStart(2, "0")}:${colonTime[2]}`;
+    return {
+      time: `${String(hour).padStart(2, "0")}:${colonTime[2]}`,
+      ambiguous: false,
+      text: colonTime[0].trim()
+    };
   }
 
   // HH[:MM] am/pm
@@ -332,27 +357,66 @@ function inferRequestedTime(text) {
     const isPm = /pm/i.test(ampmTime[3]);
     if (isPm && hour < 12) hour += 12;
     else if (!isPm && hour === 12) hour = 0;
-    return `${String(hour).padStart(2, "0")}:${minute}`;
+    return {
+      time: `${String(hour).padStart(2, "0")}:${minute}`,
+      ambiguous: false,
+      text: ampmTime[0].trim()
+    };
   }
 
   // HH 點/時 (digit form, optional 半)
   const dotMarker = text.match(/(?:^|[^\d])(\d{1,2})\s*(?:點|時)(?:\s*(半))?/);
   if (dotMarker) {
-    const hour = normalizeHour(Number(dotMarker[1]), text);
+    const rawHour = Number(dotMarker[1]);
+    if (isAmbiguousBareHour(rawHour, text)) {
+      return {
+        time: null,
+        ambiguous: true,
+        hour: rawHour,
+        text: dotMarker[0].trim()
+      };
+    }
+    const hour = normalizeHour(rawHour, text);
     const minute = dotMarker[2] ? "30" : "00";
-    return `${String(hour).padStart(2, "0")}:${minute}`;
+    return {
+      time: `${String(hour).padStart(2, "0")}:${minute}`,
+      ambiguous: false,
+      text: dotMarker[0].trim()
+    };
   }
 
   // Chinese-number 點/時 (optional 半)
   const chineseNumber = "一兩二三四五六七八九十";
   const chineseTime = text.match(new RegExp(`([${chineseNumber}])\\s*(?:點|時)(?:\\s*(半))?`));
   if (chineseTime) {
-    const hour = normalizeHour(chineseNumberValue(chineseTime[1]), text);
+    const rawHour = chineseNumberValue(chineseTime[1]);
+    if (isAmbiguousBareHour(rawHour, text)) {
+      return {
+        time: null,
+        ambiguous: true,
+        hour: rawHour,
+        text: chineseTime[0].trim()
+      };
+    }
+    const hour = normalizeHour(rawHour, text);
     const minute = chineseTime[2] ? "30" : "00";
-    return `${String(hour).padStart(2, "0")}:${minute}`;
+    return {
+      time: `${String(hour).padStart(2, "0")}:${minute}`,
+      ambiguous: false,
+      text: chineseTime[0].trim()
+    };
   }
 
   return null;
+}
+
+function isAmbiguousBareHour(hour, text) {
+  if (hour < 1 || hour > 11) return false;
+  return !hasExplicitTimePeriod(text);
+}
+
+function hasExplicitTimePeriod(text) {
+  return /凌晨|清晨|朝早|早上|上午|中午|下午|今晚|夜晚|晚上|\bam\b|\bpm\b/i.test(text);
 }
 
 function normalizeHour(hour, text) {
@@ -408,5 +472,5 @@ function result(payload) {
 module.exports = {
   createPipeline,
   runMessage,
-  _internal: { inferBackendQuery, inferPartySize, inferRequestedDate, inferRequestedTime, requiredClarificationForBackendIntent, inferAvailabilityResponse, intentClassifierOptions }
+  _internal: { inferBackendQuery, inferPartySize, inferRequestedDate, inferRequestedTime, inferRequestedTimeDetails, requiredClarificationForBackendIntent, inferAvailabilityResponse, intentClassifierOptions }
 };

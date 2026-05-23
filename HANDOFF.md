@@ -1,6 +1,6 @@
 # Codex Handoff - Hong Kong AI Customer Support SaaS
 
-Last verified: 2026-05-13 HKT by Codex.
+Last verified: 2026-05-23 HKT by Codex.
 
 This is the project map for the next Codex session. Read this before editing code.
 
@@ -455,6 +455,97 @@ In rough priority order:
 5. **Update §4 (test counts) and §1 (last-verified date) of this handoff** once tests are added.
 
 End of session addendum.
+
+---
+
+## 14. Session Addendum — 2026-05-23 (Codex ambiguous booking time fix)
+
+This section captures the follow-up change after testing the WhatsApp Web booking flow in Safari.
+
+### 14.1 What changed
+
+- Fixed `end-to-end pipeline ver 1.0/src/pipeline.js` so bare Cantonese times like `2點`, `六點`, or `11點` are treated as ambiguous unless the customer explicitly says `上午`, `下午`, `晚上`, `今晚`, `am`, or `pm`.
+- The pipeline no longer sends ambiguous bare times such as `2點` to backend availability as `02:00`.
+- The bot now asks a clarifying question instead:
+
+```text
+可以呀，請問你講嘅2點係上午、下午定晚上？
+```
+
+- Explicit times still resolve as before:
+  - `下午2點` → `14:00`
+  - `今晚六點` → `18:00`
+  - `2pm` → `14:00`
+  - `14:00` → `14:00`
+
+### 14.2 Why it changed
+
+Safari WhatsApp Web logs showed a real local test where the customer said `2點`. The bridge stitched the conversation into:
+
+```text
+想book 2點 facial 5月25號
+```
+
+The old parser treated that as `02:00`, which is unreasonable for `beauty_demo` because the salon does not open at 2am. The downstream staff draft then talked about `下午2點`, even though the parser had originally carried `02:00` into backend lookup. The safer behavior is to ask the customer whether they mean morning, afternoon, or evening.
+
+### 14.3 Files changed
+
+```text
+M  end-to-end pipeline ver 1.0/src/pipeline.js
+M  end-to-end pipeline ver 1.0/test/pipeline.test.js
+```
+
+### 14.4 Verification
+
+Focused tests passed:
+
+```bash
+node "end-to-end pipeline ver 1.0/test/pipeline.test.js"   # pipeline: 134 tests passed
+node "end-to-end pipeline ver 1.0/test/server.test.js"     # server: 31 tests passed
+node --check "end-to-end pipeline ver 1.0/src/pipeline.js"
+```
+
+Manual dry run passed:
+
+```text
+Input:  想book 2點 facial 5月25號
+Action: clarify
+Reply:  可以呀，請問你講嘅2點係上午、下午定晚上？
+Staff item: false
+```
+
+After the fix, the packaged server and WhatsApp Web bridge were restarted:
+
+```bash
+npm run bridge:whatsapp-web:stop
+npm run bridge:whatsapp-web:start
+```
+
+The old local handoff pause state was cleared so the same WhatsApp chat could continue testing:
+
+```bash
+npm run bridge:whatsapp-web:handoff:clear
+```
+
+`npm run bridge:whatsapp-web:status` reported:
+
+```text
+Bot endpoint: OK http://127.0.0.1:3000/webhook
+Handoff pause state: No paused chats.
+```
+
+### 14.5 Current local runtime
+
+When running through the packaged starter:
+
+- Bot webhook: `http://127.0.0.1:3000/webhook`
+- Website chat test page: `http://127.0.0.1:3000/`
+- Admin UI: `http://127.0.0.1:3000/admin`
+- Screen sessions:
+  - `auto-cs-bot-server`
+  - `auto-cs-whatsapp-web-bridge`
+
+End of Codex addendum.
 
 ---
 
