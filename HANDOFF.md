@@ -1,8 +1,8 @@
-# Codex Handoff - Hong Kong AI Customer Support SaaS
+# Handoff - Hong Kong AI Customer Support SaaS
 
-Last verified: 2026-05-23 HKT by Codex.
+Last verified: 2026-05-23 HKT.
 
-This is the project map for the next Codex session. Read this before editing code.
+This is the project map for the next session. Read this before editing code.
 
 ---
 
@@ -291,7 +291,7 @@ Use these for human review of inputs, expected behavior, actual behavior, and po
 
 ---
 
-## 13. Session Addendum — 2026-05-23 (Claude session, switching to Codex)
+## 13. Session Addendum — 2026-05-23
 
 This section captures everything that landed in this session. None of it has been committed yet; `git status` shows uncommitted M's plus two new files plus a new `state/` directory.
 
@@ -458,7 +458,7 @@ End of session addendum.
 
 ---
 
-## 14. Session Addendum — 2026-05-23 (Codex ambiguous booking time fix)
+## 14. Session Addendum — 2026-05-23 (ambiguous booking time fix)
 
 This section captures the follow-up change after testing the WhatsApp Web booking flow in Safari.
 
@@ -545,11 +545,11 @@ When running through the packaged starter:
   - `auto-cs-bot-server`
   - `auto-cs-whatsapp-web-bridge`
 
-End of Codex addendum.
+End of session addendum.
 
 ---
 
-## 15. Session Addendum — 2026-05-24 (Claude session: no-slots fallback + per-credential baseUrls)
+## 15. Session Addendum — 2026-05-24 (no-slots fallback + per-credential baseUrls)
 
 Two features landed in this session. Both customer-visible improvements.
 
@@ -629,7 +629,7 @@ Still on the list from §13.11 / §14:
 3. Tests for the new bookings model (`availabilityStore`, `findNextAvailableDates`, admin endpoints).
 4. The `private business backend mock ver 1.0/state/` directory is already gitignored; `mockBusinessData.js` still has legacy `availability: [...]` arrays for the legacy in-memory test path — clean up once tests are rewritten for the store model.
 
-End of Claude session addendum.
+End of session addendum.
 
 ---
 
