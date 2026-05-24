@@ -62,7 +62,7 @@ async function runMessage(input = {}, deps = {}) {
     now: deps.nowFn()
   });
   const businessConfig = getConfig(normalizedMessage.businessId);
-  const backendQuery = inferBackendQuery({ normalizedMessage, intent, now: deps.nowFn() });
+  const backendQuery = inferBackendQuery({ normalizedMessage, intent, now: deps.nowFn(), backend: deps.backend });
   const backendFacts = deps.backend.getMinimalFacts({
     businessId: normalizedMessage.businessId,
     intent,
@@ -123,14 +123,15 @@ function intentClassifierOptions(deps = {}) {
   };
 }
 
-function inferBackendQuery({ normalizedMessage, intent, now }) {
+function inferBackendQuery({ normalizedMessage, intent, now, backend }) {
   const text = normalizedMessage.rawText || "";
   const query = {
     businessId: normalizedMessage.businessId,
     senderId: normalizedMessage.senderId
   };
   const date = inferRequestedDate(text, now || new Date());
-  const timeDetails = inferRequestedTimeDetails(text);
+  const openWindows = openWindowsForDate(backend, normalizedMessage.businessId, date);
+  const timeDetails = inferRequestedTimeDetails(text, openWindows);
   const partySize = inferPartySize(text);
   if (date) query.date = date;
   if (partySize) query.partySize = partySize;
@@ -412,7 +413,7 @@ function inferRequestedTime(text) {
   return details && !details.ambiguous ? details.time : null;
 }
 
-function inferRequestedTimeDetails(text) {
+function inferRequestedTimeDetails(text, openWindows) {
   // HH:MM (explicit colon)
   const colonTime = text.match(/(?:^|[^\d])(\d{1,2}):(\d{2})\b/);
   if (colonTime) {
@@ -443,21 +444,8 @@ function inferRequestedTimeDetails(text) {
   const dotMarker = text.match(/(?:^|[^\d])(\d{1,2})\s*(?:點|時)(?:\s*(半))?/);
   if (dotMarker) {
     const rawHour = Number(dotMarker[1]);
-    if (isAmbiguousBareHour(rawHour, text)) {
-      return {
-        time: null,
-        ambiguous: true,
-        hour: rawHour,
-        text: dotMarker[0].trim()
-      };
-    }
-    const hour = normalizeHour(rawHour, text);
     const minute = dotMarker[2] ? "30" : "00";
-    return {
-      time: `${String(hour).padStart(2, "0")}:${minute}`,
-      ambiguous: false,
-      text: dotMarker[0].trim()
-    };
+    return resolveBareHourDetails({ rawHour, minute, text, openWindows, matchText: dotMarker[0].trim() });
   }
 
   // Chinese-number 點/時 (optional 半)
@@ -465,24 +453,78 @@ function inferRequestedTimeDetails(text) {
   const chineseTime = text.match(new RegExp(`([${chineseNumber}])\\s*(?:點|時)(?:\\s*(半))?`));
   if (chineseTime) {
     const rawHour = chineseNumberValue(chineseTime[1]);
-    if (isAmbiguousBareHour(rawHour, text)) {
-      return {
-        time: null,
-        ambiguous: true,
-        hour: rawHour,
-        text: chineseTime[0].trim()
-      };
-    }
-    const hour = normalizeHour(rawHour, text);
     const minute = chineseTime[2] ? "30" : "00";
-    return {
-      time: `${String(hour).padStart(2, "0")}:${minute}`,
-      ambiguous: false,
-      text: chineseTime[0].trim()
-    };
+    return resolveBareHourDetails({ rawHour, minute, text, openWindows, matchText: chineseTime[0].trim() });
   }
 
   return null;
+}
+
+function resolveBareHourDetails({ rawHour, minute, text, openWindows, matchText }) {
+  // Explicit period (上午/下午/晚上/am/pm/etc) or out-of-ambiguous-range hours resolve directly.
+  if (!isAmbiguousBareHour(rawHour, text)) {
+    const hour = normalizeHour(rawHour, text);
+    return {
+      time: `${String(hour).padStart(2, "0")}:${minute}`,
+      ambiguous: false,
+      text: matchText
+    };
+  }
+  // Opening hours can disambiguate: if exactly one of (AM, PM) falls inside an open
+  // window on the requested date, treat the bare hour as that one. If both fit (e.g.,
+  // 8 at a place open 8am-10pm) or neither fits, stay ambiguous and ask.
+  const resolvedHour = disambiguateBareHourFromOpeningHours(rawHour, Number(minute), openWindows);
+  if (resolvedHour != null) {
+    return {
+      time: `${String(resolvedHour).padStart(2, "0")}:${minute}`,
+      ambiguous: false,
+      text: matchText
+    };
+  }
+  return {
+    time: null,
+    ambiguous: true,
+    hour: rawHour,
+    text: matchText
+  };
+}
+
+function disambiguateBareHourFromOpeningHours(rawHour, minute, openWindows) {
+  if (!Array.isArray(openWindows) || openWindows.length === 0) return null;
+  const amMin = rawHour * 60 + (minute || 0);
+  const pmMin = (rawHour + 12) * 60 + (minute || 0);
+  const amFits = anyOpenWindowContains(openWindows, amMin);
+  const pmFits = anyOpenWindowContains(openWindows, pmMin);
+  if (amFits && !pmFits) return rawHour;
+  if (pmFits && !amFits) return rawHour + 12;
+  return null;
+}
+
+function anyOpenWindowContains(openWindows, minuteOfDay) {
+  for (const w of openWindows) {
+    const open = hhmmToMinutes(w?.open);
+    const close = hhmmToMinutes(w?.close);
+    if (open == null || close == null) continue;
+    if (minuteOfDay >= open && minuteOfDay < close) return true;
+  }
+  return false;
+}
+
+function hhmmToMinutes(value) {
+  if (typeof value !== "string") return null;
+  const m = value.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+function openWindowsForDate(backend, businessId, date) {
+  if (!backend || typeof backend.getOpeningHours !== "function") return null;
+  if (!businessId || !date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const hours = backend.getOpeningHours(businessId);
+  if (!hours) return null;
+  const dow = new Date(`${date}T00:00:00`).getDay();
+  const windows = hours[String(dow)];
+  return Array.isArray(windows) ? windows : null;
 }
 
 function isAmbiguousBareHour(hour, text) {

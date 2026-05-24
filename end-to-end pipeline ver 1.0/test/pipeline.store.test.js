@@ -166,7 +166,78 @@ async function runAll() {
     eq("bookingDraft: businessId captured", bd.businessId, "beauty_demo");
   }
 
-  // ---- Case 7: bookingDraft NOT captured for clarify (asking for slots) ----
+  // ---- Case 7a: bare hour auto-resolves to PM when AM is outside opening hours ----
+  // beauty_demo opens 11:00 on Monday 2026-05-25. "2點" is ambiguous from text alone,
+  // but 02:00 falls outside opening hours and 14:00 fits, so the bot should resolve
+  // it to 14:00 instead of asking the customer for AM/PM.
+  {
+    const { pipeline } = freshStorePipeline({
+      openingHours: { "0": [], "1": [{ open: "11:00", close: "21:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] }
+    });
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "beauty_demo",
+      from: "bare-hour-pm-auto",
+      text: "想book facial 5月25號 2點"
+    });
+    check("bare-hour pm-only: routed to staff_review (complete booking)", result.finalStatus === "staff_review");
+    const bd = result.staffItem?.bookingDraft;
+    check("bare-hour pm-only: bookingDraft captured", bd !== null && bd !== undefined);
+    eq("bare-hour pm-only: time resolved to 14:00", bd?.time, "14:00");
+    eq("bare-hour pm-only: date carried through", bd?.date, "2026-05-25");
+  }
+
+  // ---- Case 7b: bare hour auto-resolves to AM when PM is outside opening hours ----
+  // Open 06:00-11:00 only. "9點" -> 09:00 fits, 21:00 doesn't -> resolve to 09:00.
+  {
+    const { pipeline } = freshStorePipeline({
+      openingHours: { "0": [], "1": [{ open: "06:00", close: "11:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] }
+    });
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "beauty_demo",
+      from: "bare-hour-am-auto",
+      text: "想book facial 5月25號 9點"
+    });
+    check("bare-hour am-only: routed to staff_review", result.finalStatus === "staff_review");
+    eq("bare-hour am-only: time resolved to 09:00", result.staffItem?.bookingDraft?.time, "09:00");
+  }
+
+  // ---- Case 7c: bare hour stays ambiguous when both AM and PM fit ----
+  // Open 08:00-22:00. "8點" -> 08:00 fits AND 20:00 fits -> ask for AM/PM.
+  {
+    const { pipeline } = freshStorePipeline({
+      openingHours: { "0": [], "1": [{ open: "08:00", close: "22:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] }
+    });
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "beauty_demo",
+      from: "bare-hour-ambiguous",
+      text: "想book facial 5月25號 8點"
+    });
+    check("bare-hour ambiguous: clarify ready_to_send", result.finalStatus === "ready_to_send" && result.decision.action === "clarify");
+    check("bare-hour ambiguous: clarify mentions 上午", result.draft.text.includes("上午"));
+    check("bare-hour ambiguous: clarify mentions 下午", result.draft.text.includes("下午"));
+    check("bare-hour ambiguous: no staff item", result.staffItem === null);
+  }
+
+  // ---- Case 7d: Chinese-number bare hour auto-resolves using opening hours ----
+  // 六點 (six o'clock) at a place open 11:00-21:00 -> 18:00 fits, 06:00 doesn't.
+  {
+    const { pipeline } = freshStorePipeline({
+      openingHours: { "0": [], "1": [{ open: "11:00", close: "21:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] }
+    });
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "beauty_demo",
+      from: "chinese-bare-hour-pm-auto",
+      text: "想book facial 5月25號 六點"
+    });
+    check("chinese bare-hour pm-only: routed to staff_review", result.finalStatus === "staff_review");
+    eq("chinese bare-hour pm-only: time resolved to 18:00", result.staffItem?.bookingDraft?.time, "18:00");
+  }
+
+  // ---- Case 7e: bookingDraft NOT captured for clarify (asking for slots) ----
   {
     const { pipeline } = freshStorePipeline({
       openingHours: { "0": [], "1": [{ open: "11:00", close: "12:30" }], "2": [], "3": [], "4": [], "5": [], "6": [] }

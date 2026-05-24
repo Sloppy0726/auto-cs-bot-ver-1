@@ -26,9 +26,15 @@ function createBusinessBackend(config = {}) {
     return availabilityStore.findNextAvailableDates(query || {});
   }
 
+  function getOpeningHoursImpl(businessId) {
+    if (!availabilityStore || typeof availabilityStore.getOpeningHours !== "function") return null;
+    return availabilityStore.getOpeningHours(businessId) || null;
+  }
+
   return {
     checkAvailability: checkAvailabilityImpl,
     findNextAvailableDates: findNextAvailableDatesImpl,
+    getOpeningHours: getOpeningHoursImpl,
     lookupOrder(query) {
       return lookupOrder(data, query || {});
     },
