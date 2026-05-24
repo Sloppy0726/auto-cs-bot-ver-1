@@ -1,6 +1,6 @@
 # Handoff - Hong Kong AI Customer Support SaaS
 
-Last verified: 2026-05-23 HKT.
+Last verified: 2026-05-24 HKT.
 
 This is the project map for the next session. Read this before editing code.
 
@@ -84,14 +84,19 @@ Important source modules:
 
 ## 4. Current Verification
 
-All test runners passed at handoff time: **2,113 checks**.
+All test runners passed at handoff time: **2,428 checks**.
 
-Run everything from the repo root:
+The easiest way to run every suite is the quick all-test loop further down. Individual runners (run from the repo root):
 
 ```bash
 node "AI draft engine ver 1.0/test/draftEngine.test.js"
 node "business rules ver 1.0/test/businessRules.test.js"
 node "channel adapter ver 1.0/test/channelAdapter.test.js"
+node "conversation context ver 1.0/test/conversationContext.test.js"
+node "end-to-end pipeline ver 1.0/test/admin.test.js"
+node "end-to-end pipeline ver 1.0/test/claudeAdapter.test.js"
+node "end-to-end pipeline ver 1.0/test/openaiAdapter.test.js"
+node "end-to-end pipeline ver 1.0/test/pipeline.store.test.js"
 node "end-to-end pipeline ver 1.0/test/pipeline.test.js"
 node "end-to-end pipeline ver 1.0/test/server.test.js"
 node "google drive promo sync ver 1.0/test/promoSync.test.js"
@@ -102,9 +107,13 @@ node "model router ver 1.0/test/modelRouter.test.js"
 node "privacy filter ver 1.0/test/privacyFilter.edge.test.js"
 node "privacy filter ver 1.0/test/privacyFilter.test.js"
 node "privacy gateway ver 1.0/test/privacyGateway.test.js"
+node "private business backend mock ver 1.0/test/availabilityStore.test.js"
 node "private business backend mock ver 1.0/test/businessBackendMock.test.js"
 node "safety checker ver 1.0/test/safetyChecker.test.js"
 node "staff inbox ver 1.0/test/staffInbox.test.js"
+node "whatsapp-web-test-bridge/test/handoffState.test.js"
+node "whatsapp-web-test-bridge/test/messageHeuristics.test.js"
+node "whatsapp-web-test-bridge/test/sidebarScripts.test.js"
 ```
 
 Observed passing counts:
@@ -114,19 +123,28 @@ Observed passing counts:
 | `AI draft engine ver 1.0/test/draftEngine.test.js` | 112 |
 | `business rules ver 1.0/test/businessRules.test.js` | 101 |
 | `channel adapter ver 1.0/test/channelAdapter.test.js` | 105 |
-| `end-to-end pipeline ver 1.0/test/pipeline.test.js` | 103 |
-| `end-to-end pipeline ver 1.0/test/server.test.js` | 28 |
+| `conversation context ver 1.0/test/conversationContext.test.js` | 13 |
+| `end-to-end pipeline ver 1.0/test/admin.test.js` | 37 |
+| `end-to-end pipeline ver 1.0/test/claudeAdapter.test.js` | 41 |
+| `end-to-end pipeline ver 1.0/test/openaiAdapter.test.js` | 15 |
+| `end-to-end pipeline ver 1.0/test/pipeline.store.test.js` | 20 |
+| `end-to-end pipeline ver 1.0/test/pipeline.test.js` | 134 |
+| `end-to-end pipeline ver 1.0/test/server.test.js` | 31 |
 | `google drive promo sync ver 1.0/test/promoSync.test.js` | 108 |
 | `intent classifier ver 1.0/test/intentClassifier.edge.test.js` | 23 |
-| `intent classifier ver 1.0/test/intentClassifier.test.js` | 103 |
-| `knowledge base ver 1.0/test/knowledgeBase.test.js` | 103 |
+| `intent classifier ver 1.0/test/intentClassifier.test.js` | 118 |
+| `knowledge base ver 1.0/test/knowledgeBase.test.js` | 105 |
 | `model router ver 1.0/test/modelRouter.test.js` | 101 |
 | `privacy filter ver 1.0/test/privacyFilter.edge.test.js` | 207 |
 | `privacy filter ver 1.0/test/privacyFilter.test.js` | 500 |
 | `privacy gateway ver 1.0/test/privacyGateway.test.js` | 207 |
-| `private business backend mock ver 1.0/test/businessBackendMock.test.js` | 103 |
+| `private business backend mock ver 1.0/test/availabilityStore.test.js` | 86 |
+| `private business backend mock ver 1.0/test/businessBackendMock.test.js` | 118 |
 | `safety checker ver 1.0/test/safetyChecker.test.js` | 102 |
 | `staff inbox ver 1.0/test/staffInbox.test.js` | 107 |
+| `whatsapp-web-test-bridge/test/handoffState.test.js` | 11 |
+| `whatsapp-web-test-bridge/test/messageHeuristics.test.js` | 14 |
+| `whatsapp-web-test-bridge/test/sidebarScripts.test.js` | 12 |
 
 Quick all-test loop:
 
@@ -413,7 +431,7 @@ Known **non-bug** about Safari: WhatsApp Web tab hibernation. Modern Safari aggr
 
 ### 13.9 Known issues / TODOs at session end
 
-1. **Tests for new code haven't been written.** The store, the paraphraser pipeline, the free-slot computation, and the admin endpoints all lack dedicated test files. Recommend adding before commit. The existing 484 tests still pass because they cover the legacy in-memory path.
+1. ~~**Tests for new code haven't been written.**~~ Resolved 2026-05-24 — see §16. `availabilityStore.test.js` (86), `pipeline.store.test.js` (20), and `admin.test.js` (37) now cover the store, the no-slots fallback through the pipeline, and every admin HTTP endpoint.
 2. **No conflict detection in `addBooking`.** Staff can add two bookings that overlap each other. Backend's free-slot calc handles overlap correctly (whichever booking blocks first), but UX-wise the admin should reject or warn on conflicts.
 3. **Calendar overlap rendering limitation.** If two beauty bookings start at the *same* `(date, time)`, they stack in the same cell — fine. If a second booking starts *inside* a longer one's rowspan, the inner one doesn't render in the calendar (its start cell is consumed). Still listed in the bookings table. Rare for a single salon; would need lateral splitting to fix.
 4. **No "no slots today, try another day?" message.** When `availableSlots` is empty (date fully booked or closed day), `inferAvailabilityResponse` returns null and the request falls through to staff_review. UX could be improved with an explicit "no openings on that date" reply.
@@ -626,8 +644,44 @@ Still on the list from §13.11 / §14:
 
 1. Booking conflict detection + out-of-hours rejection in admin's `addBooking`.
 2. Per-staff resources (Amy vs Joey calendars) — biggest single UX win for a real salon.
-3. Tests for the new bookings model (`availabilityStore`, `findNextAvailableDates`, admin endpoints).
-4. The `private business backend mock ver 1.0/state/` directory is already gitignored; `mockBusinessData.js` still has legacy `availability: [...]` arrays for the legacy in-memory test path — clean up once tests are rewritten for the store model.
+3. ~~Tests for the new bookings model.~~ Done — see §16.
+4. The `private business backend mock ver 1.0/state/` directory is already gitignored; `mockBusinessData.js` still has legacy `availability: [...]` arrays for the legacy in-memory test path — clean up is now safer because the store path has its own coverage.
+
+End of session addendum.
+
+---
+
+## 16. Session Addendum — 2026-05-24 (tests for the bookings model)
+
+Three new test files cover the bookings-model code that had been riding on the legacy in-memory backend path.
+
+### 16.1 Files added
+
+| File | Tests | Covers |
+|---|---:|---|
+| `private business backend mock ver 1.0/test/availabilityStore.test.js` | 86 | `validateOpeningHours`, `validateClosedPeriod`, `validateBooking` (restaurant/beauty/edu/igshop), `subtractMany`/`toMinutes` helpers, `listFreeSlots` (closed-period subtraction, booking subtraction, per-service / per-partySize filters, duration-exceeds-window), `findNextAvailableDates` (maxDays/maxResults, no-openings case), bookings/closed-periods CRUD, file persistence round-trip, `reset()` |
+| `end-to-end pipeline ver 1.0/test/pipeline.store.test.js` | 20 | Pipeline wired with a real store-backed backend. Verifies slot listing flows through to `backendFacts.availableSlots`, the no-slots-with-suggestions fallback fires with zh + en variants, no-suggestions case falls through to staff_review, an existing booking removes its time from the listing |
+| `end-to-end pipeline ver 1.0/test/admin.test.js` | 37 | Real HTTP server with a tmp-file store; covers auth (open in dev, 401 in production without token, 401 on wrong token, 200 on correct token), `GET/PUT /admin/opening-hours`, `GET/POST/DELETE /admin/closed-periods`, `GET/POST/PATCH/DELETE /admin/bookings`, `GET /admin/store`, invalid payload → 400, missing id → 404, wrong method → 405, persistence round-trip across servers |
+
+### 16.2 Patterns worth knowing
+
+- All store tests isolate state with `fs.mkdtempSync` + an explicit `filePath` on `createAvailabilityStore({ filePath })`. No tests touch `private business backend mock ver 1.0/state/availability.json`.
+- `admin.test.js` defines a small `sendAdmin` helper because the existing `sendJson` in `server.test.js` is hardcoded to `POST /webhook`. The helper closes the server after each request.
+- The pipeline integration test pins the clock to `2026-05-24` HKT (Sunday) so the day-of-week math against `openingHours["0".."6"]` is deterministic.
+- The pipeline test asserts on `result.draft.text` directly because the `llmAdapter` is stubbed; the paraphraser is off by default since `config.paraphraser` is not set.
+
+### 16.3 Test totals
+
+- New: 86 + 20 + 37 = 143
+- §4 grand total: 2,113 (pre-session counts in §4) → 2,428.
+
+### 16.4 What's still open
+
+The §13.9 / §15.7 backlog after this work:
+
+1. Booking conflict detection + out-of-hours rejection in `addBooking` (still §13.9 #2 and #5).
+2. Per-staff resources (still §13.9 #6).
+3. Legacy `availability: [...]` arrays in `mockBusinessData.js` can now be cleaned up because the store path has dedicated coverage (still §13.11 #4).
 
 End of session addendum.
 
