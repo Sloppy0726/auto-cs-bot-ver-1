@@ -4,12 +4,16 @@ const { execFile } = require("node:child_process");
 const { stitchText } = require("../../conversation context ver 1.0/src/conversationContext");
 const { createHandoffState, DEFAULT_TTL_MS } = require("./handoffState");
 const { isCustomerAcknowledgement, looksLikeBridgeAuthored } = require("./messageHeuristics");
+const { tryAutoResolve } = require("./staffReplyAutoResolver");
 const {
   buildOpenNextChatNeedingAttentionScript,
   buildReadSidebarSnapshotScript
 } = require("./sidebarScripts");
 
 const BOT_URL = process.env.BOT_URL || "http://127.0.0.1:3000/webhook";
+const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL || deriveAdminBaseUrl(BOT_URL);
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || null;
+const STAFF_AUTO_RESOLVE = process.env.WA_BRIDGE_STAFF_AUTO_RESOLVE !== "false";
 const BUSINESS_ID = process.env.WA_BRIDGE_BUSINESS_ID || "restaurant_demo";
 const POLL_MS = Number(process.env.WA_BRIDGE_POLL_MS || 2500);
 const DRAFT_REPLIES = process.env.WA_BRIDGE_DRAFT_REPLIES !== "false";
@@ -55,6 +59,7 @@ async function main() {
   console.log(`[wa-bridge] watching Safari WhatsApp Web chat`);
   console.log(`[wa-bridge] bot=${BOT_URL} businessId=${BUSINESS_ID} draftReplies=${DRAFT_REPLIES} sendReplies=${SEND_REPLIES} sendHeldDrafts=${SEND_HELD_DRAFTS}`);
   console.log(`[wa-bridge] handoffPause=${HANDOFF_PAUSE_ENABLED} ttlHours=${Math.round(HANDOFF_PAUSE_TTL_MS / 60 / 60 / 1000)} intents=${Array.from(HANDOFF_PAUSE_INTENTS).join(",")}`);
+  console.log(`[wa-bridge] staffAutoResolve=${STAFF_AUTO_RESOLVE} adminBase=${ADMIN_BASE_URL || "(none)"} adminTokenSet=${Boolean(ADMIN_TOKEN)}`);
   console.log(`[wa-bridge] currentChat=${snapshot.chatTitle || "unknown"} existingLast=${lastFingerprint || "none"} seededChats=${chatRowFingerprints.size}`);
   console.log("[wa-bridge] waiting for the next incoming message...");
 
@@ -73,7 +78,7 @@ async function main() {
 
 async function tick() {
   let snapshot = await readWhatsAppSnapshot();
-  syncStaffReplyForSnapshot(snapshot);
+  await syncStaffReplyForSnapshot(snapshot);
   let incoming = latestIncoming(snapshot);
   if (!incoming || incoming.fingerprint === lastFingerprint) {
     const attention = await openNextChatNeedingAttention({
@@ -87,7 +92,7 @@ async function tick() {
       console.log(`[wa-bridge] opened chat: ${attention.chatKey || attention.preview || "unknown"} (${attention.reason || "attention"})`);
       await sleep(1200);
       snapshot = await readWhatsAppSnapshot();
-      syncStaffReplyForSnapshot(snapshot);
+      await syncStaffReplyForSnapshot(snapshot);
       incoming = latestIncoming(snapshot);
     }
   }
@@ -217,7 +222,7 @@ function shouldPauseForHandoff(botResponse) {
   return botResponse?.finalStatus === "staff_review" && HANDOFF_PAUSE_INTENTS.has(intent);
 }
 
-function syncStaffReplyForSnapshot(snapshot) {
+async function syncStaffReplyForSnapshot(snapshot) {
   const incoming = latestIncoming(snapshot);
   const chatKey = chatKeyFor(incoming || {}, snapshot);
   const activeHandoff = handoffState.active(chatKey);
@@ -239,6 +244,44 @@ function syncStaffReplyForSnapshot(snapshot) {
   if (record) {
     console.log(`[wa-bridge] detected staff reply in handoff chat=${chatKey}; next acknowledgement will stay silent, then bot resumes.`);
   }
+
+  if (STAFF_AUTO_RESOLVE && record && record.staffItemId) {
+    try {
+      const result = await tryAutoResolve({
+        activeHandoff: record,
+        staffText: outgoing.text,
+        staffFingerprint: outgoing.fingerprint,
+        businessId: BUSINESS_ID,
+        adminBaseUrl: ADMIN_BASE_URL,
+        adminToken: ADMIN_TOKEN
+      });
+      logAutoResolveResult(chatKey, result);
+    } catch (error) {
+      console.log(`[wa-bridge] auto-resolve failed chat=${chatKey}: ${error.message}`);
+    }
+  }
+}
+
+function logAutoResolveResult(chatKey, result) {
+  if (!result) return;
+  if (result.status === "approved") {
+    const bookingId = result.booking?.id || "(unknown)";
+    console.log(`[wa-bridge] auto-approved booking from staff in-chat reply chat=${chatKey} bookingId=${bookingId} verdict=${result.verdict?.source || "?"} reason=${result.reason || ""}`);
+    return;
+  }
+  if (result.status === "rejected") {
+    console.log(`[wa-bridge] auto-rejected inbox item from staff in-chat reply chat=${chatKey} verdict=${result.verdict?.source || "?"} reason=${result.reason || ""}`);
+    return;
+  }
+  if (result.status === "approve_failed" || result.status === "reject_failed") {
+    console.log(`[wa-bridge] auto-resolve ${result.status} chat=${chatKey} http=${result.http || "?"} reason=${result.reason || ""}; item left open for admin`);
+    return;
+  }
+  if (result.status === "error") {
+    console.log(`[wa-bridge] auto-resolve error chat=${chatKey} reason=${result.reason || ""}`);
+    return;
+  }
+  console.log(`[wa-bridge] auto-resolve skipped chat=${chatKey} reason=${result.reason || ""}`);
 }
 
 async function recordBridgeSentMessage(chatKey) {
@@ -660,6 +703,15 @@ function mergeChatFingerprints(snapshot) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function deriveAdminBaseUrl(botUrl) {
+  try {
+    const u = new URL(botUrl);
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    return null;
+  }
 }
 
 function safariJs(source) {
