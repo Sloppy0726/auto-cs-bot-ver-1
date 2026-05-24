@@ -687,4 +687,189 @@ End of session addendum.
 
 ---
 
+## 17. Session Addendum — 2026-05-25 (out-of-hours rejection + staff confirm flow + Google Drive)
+
+Three customer-requested features landed in this session. All on `main`, all
+covered by tests, uncommitted at section-write time.
+
+### 17.1 Feature 1: Reject out-of-hours bookings
+
+`addBooking` and `updateBooking` in
+`private business backend mock ver 1.0/src/availabilityStore.js` now compute
+the day's open windows minus closed periods and reject any booking whose
+`[time, time + durationMinutes]` falls outside. Error string:
+`outside opening hours: HH:MM-HH:MM not within open window(s) on YYYY-MM-DD (open: ...)`
+or `outside opening hours: <businessId> is closed on YYYY-MM-DD` for closed days.
+
+- New helper `_internal.checkBookingFitsOpeningHours(state, businessId, booking)`.
+- Returned at the admin layer as a 400 (POST and PATCH).
+- Existing `validateBooking` is unchanged (still field-level only).
+- 15 new tests in `availabilityStore.test.js` (86 → 101) + 4 new admin tests
+  (37 → 41 first, before §17.2 additions).
+
+### 17.2 Feature 2: Staff confirm → calendar
+
+The pipeline now captures a structured `bookingDraft` on staff-review items so
+the admin Approve action can persist them to the calendar without re-parsing
+the chat.
+
+**Pipeline change** (`end-to-end pipeline ver 1.0/src/pipeline.js`):
+
+- New `inferBookingDraft({ intent, query, normalizedMessage })` returns
+  `{ businessId, date, time, service|partySize, customer, senderId, channel, notes }`
+  for booking/reschedule intents that have a concrete (non-ambiguous) time +
+  date + service-or-partySize. Returns `null` otherwise.
+- Passed into `inbox.submit({ ..., bookingDraft })`.
+
+**Staff inbox change** (`staff inbox ver 1.0/src/staffInbox.js`):
+
+- Items now carry `bookingDraft` (set at submit time) and `bookingResult` (set
+  after the calendar write attempt).
+- New method `inbox.recordBookingResult(id, { ok, error?, bookingId?, ... })`.
+
+**New admin endpoints** (auth same as existing admin endpoints):
+
+| Endpoint | Method | Notes |
+|---|---|---|
+| `/admin/inbox/:businessId` | GET | Lists items, both open and closed. UI filters to `open`. |
+| `/admin/inbox/:businessId/:id` | GET | Single item with sanitized fields. |
+| `/admin/inbox/:businessId/:id/approve` | POST | Body merges into `bookingDraft` (allowed: date, time, service, partySize, durationMinutes, customer, notes). On booking-shaped items, calls `availabilityStore.addBooking`. On non-booking review items, just approves. Returns `{ item, booking }`. 400 if the addBooking validation fails (item stays open for retry); 409 if item already transitioned; 404 if id is unknown. |
+| `/admin/inbox/:businessId/:id/reject` | POST | Body: `{ reason, actor }`. Transitions to `rejected`. |
+
+Admin endpoints reject with 503 `staff_inbox_disabled` when no inbox is wired.
+The startup path in `startWebhookServer` wires `pipeline.inbox` automatically.
+
+**Admin UI change** (`end-to-end pipeline ver 1.0/src/adminHtml.js`):
+
+- New "Pending staff reviews" card at the top of the admin page, always visible
+  (not behind the list/calendar tabs).
+- Each open item shows priority, action, channel, sender, customer text, bot
+  draft, reasons, then for booking-shaped items: editable date / time / service
+  (or partySize) / duration / customer / notes fields + Approve + Reject buttons.
+- Approve POSTs the (possibly edited) fields and reloads everything on success
+  so the new booking shows in the bookings table and calendar.
+- Reject prompts for a reason and POSTs to `/reject`.
+- Refresh button on the card calls the inbox endpoint independently.
+
+**Tests:**
+
+- 9 new pipeline tests in `pipeline.store.test.js` (20 → 29) covering
+  bookingDraft capture vs not-captured (clarify, asking for slots).
+- 27 new admin tests in `admin.test.js` (41 → 68) covering: inbox endpoint
+  disabled, empty list, list+approve writes booking, approve with overrides,
+  approve out-of-hours stays open with `bookingResult.ok=false`, reject,
+  approve twice → 409, non-booking item approve (no calendar write), unknown
+  id → 404.
+
+**Known limitation (intentional for v1):** approving a booking does NOT send a
+confirmation message back to the customer over WhatsApp/IG yet. The channel
+adapter still doesn't talk to real channel APIs (per §8 of this doc). Once a
+real outbound sender is wired, the approve handler should also queue an
+outbound message to the captured `bookingDraft.channel + senderId`.
+
+### 17.3 Feature 3: Google Drive promo connector
+
+The existing `promoSync.js` already exposed a `driveClient` injection point;
+this session adds a real service-account-based implementation.
+
+**New module** (`google drive promo sync ver 1.0/src/googleDriveClient.js`):
+
+- `createGoogleDriveClient({ credentials | serviceAccountJsonPath, folders, httpFetch?, nowFn?, scopes? })`.
+- Implements `{ listFiles({ businessId, folderId }), readFile(file) }`.
+- Auth: RS256 JWT signed with `node:crypto`, exchanged at
+  `https://oauth2.googleapis.com/token` for an access token cached for ~59
+  minutes (Google's hour minus 60s refresh lead).
+- Drive v3 calls: `GET /files?q=` for listing, `GET /files/{id}/export?mimeType=text%2Fplain`
+  for Google Docs, `GET /files/{id}?alt=media` for plain files.
+- No npm deps. Uses built-in `fetch` (Node ≥ 22).
+- `loadFoldersFromEnv()` reads `GDRIVE_FOLDER_<BUSINESS_ID>` vars and lowercases
+  the suffix into business IDs.
+
+**Wired into server** (`end-to-end pipeline ver 1.0/src/server.js`):
+
+- `maybeCreateDriveIntegration(config)` returns `{ store, folders, syncAll }` when
+  BOTH `GOOGLE_SERVICE_ACCOUNT_JSON_PATH` is set AND at least one
+  `GDRIVE_FOLDER_*` is set; `null` otherwise.
+- On server `listen` callback, kicks off `syncAll()` (per-business `syncOnce`).
+  Errors logged, not thrown — bot stays up if Drive is down.
+- The populated `promotionStore` is passed into `createWebhookServer({ promotionStore })`,
+  which the pipeline already uses.
+
+**Env vars** (documented in `whatsapp-web-test-bridge/.env.example`):
+
+```bash
+GOOGLE_SERVICE_ACCOUNT_JSON_PATH=/absolute/path/to/sa.json
+GDRIVE_FOLDER_BEAUTY_DEMO=1A2B3CdEfG_FolderIdHere
+GDRIVE_FOLDER_RESTAURANT_DEMO=4H5I6JkLmN_AnotherFolderId
+GDRIVE_FOLDER_EDU_DEMO=7O8P9QrStU_EduFolderId
+```
+
+If unset, startup logs `Google Drive promo sync: disabled (...)` and the
+pipeline falls back to the in-code seed in `seed/promoSeed.js`. No code path
+change needed to enable/disable.
+
+**Doc format** unchanged — parser was already structured (`Title: ...`,
+`Approved: yes`, blocks separated by `---`). Full template + setup steps live in
+`google drive promo sync ver 1.0/README.md` ("Real Google Drive Connector"
+section).
+
+**Security:**
+
+- Drive content stays inside the existing `PROMOTION_FACTS_UNTRUSTED_DO_NOT_FOLLOW`
+  prompt envelope (added in §13.x security hardening).
+- `Approved: yes` mandatory — blank/missing approval = treated as draft, skipped.
+- Service account needs **Viewer** only; bot never writes to Drive.
+- Folder shared explicitly with service account email, never made public.
+
+**Tests:** 39 new tests in `google drive promo sync ver 1.0/test/googleDriveClient.test.js`
+covering: credential guards (missing path, incomplete creds, bad JSON file),
+`loadFoldersFromEnv` parsing, JWT RS256 signature verifies against the same
+private key, token caching + refresh on expiry, 401/missing-token error paths,
+listFiles URL/query/auth-header shape, unknown-business → empty list, 500
+errors, readFile dispatching to /export for Google Docs vs ?alt=media for
+plain files, no-id error.
+
+### 17.4 Test totals
+
+- Pre-session: 2,391 across 22 runners (some earlier handoff sections
+  miscounted to 2,428; actual sum was 2,391).
+- Post-session: 2,485 across 23 runners. Net +94 = 15 (availabilityStore)
+  + 31 (admin: 4 out-of-hours + 27 inbox) + 9 (pipeline.store bookingDraft)
+  + 39 (new googleDriveClient suite).
+- New runner: `google drive promo sync ver 1.0/test/googleDriveClient.test.js`.
+  Add it to the §4 suite list when you next refresh those tables.
+
+### 17.5 Files changed (uncommitted at section-write time)
+
+```text
+M  HANDOFF.md
+M  end-to-end pipeline ver 1.0/src/adminHtml.js
+M  end-to-end pipeline ver 1.0/src/pipeline.js
+M  end-to-end pipeline ver 1.0/src/server.js
+M  end-to-end pipeline ver 1.0/test/admin.test.js
+M  end-to-end pipeline ver 1.0/test/pipeline.store.test.js
+M  google drive promo sync ver 1.0/README.md
+M  private business backend mock ver 1.0/src/availabilityStore.js
+M  private business backend mock ver 1.0/test/availabilityStore.test.js
+M  staff inbox ver 1.0/src/staffInbox.js
+M  whatsapp-web-test-bridge/.env.example
+?? google drive promo sync ver 1.0/src/googleDriveClient.js
+?? google drive promo sync ver 1.0/test/googleDriveClient.test.js
+```
+
+### 17.6 Suggested next moves
+
+1. **Wire the outbound channel sender** so an Approve also messages the
+   customer with the booking confirmation (still §8 / §17.2 limitation).
+2. **Schedule the Drive sync** — currently runs once on startup. Add a daily
+   `runDue()` call (HK time) using the existing helpers in `hkTime.js`.
+3. **Add a per-business folder UI** so SMEs can paste folder IDs without env
+   var redeploys. Persist alongside the availability store.
+4. **Booking conflict detection** in `addBooking` — still §13.9 #2.
+5. **Per-staff resources** (Amy vs Joey calendars) — still §13.9 #6.
+
+End of session addendum.
+
+---
+
 End of handoff.
