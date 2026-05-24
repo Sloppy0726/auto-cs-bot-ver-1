@@ -142,6 +142,45 @@ async function runAll() {
     eq("booked 11:00 removed from listing", slots, ["11:30", "12:00"]);
   }
 
+  // ---- Case 6: bookingDraft captured on staff_review items ----
+  // When customer picks a specific time and service, the staff_review path should
+  // carry a bookingDraft so the admin Approve flow can write it to the calendar.
+  {
+    const { pipeline } = freshStorePipeline({
+      openingHours: { "0": [], "1": [{ open: "11:00", close: "21:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] }
+    });
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "beauty_demo",
+      from: "booking-draft-test",
+      senderId: "amy_001",
+      text: "想book 5月25號 下午1點 facial"
+    });
+    check("bookingDraft: routed to staff_review", result.finalStatus === "staff_review");
+    check("bookingDraft: staff item exists", result.staffItem !== null);
+    const bd = result.staffItem.bookingDraft;
+    check("bookingDraft: present on inbox item", bd !== null && bd !== undefined);
+    eq("bookingDraft: date captured", bd.date, "2026-05-25");
+    eq("bookingDraft: time captured", bd.time, "13:00");
+    eq("bookingDraft: service captured", bd.service, "facial");
+    eq("bookingDraft: businessId captured", bd.businessId, "beauty_demo");
+  }
+
+  // ---- Case 7: bookingDraft NOT captured for clarify (asking for slots) ----
+  {
+    const { pipeline } = freshStorePipeline({
+      openingHours: { "0": [], "1": [{ open: "11:00", close: "12:30" }], "2": [], "3": [], "4": [], "5": [], "6": [] }
+    });
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "beauty_demo",
+      from: "no-time-test",
+      text: "5月25號 laser 有咩時間"
+    });
+    check("no-time: ready_to_send (clarify, no staff item)", result.finalStatus === "ready_to_send");
+    check("no-time: no staff item to attach bookingDraft to", result.staffItem === null);
+  }
+
   console.log(`pipeline.store: ${testCount} tests passed`);
 }
 

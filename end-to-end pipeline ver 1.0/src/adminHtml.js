@@ -120,6 +120,24 @@ function adminSlotsHtml() {
     #cal-popover label { display: block; font-size: 12px; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
     #cal-popover input { width: 100%; margin-top: 4px; }
 
+    /* Pending staff reviews */
+    .inbox-card { border-left: 3px solid var(--warn); }
+    .inbox-item { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 12px; background: var(--bg); }
+    .inbox-item.priority-high { border-left: 3px solid var(--danger); }
+    .inbox-item.priority-medium { border-left: 3px solid var(--warn); }
+    .inbox-item.priority-low { border-left: 3px solid var(--muted); }
+    .inbox-item.priority-critical { border-left: 3px solid var(--danger); background: rgba(192,57,43,0.06); }
+    .inbox-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; flex-wrap: wrap; }
+    .inbox-meta { font-size: 12px; color: var(--muted); }
+    .inbox-meta .pill { display: inline-block; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); margin-right: 6px; font-weight: 700; }
+    .inbox-customer-text { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 8px 0; font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+    .inbox-draft-text { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 8px 0; font-size: 13px; white-space: pre-wrap; word-break: break-word; color: var(--muted); }
+    .inbox-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 10px 0; }
+    .inbox-fields label { display: block; font-size: 11px; color: var(--muted); font-weight: 700; margin-bottom: 3px; }
+    .inbox-fields input { width: 100%; padding: 5px 8px; }
+    .inbox-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+    .inbox-err { color: var(--danger); font-size: 12px; margin-top: 6px; }
+
     @media (max-width: 720px) {
       .day-row { grid-template-columns: 56px 1fr; }
       .day-row .actions { grid-column: 1 / -1; text-align: right; }
@@ -179,6 +197,17 @@ function adminSlotsHtml() {
     </section>
 
     <div id="cal-popover" hidden></div>
+
+    <!-- Pending staff reviews (always visible) -->
+    <section class="card inbox-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 10px; flex-wrap: wrap;">
+        <h2 style="margin: 0;">Pending staff reviews <span id="inbox-count" class="small" style="margin-left: 6px;"></span></h2>
+        <button type="button" id="inbox-refresh" class="subtle">Refresh inbox</button>
+      </div>
+      <p class="small" style="margin-bottom: 12px;">Items the bot routed to staff. For booking-shaped items, edit the fields and click Approve to write them to the calendar. Click Reject with a reason to dismiss.</p>
+      <div id="inbox-list"></div>
+      <div id="inbox-empty" class="empty" hidden>No pending items.</div>
+    </section>
 
     <!-- List pane (sections) -->
     <section class="view-pane" data-view="list">
@@ -333,11 +362,163 @@ function adminSlotsHtml() {
         renderClosed();
         renderBookings();
         renderCalendar();
+        // Inbox load is independent — don't fail the whole page if it 503s
+        loadInbox().catch(() => {});
         setStatus("Loaded " + bookings.length + " booking(s), " + closedPeriods.length + " closed period(s).", "ok");
       } catch (error) {
         setStatus("Load failed: " + error.message, "err");
       }
     }
+
+    // ---- Pending staff reviews ----
+    const inboxList = document.getElementById("inbox-list");
+    const inboxEmpty = document.getElementById("inbox-empty");
+    const inboxCount = document.getElementById("inbox-count");
+    const inboxRefreshBtn = document.getElementById("inbox-refresh");
+
+    async function loadInbox() {
+      try {
+        const res = await adminFetch("/admin/inbox/" + encodeURIComponent(currentBusiness));
+        const items = (res.items || []).filter((it) => it.status === "open");
+        renderInbox(items);
+      } catch (error) {
+        inboxList.innerHTML = "";
+        inboxEmpty.hidden = true;
+        inboxCount.textContent = "(" + error.message + ")";
+      }
+    }
+
+    function renderInbox(items) {
+      inboxList.innerHTML = "";
+      inboxCount.textContent = items.length === 0 ? "" : "(" + items.length + ")";
+      inboxEmpty.hidden = items.length > 0;
+      for (const item of items) inboxList.appendChild(buildInboxItem(item));
+    }
+
+    function buildInboxItem(item) {
+      const card = document.createElement("div");
+      card.className = "inbox-item priority-" + (item.priority || "low");
+      const bd = item.bookingDraft || null;
+      const reasons = Array.isArray(item.reasons) && item.reasons.length > 0 ? item.reasons.join(", ") : "";
+
+      const head = document.createElement("div");
+      head.className = "inbox-head";
+      head.innerHTML =
+        "<div class='inbox-meta'>"
+        + "<span class='pill'>" + escapeHtml(item.action || "?") + "</span>"
+        + "<span class='pill'>" + escapeHtml(item.priority || "low") + "</span>"
+        + "<span>" + escapeHtml(item.channel || "?") + " · " + escapeHtml(item.senderId || "?") + "</span>"
+        + "</div>"
+        + "<div class='small'>" + escapeHtml(item.createdAt || "") + "</div>";
+      card.appendChild(head);
+
+      if (item.customerText) {
+        const ct = document.createElement("div");
+        ct.className = "inbox-customer-text";
+        ct.textContent = "Customer: " + item.customerText;
+        card.appendChild(ct);
+      }
+      if (item.draftText) {
+        const dt = document.createElement("div");
+        dt.className = "inbox-draft-text";
+        dt.textContent = "Bot draft: " + item.draftText;
+        card.appendChild(dt);
+      }
+      if (reasons) {
+        const r = document.createElement("div");
+        r.className = "small";
+        r.style.marginBottom = "8px";
+        r.textContent = "Reasons: " + reasons;
+        card.appendChild(r);
+      }
+
+      if (bd) {
+        const fields = document.createElement("div");
+        fields.className = "inbox-fields";
+        const isResto = bd.businessId === "restaurant_demo";
+        const partySizeOrService = isResto
+          ? "<label>Party size<input data-k='partySize' type='number' min='1' max='20' value='" + (bd.partySize ?? "") + "'></label>"
+          : "<label>Service<input data-k='service' value='" + escapeAttr(bd.service || "") + "'></label>";
+        fields.innerHTML =
+          "<label>Date<input data-k='date' value='" + escapeAttr(bd.date || "") + "'></label>"
+          + "<label>Time<input data-k='time' value='" + escapeAttr(bd.time || "") + "'></label>"
+          + partySizeOrService
+          + "<label>Duration (min)<input data-k='durationMinutes' type='number' min='5' max='240' value='" + (bd.durationMinutes ?? "") + "' placeholder='auto'></label>"
+          + "<label>Customer<input data-k='customer' value='" + escapeAttr(bd.customer || "") + "'></label>"
+          + "<label>Notes<input data-k='notes' value=''></label>";
+        card.appendChild(fields);
+      } else {
+        const note = document.createElement("div");
+        note.className = "small";
+        note.style.marginBottom = "8px";
+        note.textContent = "No booking draft attached. Approving will just clear the item from the queue.";
+        card.appendChild(note);
+      }
+
+      const err = document.createElement("div");
+      err.className = "inbox-err";
+      err.hidden = true;
+      card.appendChild(err);
+
+      const actions = document.createElement("div");
+      actions.className = "inbox-actions";
+      const rejectBtn = document.createElement("button");
+      rejectBtn.type = "button";
+      rejectBtn.className = "danger";
+      rejectBtn.textContent = "Reject";
+      const approveBtn = document.createElement("button");
+      approveBtn.type = "button";
+      approveBtn.className = "primary";
+      approveBtn.textContent = bd ? "Approve + add to calendar" : "Approve";
+      actions.appendChild(rejectBtn);
+      actions.appendChild(approveBtn);
+      card.appendChild(actions);
+
+      approveBtn.addEventListener("click", async () => {
+        err.hidden = true;
+        const overrides = {};
+        card.querySelectorAll(".inbox-fields input").forEach((inp) => {
+          const k = inp.dataset.k;
+          const v = inp.value.trim();
+          if (v === "") return;
+          overrides[k] = (k === "partySize" || k === "durationMinutes") ? Number(v) : v;
+        });
+        approveBtn.disabled = true; rejectBtn.disabled = true;
+        try {
+          await adminFetch("/admin/inbox/" + encodeURIComponent(currentBusiness) + "/" + encodeURIComponent(item.id) + "/approve", {
+            method: "POST",
+            body: JSON.stringify(overrides)
+          });
+          await loadAll();
+          setStatus("Booking approved and added to calendar.", "ok");
+        } catch (error) {
+          err.hidden = false;
+          err.textContent = "Approve failed: " + error.message;
+          approveBtn.disabled = false; rejectBtn.disabled = false;
+        }
+      });
+
+      rejectBtn.addEventListener("click", async () => {
+        const reason = window.prompt("Reason for rejection (optional):", "") || "";
+        approveBtn.disabled = true; rejectBtn.disabled = true;
+        try {
+          await adminFetch("/admin/inbox/" + encodeURIComponent(currentBusiness) + "/" + encodeURIComponent(item.id) + "/reject", {
+            method: "POST",
+            body: JSON.stringify({ reason })
+          });
+          await loadInbox();
+          setStatus("Item rejected.", "ok");
+        } catch (error) {
+          err.hidden = false;
+          err.textContent = "Reject failed: " + error.message;
+          approveBtn.disabled = false; rejectBtn.disabled = false;
+        }
+      });
+
+      return card;
+    }
+
+    inboxRefreshBtn.addEventListener("click", () => loadInbox());
 
     // ---- Opening hours editor ----
     function renderHours() {

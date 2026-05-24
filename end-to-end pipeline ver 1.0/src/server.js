@@ -13,6 +13,8 @@ const { createAvailabilityStore } = require("../../private business backend mock
 const mockBusinessSeed = require("../../private business backend mock ver 1.0/seed/mockBusinessData");
 const { createConversationContextStore } = require("../../conversation context ver 1.0/src/conversationContext");
 const fakeBusinessData = require("../../private business backend mock ver 1.0/seed/mockBusinessData");
+const { createPromoSync, createPromotionStore } = require("../../google drive promo sync ver 1.0/src/promoSync");
+const { createGoogleDriveClient, loadFoldersFromEnv } = require("../../google drive promo sync ver 1.0/src/googleDriveClient");
 
 const DEFAULT_MAX_BODY_BYTES = 1_000_000;
 const DEFAULT_REPLAY_WINDOW_SECONDS = 300;
@@ -23,6 +25,7 @@ const DEFAULT_PORT = 3000;
 function createWebhookServer(config = {}) {
   const pipeline = config.pipeline || createPipeline(config);
   const availabilityStore = config.availabilityStore || null;
+  const staffInbox = config.staffInbox || (pipeline && typeof pipeline.inbox === "object" ? pipeline.inbox : null);
   const conversationContextStore = config.conversationContextStore === false
     ? null
     : (config.conversationContextStore || createConversationContextStore(config.conversationContext || {}));
@@ -43,7 +46,7 @@ function createWebhookServer(config = {}) {
     }
 
     if (req.url && req.url.startsWith("/admin/")) {
-      await handleAdminRequest(req, res, { availabilityStore, config });
+      await handleAdminRequest(req, res, { availabilityStore, staffInbox, config });
       return;
     }
 
@@ -350,12 +353,8 @@ function publicWebhookResponse(result, payload = {}, config = {}, contextResult 
   return response;
 }
 
-async function handleAdminRequest(req, res, { availabilityStore, config }) {
+async function handleAdminRequest(req, res, { availabilityStore, staffInbox, config }) {
   try {
-    if (!availabilityStore) {
-      writeJson(res, 503, { error: "availability_store_disabled" });
-      return;
-    }
     const auth = verifyAdminRequest(req, config);
     if (auth.error) {
       writeJson(res, auth.status || 401, { error: auth.error });
@@ -372,6 +371,18 @@ async function handleAdminRequest(req, res, { availabilityStore, config }) {
       const body = await readBody(req, config.maxBodyBytes, config.bodyTimeoutMs);
       return parseJson(body);
     };
+
+    // Inbox endpoints work without availabilityStore, but the approve action
+    // needs it to actually write the booking. Keep them outside the availability gate.
+    if (url.resource === "inbox") {
+      await handleInboxRequest(req, res, { staffInbox, availabilityStore, url, readPayload });
+      return;
+    }
+
+    if (!availabilityStore) {
+      writeJson(res, 503, { error: "availability_store_disabled" });
+      return;
+    }
 
     // Opening hours: GET/PUT  /admin/opening-hours/:businessId
     if (url.resource === "opening-hours" && url.businessId && !url.id) {
@@ -444,6 +455,120 @@ async function handleAdminRequest(req, res, { availabilityStore, config }) {
   }
 }
 
+async function handleInboxRequest(req, res, { staffInbox, availabilityStore, url, readPayload }) {
+  if (!staffInbox) {
+    writeJson(res, 503, { error: "staff_inbox_disabled" });
+    return;
+  }
+
+  // GET /admin/inbox/:businessId  — list open + recent items
+  if (req.method === "GET" && url.businessId && !url.id) {
+    const all = staffInbox.list({ businessId: url.businessId });
+    const items = all.map(publicInboxItem);
+    writeJson(res, 200, { businessId: url.businessId, items });
+    return;
+  }
+
+  // GET /admin/inbox/:businessId/:id  — single item
+  if (req.method === "GET" && url.businessId && url.id && !url.action) {
+    const item = staffInbox.get(url.id);
+    if (!item || item.businessId !== url.businessId) {
+      writeJson(res, 404, { error: "inbox_item_not_found" });
+      return;
+    }
+    writeJson(res, 200, { item: publicInboxItem(item) });
+    return;
+  }
+
+  // POST /admin/inbox/:businessId/:id/approve  — approve + write booking
+  if (req.method === "POST" && url.businessId && url.id && url.action === "approve") {
+    const item = staffInbox.get(url.id);
+    if (!item || item.businessId !== url.businessId) {
+      writeJson(res, 404, { error: "inbox_item_not_found" });
+      return;
+    }
+    if (item.status !== "open") {
+      writeJson(res, 409, { error: `inbox_item_already_${item.status}` });
+      return;
+    }
+    const overrides = await readPayload();
+    const bookingDraft = item.bookingDraft;
+    if (!bookingDraft) {
+      // Non-booking review item — just approve, no calendar write
+      const updated = staffInbox.approve(url.id, overrides?.actor || "staff");
+      writeJson(res, 200, { item: publicInboxItem(updated), booking: null });
+      return;
+    }
+    if (!availabilityStore) {
+      writeJson(res, 503, { error: "availability_store_disabled" });
+      return;
+    }
+
+    const finalDraft = mergeBookingOverrides(bookingDraft, overrides || {});
+    const written = availabilityStore.addBooking(bookingDraft.businessId, finalDraft);
+    if (!written.ok) {
+      // Don't transition the inbox item — leave it open so staff can edit and retry
+      staffInbox.recordBookingResult(url.id, { ok: false, error: written.error, attemptedAt: new Date().toISOString() });
+      writeJson(res, 400, { error: written.error });
+      return;
+    }
+    staffInbox.recordBookingResult(url.id, { ok: true, bookingId: written.booking.id, booking: written.booking, approvedAt: new Date().toISOString() });
+    const updated = staffInbox.approve(url.id, overrides?.actor || "staff");
+    writeJson(res, 200, { item: publicInboxItem(updated), booking: written.booking });
+    return;
+  }
+
+  // POST /admin/inbox/:businessId/:id/reject  — reject with reason
+  if (req.method === "POST" && url.businessId && url.id && url.action === "reject") {
+    const item = staffInbox.get(url.id);
+    if (!item || item.businessId !== url.businessId) {
+      writeJson(res, 404, { error: "inbox_item_not_found" });
+      return;
+    }
+    if (item.status !== "open") {
+      writeJson(res, 409, { error: `inbox_item_already_${item.status}` });
+      return;
+    }
+    const body = await readPayload();
+    const updated = staffInbox.reject(url.id, String(body?.reason || "").slice(0, 500), body?.actor || "staff");
+    writeJson(res, 200, { item: publicInboxItem(updated) });
+    return;
+  }
+
+  writeJson(res, 405, { error: "method_not_allowed" });
+}
+
+function publicInboxItem(item) {
+  return {
+    id: item.id,
+    status: item.status,
+    priority: item.priority,
+    action: item.action,
+    businessId: item.businessId,
+    channel: item.channel,
+    senderId: item.senderId,
+    customerText: item.customerText,
+    draftText: item.draftText,
+    escalationLabel: item.escalationLabel,
+    reasons: item.reasons,
+    bookingDraft: item.bookingDraft,
+    bookingResult: item.bookingResult,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt
+  };
+}
+
+function mergeBookingOverrides(draft, overrides) {
+  const allowed = ["date", "time", "service", "partySize", "durationMinutes", "customer", "notes"];
+  const merged = { ...draft };
+  for (const key of allowed) {
+    if (overrides[key] !== undefined && overrides[key] !== null && overrides[key] !== "") {
+      merged[key] = overrides[key];
+    }
+  }
+  return merged;
+}
+
 function parseAdminPath(url) {
   const [pathOnly] = String(url || "").split("?");
   const parts = pathOnly.replace(/^\/+|\/+$/g, "").split("/");
@@ -451,7 +576,8 @@ function parseAdminPath(url) {
   return {
     resource: parts[1] ? decodeURIComponent(parts[1]) : null,
     businessId: parts[2] ? decodeURIComponent(parts[2]) : null,
-    id: parts[3] ? decodeURIComponent(parts[3]) : null
+    id: parts[3] ? decodeURIComponent(parts[3]) : null,
+    action: parts[4] ? decodeURIComponent(parts[4]) : null
   };
 }
 
@@ -1239,6 +1365,8 @@ function startWebhookServer(config = {}) {
     || (realLlmAdapter && !paraphraseDisabled ? createParaphraser(realLlmAdapter) : null);
   const availabilityStore = config.availabilityStore || createAvailabilityStore({ seed: mockBusinessSeed });
   const backend = config.backend || createBusinessBackend({ availabilityStore });
+  const driveIntegration = config.promotionStore ? null : maybeCreateDriveIntegration(config);
+  const promotionStore = config.promotionStore || (driveIntegration ? driveIntegration.store : null);
   const llmMode = claudeAdapters.llmAdapter
     ? `claude:${process.env.CLAUDE_MODEL || process.env.CLAUDE_DRAFT_MODEL || "claude-haiku-4-5-20251001"}`
     : openAIAdapters.llmAdapter
@@ -1254,16 +1382,53 @@ function startWebhookServer(config = {}) {
     llmIntentMode,
     paraphraser,
     backend,
-    availabilityStore
+    availabilityStore,
+    ...(promotionStore ? { promotionStore } : {})
   });
 
-  return server.listen(port, host, () => {
+  return server.listen(port, host, async () => {
     const mode = allowUnsignedWebhooks ? "unsigned local mode" : "signed webhook mode";
     console.log(`Webhook server listening at http://${host}:${port}/webhook (${mode}, businessId=${webhookBusinessId || "payload-selected"})`);
     console.log(`LLM mode: ${llmMode}; intent analyzer: ${llmIntentAnalyzer ? llmIntentMode : "deterministic"}; paraphraser: ${paraphraser ? "on" : "off"}`);
     const adminAuth = (config.adminToken || process.env.ADMIN_TOKEN) ? "token required" : (nodeEnv === "production" ? "blocked (set ADMIN_TOKEN)" : "open (local dev)");
     console.log(`Admin slots page: http://${host}:${port}/admin  (auth: ${adminAuth})`);
+    if (driveIntegration) {
+      console.log(`Google Drive promo sync: enabled for ${Object.keys(driveIntegration.folders).join(", ") || "(no folders mapped)"}`);
+      await driveIntegration.syncAll().catch((error) => {
+        console.error(`Google Drive initial sync failed: ${error.message}`);
+      });
+    } else {
+      console.log(`Google Drive promo sync: disabled (set GOOGLE_SERVICE_ACCOUNT_JSON_PATH + GDRIVE_FOLDER_<BUSINESS_ID> to enable)`);
+    }
   });
+}
+
+// Wires a real Google Drive client into a fresh promotion store if the user has
+// configured a service account + at least one GDRIVE_FOLDER_* env var. Returns
+// null otherwise so the pipeline falls back to the seed promo store.
+function maybeCreateDriveIntegration(config = {}) {
+  const jsonPath = config.googleServiceAccountJsonPath || process.env.GOOGLE_SERVICE_ACCOUNT_JSON_PATH;
+  const folders = config.gdriveFolders || loadFoldersFromEnv();
+  if (!jsonPath || Object.keys(folders).length === 0) return null;
+
+  let driveClient;
+  try {
+    driveClient = createGoogleDriveClient({ serviceAccountJsonPath: jsonPath, folders });
+  } catch (error) {
+    console.error(`Google Drive client init failed: ${error.message}`);
+    return null;
+  }
+
+  const store = createPromotionStore();
+  const syncs = Object.keys(folders).map((businessId) => createPromoSync({ driveClient, store, businessId, folderId: folders[businessId] }));
+
+  return {
+    store,
+    folders,
+    async syncAll() {
+      for (const sync of syncs) await sync.syncOnce();
+    }
+  };
 }
 
 function createParaphraser(llmAdapter) {

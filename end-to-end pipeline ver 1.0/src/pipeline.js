@@ -86,9 +86,11 @@ async function runMessage(input = {}, deps = {}) {
   const draft = await generateDraft({ decision, knowledge, intent, gateway, promotions, backendFacts, modelRoute }, { llmAdapter: deps.llmAdapter, paraphraser: deps.paraphraser, modelRoute });
   const safety = checkDraft({ draft, decision, knowledge, intent, gateway });
 
+  const bookingDraft = inferBookingDraft({ intent, query: backendQuery, normalizedMessage });
+
   let staffItem = null;
   if (!safety.safeToSend || !["auto_send", "clarify"].includes(draft.action)) {
-    staffItem = deps.inbox.submit({ decision, draft, safety, normalizedMessage, customerText: gateway.sanitizedText, backendFacts, promotions });
+    staffItem = deps.inbox.submit({ decision, draft, safety, normalizedMessage, customerText: gateway.sanitizedText, backendFacts, promotions, bookingDraft });
   }
 
   const outbound = buildOutboundMessage({ normalizedMessage, draft, safety, staffItem });
@@ -281,6 +283,39 @@ function formatServiceEn(service) {
   if (!service) return null;
   const map = { facial: "facial", laser: "laser hair removal", assessment: "skin assessment", p3_english: "P3 English assessment" };
   return map[service] || service;
+}
+
+// Snapshot of the booking the customer is asking for, captured at staff_review time
+// so an approve action can write it to the calendar without re-parsing the chat.
+// Returns null when intent isn't a booking-shaped one or when essentials are missing
+// (e.g. ambiguous time, no date). Staff can edit on the admin page before approving.
+function inferBookingDraft({ intent, query, normalizedMessage }) {
+  if (!intent || !["booking", "reschedule"].includes(intent.primaryIntent)) return null;
+  if (!query?.date || !query?.time) return null;
+  if (query.ambiguousTime) return null;
+
+  const businessId = normalizedMessage.businessId;
+  const draft = {
+    businessId,
+    date: query.date,
+    time: query.time,
+    customer: normalizedMessage.senderDisplayName || normalizedMessage.senderId || null,
+    senderId: normalizedMessage.senderId || null,
+    channel: normalizedMessage.channel || null,
+    notes: null
+  };
+
+  if (businessId === "restaurant_demo") {
+    if (!query.partySize) return null;
+    draft.partySize = Number(query.partySize);
+  } else if (businessId === "beauty_demo" || businessId === "edu_demo") {
+    if (!query.service) return null;
+    draft.service = query.service;
+  } else {
+    return null;
+  }
+
+  return draft;
 }
 
 function factsObject(backendFacts = {}) {

@@ -42,6 +42,13 @@ function createStaffInbox(config = {}) {
     },
     takeOver(id, actor = "staff") {
       return transition(items, id, STATUSES.TAKEN_OVER, { actor }, nowFn);
+    },
+    recordBookingResult(id, result) {
+      const item = items.get(id);
+      if (!item) return null;
+      const updated = { ...item, bookingResult: result || null, updatedAt: timestamp(nowFn) };
+      items.set(id, updated);
+      return updated;
     }
   };
 }
@@ -70,6 +77,8 @@ function createItem(input, index, nowFn = () => new Date()) {
     staffPacket: decision.staffPacket || null,
     backendFacts: input.backendFacts || null,
     promotions: input.promotions || null,
+    bookingDraft: input.bookingDraft || null,
+    bookingResult: null,
     reasons: [...(decision.reasons || []), ...(safety.reasons || [])],
     history: [{ status: STATUSES.OPEN, actor: "system", at: timestamp(nowFn) }],
     createdAt: timestamp(nowFn),

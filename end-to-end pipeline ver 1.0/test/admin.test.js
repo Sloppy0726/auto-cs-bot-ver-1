@@ -11,6 +11,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { createWebhookServer } = require("../src/server");
 const { createAvailabilityStore } = require("../../private business backend mock ver 1.0/src/availabilityStore");
+const { createStaffInbox } = require("../../staff inbox ver 1.0/src/staffInbox");
 
 let testCount = 0;
 function check(label, condition, detail) {
@@ -24,19 +25,21 @@ function eq(label, actual, expected) {
 
 const stubPipeline = { async runMessage() { return { finalStatus: "ready_to_send", outbound: { status: "ready_to_send", payload: { text: "ok" } }, staffItem: null, decision: { action: "auto_send" } }; } };
 
-function freshServer({ adminToken, nodeEnv } = {}) {
+function freshServer({ adminToken, nodeEnv, withInbox } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "admin-test-"));
   const filePath = path.join(dir, "availability.json");
   const store = createAvailabilityStore({ filePath });
+  const inbox = withInbox ? createStaffInbox() : null;
   const server = createWebhookServer({
     pipeline: stubPipeline,
     availabilityStore: store,
+    staffInbox: inbox,
     adminToken,
     nodeEnv,
     allowUnsignedWebhooks: true,
     conversationContextStore: false
   });
-  return { server, store, filePath };
+  return { server, store, inbox, filePath };
 }
 
 function sendAdmin({ server, method, urlPath, headers = {}, body }) {
@@ -205,6 +208,168 @@ async function runAll() {
     const res = await sendAdmin({ server, method: "POST", urlPath: "/admin/bookings/beauty_demo", body: { date: "2026-05-25", time: "13:00" } });
     check("POST booking missing service: 400", res.statusCode === 400);
     check("POST booking missing service: error", res.body.error && res.body.error.includes("service is required"));
+  }
+
+  // ---- Out-of-hours booking rejection ----
+  {
+    // beauty_demo Mon default hours: 11:00-21:00. 22:00 facial is past close.
+    const { server } = freshServer({});
+    const res = await sendAdmin({ server, method: "POST", urlPath: "/admin/bookings/beauty_demo", body: { date: "2026-05-25", time: "22:00", service: "facial" } });
+    check("POST out-of-hours booking: 400", res.statusCode === 400);
+    check("POST out-of-hours booking: error mentions outside opening hours", res.body.error && res.body.error.includes("outside opening hours"));
+  }
+  {
+    // PATCH that moves an existing booking out of hours → 400
+    const { server, store } = freshServer({});
+    const added = store.addBooking("beauty_demo", { date: "2026-05-25", time: "13:00", service: "facial" });
+    const res = await sendAdmin({ server, method: "PATCH", urlPath: `/admin/bookings/beauty_demo/${added.booking.id}`, body: { time: "22:00" } });
+    check("PATCH out-of-hours: 400", res.statusCode === 400);
+    check("PATCH out-of-hours: error mentions outside opening hours", res.body.error && res.body.error.includes("outside opening hours"));
+  }
+
+  // ---- /admin/inbox: list + approve + reject ----
+  {
+    // No inbox wired → 503
+    const { server } = freshServer({});
+    const res = await sendAdmin({ server, method: "GET", urlPath: "/admin/inbox/beauty_demo" });
+    check("GET /admin/inbox without inbox wired: 503", res.statusCode === 503);
+  }
+  {
+    // Empty inbox list
+    const { server } = freshServer({ withInbox: true });
+    const res = await sendAdmin({ server, method: "GET", urlPath: "/admin/inbox/beauty_demo" });
+    check("GET /admin/inbox empty: 200", res.statusCode === 200);
+    eq("GET /admin/inbox empty: items=[]", res.body.items, []);
+  }
+  {
+    // Submit a booking-shaped item, list it, approve it → calendar gets the booking
+    const { server, inbox, store } = freshServer({ withInbox: true });
+    const submitted = inbox.submit({
+      decision: { action: "staff_review", businessId: "beauty_demo" },
+      draft: { action: "staff_review", text: "draft for 2026-05-25 13:00 facial" },
+      safety: { verdict: "revise", safeToSend: false },
+      normalizedMessage: { businessId: "beauty_demo", senderId: "amy_001", channel: "whatsapp" },
+      customerText: "想book 5月25號 1pm facial",
+      bookingDraft: {
+        businessId: "beauty_demo",
+        date: "2026-05-25",
+        time: "13:00",
+        service: "facial",
+        customer: "amy_001",
+        senderId: "amy_001",
+        channel: "whatsapp",
+        notes: null
+      }
+    });
+
+    const listRes = await sendAdmin({ server, method: "GET", urlPath: "/admin/inbox/beauty_demo" });
+    check("GET inbox after submit: 200", listRes.statusCode === 200);
+    check("GET inbox: includes the new item", listRes.body.items.length === 1 && listRes.body.items[0].id === submitted.id);
+    check("GET inbox: bookingDraft is surfaced", listRes.body.items[0].bookingDraft?.date === "2026-05-25");
+
+    // Approve → addBooking → calendar
+    const { server: server2 } = freshServer({ withInbox: true });
+    // The first freshServer call already wrote to its own store; we need to re-use the same inbox+store,
+    // so use sendAdmin against the same server (it closes after each call), and we already only call once below.
+    void server2;
+    const approveRes = await sendAdmin({ server, method: "POST", urlPath: `/admin/inbox/beauty_demo/${submitted.id}/approve`, body: {} });
+    check("POST approve: 200", approveRes.statusCode === 200);
+    check("POST approve: returns booking with id", approveRes.body.booking?.id?.startsWith("book_"));
+    check("POST approve: item status flips to approved", approveRes.body.item.status === "approved");
+    check("POST approve: writes to availabilityStore", store.listBookings("beauty_demo").length === 1);
+    check("POST approve: bookingResult recorded", approveRes.body.item.bookingResult?.ok === true);
+  }
+  {
+    // Approve a booking with overrides (staff changes time before approving)
+    const { server, inbox, store } = freshServer({ withInbox: true });
+    const submitted = inbox.submit({
+      decision: { action: "staff_review", businessId: "beauty_demo" },
+      draft: { action: "staff_review", text: "x" },
+      safety: { verdict: "revise", safeToSend: false },
+      normalizedMessage: { businessId: "beauty_demo", senderId: "may_002", channel: "whatsapp" },
+      customerText: "x",
+      bookingDraft: { businessId: "beauty_demo", date: "2026-05-25", time: "13:00", service: "facial", customer: "may_002", senderId: "may_002", channel: "whatsapp" }
+    });
+    const res = await sendAdmin({ server, method: "POST", urlPath: `/admin/inbox/beauty_demo/${submitted.id}/approve`, body: { time: "14:00", notes: "VIP, prefers Amy" } });
+    check("approve with override: 200", res.statusCode === 200);
+    const booked = store.listBookings("beauty_demo")[0];
+    check("approve with override: time overridden", booked?.time === "14:00");
+    check("approve with override: notes overridden", booked?.notes === "VIP, prefers Amy");
+  }
+  {
+    // Approve a booking that violates opening hours → 400, item stays open
+    const { server, inbox, store } = freshServer({ withInbox: true });
+    const submitted = inbox.submit({
+      decision: { action: "staff_review", businessId: "beauty_demo" },
+      draft: { action: "staff_review", text: "x" },
+      safety: { verdict: "revise", safeToSend: false },
+      normalizedMessage: { businessId: "beauty_demo", senderId: "u", channel: "whatsapp" },
+      customerText: "x",
+      bookingDraft: { businessId: "beauty_demo", date: "2026-05-25", time: "22:00", service: "facial", customer: "u", senderId: "u", channel: "whatsapp" }
+    });
+    const res = await sendAdmin({ server, method: "POST", urlPath: `/admin/inbox/beauty_demo/${submitted.id}/approve`, body: {} });
+    check("approve out-of-hours: 400", res.statusCode === 400);
+    check("approve out-of-hours: error mentions outside opening hours", res.body.error && res.body.error.includes("outside opening hours"));
+    check("approve out-of-hours: no booking written", store.listBookings("beauty_demo").length === 0);
+    // Item should still be open (so staff can edit + retry)
+    const { server: s2 } = freshServer({ withInbox: true });
+    void s2;
+    // Fetch via the inbox directly since the server above is now closed
+    const itemAfter = inbox.get(submitted.id);
+    check("approve out-of-hours: item still open for retry", itemAfter.status === "open");
+    check("approve out-of-hours: bookingResult error recorded", itemAfter.bookingResult?.ok === false);
+  }
+  {
+    // Reject a booking with a reason
+    const { server, inbox } = freshServer({ withInbox: true });
+    const submitted = inbox.submit({
+      decision: { action: "staff_review", businessId: "beauty_demo" },
+      draft: { action: "staff_review", text: "x" },
+      safety: { verdict: "revise", safeToSend: false },
+      normalizedMessage: { businessId: "beauty_demo", senderId: "u", channel: "whatsapp" },
+      customerText: "x",
+      bookingDraft: { businessId: "beauty_demo", date: "2026-05-25", time: "13:00", service: "facial", customer: "u", senderId: "u", channel: "whatsapp" }
+    });
+    const res = await sendAdmin({ server, method: "POST", urlPath: `/admin/inbox/beauty_demo/${submitted.id}/reject`, body: { reason: "Customer cancelled by phone" } });
+    check("reject: 200", res.statusCode === 200);
+    check("reject: status=rejected", res.body.item.status === "rejected");
+  }
+  {
+    // Approving an already-approved item → 409
+    const { server, inbox } = freshServer({ withInbox: true });
+    const submitted = inbox.submit({
+      decision: { action: "staff_review", businessId: "beauty_demo" },
+      draft: { action: "staff_review", text: "x" },
+      safety: { verdict: "revise", safeToSend: false },
+      normalizedMessage: { businessId: "beauty_demo", senderId: "u", channel: "whatsapp" },
+      customerText: "x",
+      bookingDraft: { businessId: "beauty_demo", date: "2026-05-25", time: "13:00", service: "facial", customer: "u", senderId: "u", channel: "whatsapp" }
+    });
+    inbox.approve(submitted.id);
+    const res = await sendAdmin({ server, method: "POST", urlPath: `/admin/inbox/beauty_demo/${submitted.id}/approve`, body: {} });
+    check("approve already-approved: 409", res.statusCode === 409);
+  }
+  {
+    // Approve a non-booking review item (no bookingDraft) → no calendar write, just approves
+    const { server, inbox, store } = freshServer({ withInbox: true });
+    const submitted = inbox.submit({
+      decision: { action: "handoff", businessId: "beauty_demo", escalationLabel: "complaint" },
+      draft: { action: "handoff", text: "staff handoff text" },
+      safety: { verdict: "revise", safeToSend: false },
+      normalizedMessage: { businessId: "beauty_demo", senderId: "u", channel: "whatsapp" },
+      customerText: "complaint"
+    });
+    const res = await sendAdmin({ server, method: "POST", urlPath: `/admin/inbox/beauty_demo/${submitted.id}/approve`, body: {} });
+    check("approve non-booking: 200", res.statusCode === 200);
+    check("approve non-booking: no booking written", store.listBookings("beauty_demo").length === 0);
+    check("approve non-booking: booking field null", res.body.booking === null);
+    check("approve non-booking: status approved", res.body.item.status === "approved");
+  }
+  {
+    // Unknown id → 404
+    const { server } = freshServer({ withInbox: true });
+    const res = await sendAdmin({ server, method: "POST", urlPath: "/admin/inbox/beauty_demo/staff_does_not_exist/approve", body: {} });
+    check("approve unknown id: 404", res.statusCode === 404);
   }
 
   // ---- /admin/store dump ----
