@@ -11,7 +11,7 @@ const {
   _internal
 } = require("../src/availabilityStore");
 
-const { validateOpeningHours, validateClosedPeriod, validateBooking, subtractMany, toMinutes } = _internal;
+const { validateOpeningHours, validateClosedPeriod, validateBooking, subtractMany, toMinutes, checkBookingFitsOpeningHours } = _internal;
 
 let testCount = 0;
 function check(label, condition, detail) {
@@ -243,6 +243,67 @@ function freshStore(prefix = "availabilityStore-test") {
   // Unknown businessId for setters
   check("setOpeningHours rejects unknown businessId", store.setOpeningHours("nope_demo", { "0": [] }).ok === false);
   check("addClosedPeriod rejects unknown businessId", store.addClosedPeriod("nope_demo", { date: "2026-05-25", start: "13:00", end: "14:00" }).ok === false);
+})();
+
+// ---------- Out-of-hours rejection ----------
+(function outOfHoursTests() {
+  const { store } = freshStore("out-of-hours");
+  store.setOpeningHours("beauty_demo", { "0": [], "1": [{ open: "11:00", close: "19:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] });
+
+  // 2026-05-25 is Monday. Window 11:00-19:00.
+  const beforeOpen = store.addBooking("beauty_demo", { date: "2026-05-25", time: "10:00", service: "laser" });
+  check("rejects booking before opening", beforeOpen.ok === false && beforeOpen.error.includes("outside opening hours"));
+
+  const afterClose = store.addBooking("beauty_demo", { date: "2026-05-25", time: "18:45", service: "laser" }); // 18:45+30=19:15 > 19:00
+  check("rejects booking that ends after close", afterClose.ok === false && afterClose.error.includes("outside opening hours"));
+
+  const closedDay = store.addBooking("beauty_demo", { date: "2026-05-26", time: "13:00", service: "facial" }); // Tue is closed
+  check("rejects booking on closed day", closedDay.ok === false && closedDay.error.includes("closed on"));
+
+  const inside = store.addBooking("beauty_demo", { date: "2026-05-25", time: "13:00", service: "facial" }); // 13:00+75=14:15 inside
+  check("accepts booking fully inside opening window", inside.ok === true);
+
+  const edgeStart = store.addBooking("beauty_demo", { date: "2026-05-25", time: "11:00", service: "laser" }); // exactly at open
+  check("accepts booking starting at open time", edgeStart.ok === true);
+
+  const edgeEnd = store.addBooking("beauty_demo", { date: "2026-05-25", time: "18:30", service: "laser" }); // 18:30+30=19:00 exactly at close
+  check("accepts booking ending exactly at close", edgeEnd.ok === true);
+
+  // Closed-period blocks an otherwise-valid time
+  const { store: store2 } = freshStore("out-of-hours-closed");
+  store2.setOpeningHours("beauty_demo", { "0": [], "1": [{ open: "11:00", close: "19:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] });
+  store2.addClosedPeriod("beauty_demo", { date: "2026-05-25", start: "13:00", end: "14:00", reason: "lunch" });
+  const insideClosed = store2.addBooking("beauty_demo", { date: "2026-05-25", time: "13:00", service: "laser" });
+  check("rejects booking inside closed period", insideClosed.ok === false && insideClosed.error.includes("outside opening hours"));
+  const straddleClosed = store2.addBooking("beauty_demo", { date: "2026-05-25", time: "12:45", service: "laser" }); // 12:45-13:15 straddles closed start
+  check("rejects booking that straddles closed-period start", straddleClosed.ok === false);
+  const afterClosed = store2.addBooking("beauty_demo", { date: "2026-05-25", time: "14:00", service: "laser" });
+  check("accepts booking starting right after closed period ends", afterClosed.ok === true);
+
+  // updateBooking re-checks
+  const { store: store3 } = freshStore("out-of-hours-update");
+  store3.setOpeningHours("beauty_demo", { "0": [], "1": [{ open: "11:00", close: "19:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] });
+  const seed = store3.addBooking("beauty_demo", { date: "2026-05-25", time: "13:00", service: "laser" });
+  const moveBad = store3.updateBooking("beauty_demo", seed.booking.id, { time: "21:00" });
+  check("updateBooking rejects move outside opening hours", moveBad.ok === false && moveBad.error.includes("outside opening hours"));
+  const moveOk = store3.updateBooking("beauty_demo", seed.booking.id, { time: "14:00" });
+  check("updateBooking accepts move inside opening hours", moveOk.ok === true && moveOk.booking.time === "14:00");
+
+  // Restaurant: 19:00 partySize 4 90min → 19:00-20:30; window 11:30-22:30 ok
+  const { store: store4 } = freshStore("out-of-hours-resto");
+  const restoOk = store4.addBooking("restaurant_demo", { date: "2026-05-25", time: "19:00", partySize: 4 });
+  check("restaurant inside default Mon hours: ok", restoOk.ok === true);
+  const restoLate = store4.addBooking("restaurant_demo", { date: "2026-05-25", time: "22:00", partySize: 4 }); // 22:00+90=23:30 > 22:30
+  check("restaurant booking past close: rejected", restoLate.ok === false);
+
+  // Direct helper unit test
+  const state = { businesses: { beauty_demo: {
+    openingHours: { "0": [], "1": [{ open: "11:00", close: "19:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] },
+    closedPeriods: [],
+    bookings: []
+  } } };
+  check("helper fits inside", checkBookingFitsOpeningHours(state, "beauty_demo", { date: "2026-05-25", time: "12:00", durationMinutes: 30 }).ok === true);
+  check("helper rejects outside", checkBookingFitsOpeningHours(state, "beauty_demo", { date: "2026-05-25", time: "20:00", durationMinutes: 30 }).ok === false);
 })();
 
 // ---------- Persistence round-trip ----------

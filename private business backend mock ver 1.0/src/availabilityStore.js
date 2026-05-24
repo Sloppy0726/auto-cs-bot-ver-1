@@ -102,6 +102,8 @@ function createAvailabilityStore(options = {}) {
     const v = validateBooking(businessId, booking);
     if (v.error) return { ok: false, error: v.error };
     const state = loadAll();
+    const fit = checkBookingFitsOpeningHours(state, businessId, v.booking);
+    if (!fit.ok) return { ok: false, error: fit.error };
     const record = v.booking;
     record.id = record.id || newId("book");
     ensureBusiness(state, businessId).bookings.push(record);
@@ -117,6 +119,8 @@ function createAvailabilityStore(options = {}) {
     const merged = { ...arr[idx], ...patch, id };
     const v = validateBooking(businessId, merged);
     if (v.error) return { ok: false, error: v.error };
+    const fit = checkBookingFitsOpeningHours(state, businessId, v.booking);
+    if (!fit.ok) return { ok: false, error: fit.error };
     arr[idx] = v.booking;
     saveAll(state);
     return { ok: true, booking: v.booking };
@@ -370,6 +374,32 @@ function validateBooking(businessId, booking) {
   return { booking: out };
 }
 
+function checkBookingFitsOpeningHours(state, businessId, booking) {
+  const hours = (state.businesses?.[businessId]?.openingHours) || defaultOpeningHours(businessId);
+  const dow = dayOfWeek(booking.date);
+  const windows = (hours[String(dow)] || []).map((w) => ({ start: toMinutes(w.open), end: toMinutes(w.close) }));
+  if (windows.length === 0) {
+    return { ok: false, error: `outside opening hours: ${businessId} is closed on ${booking.date}` };
+  }
+
+  const closed = (state.businesses?.[businessId]?.closedPeriods || [])
+    .filter((p) => p.date === booking.date)
+    .map((c) => ({ start: toMinutes(c.start), end: toMinutes(c.end) }));
+
+  const open = subtractMany(windows, closed);
+  const startMin = toMinutes(booking.time);
+  const endMin = startMin + Number(booking.durationMinutes || 30);
+
+  const fits = open.some((w) => startMin >= w.start && endMin <= w.end);
+  if (!fits) {
+    const windowList = open.length === 0
+      ? "no open window on this date"
+      : open.map((w) => `${fromMinutes(w.start)}-${fromMinutes(w.end)}`).join(", ");
+    return { ok: false, error: `outside opening hours: ${booking.time}-${fromMinutes(endMin)} not within open window(s) on ${booking.date} (open: ${windowList})` };
+  }
+  return { ok: true };
+}
+
 function dayOfWeek(dateStr) {
   const d = new Date(dateStr + "T00:00:00");
   return d.getDay();
@@ -426,6 +456,6 @@ module.exports = {
   _internal: {
     validateOpeningHours, validateClosedPeriod, validateBooking,
     normalizeState, buildInitialState, subtractOne, subtractMany,
-    toMinutes, fromMinutes, dayOfWeek
+    toMinutes, fromMinutes, dayOfWeek, checkBookingFitsOpeningHours
   }
 };
