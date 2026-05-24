@@ -1,19 +1,27 @@
 "use strict";
 
+const path = require("node:path");
 const { execFile } = require("node:child_process");
 const { stitchText } = require("../../conversation context ver 1.0/src/conversationContext");
 const { createHandoffState, DEFAULT_TTL_MS } = require("./handoffState");
 const { isCustomerAcknowledgement, looksLikeBridgeAuthored } = require("./messageHeuristics");
 const { tryAutoResolve } = require("./staffReplyAutoResolver");
+const { processOutboxOnce } = require("./outboxProcessor");
+const { createOutboxStore } = require("../../channel adapter ver 1.0/src/outboxStore");
 const {
   buildOpenNextChatNeedingAttentionScript,
-  buildReadSidebarSnapshotScript
+  buildReadSidebarSnapshotScript,
+  buildOpenChatByKeyScript
 } = require("./sidebarScripts");
 
 const BOT_URL = process.env.BOT_URL || "http://127.0.0.1:3000/webhook";
 const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL || deriveAdminBaseUrl(BOT_URL);
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || null;
 const STAFF_AUTO_RESOLVE = process.env.WA_BRIDGE_STAFF_AUTO_RESOLVE !== "false";
+const OUTBOX_ENABLED = process.env.WA_BRIDGE_OUTBOX_ENABLED !== "false";
+const OUTBOX_FILE = process.env.OUTBOX_FILE
+  || path.join(__dirname, "..", "..", "channel adapter ver 1.0", "state", "outbox.json");
+const outboxStore = OUTBOX_ENABLED ? createOutboxStore({ filePath: OUTBOX_FILE }) : null;
 const BUSINESS_ID = process.env.WA_BRIDGE_BUSINESS_ID || "restaurant_demo";
 const POLL_MS = Number(process.env.WA_BRIDGE_POLL_MS || 2500);
 const DRAFT_REPLIES = process.env.WA_BRIDGE_DRAFT_REPLIES !== "false";
@@ -60,6 +68,7 @@ async function main() {
   console.log(`[wa-bridge] bot=${BOT_URL} businessId=${BUSINESS_ID} draftReplies=${DRAFT_REPLIES} sendReplies=${SEND_REPLIES} sendHeldDrafts=${SEND_HELD_DRAFTS}`);
   console.log(`[wa-bridge] handoffPause=${HANDOFF_PAUSE_ENABLED} ttlHours=${Math.round(HANDOFF_PAUSE_TTL_MS / 60 / 60 / 1000)} intents=${Array.from(HANDOFF_PAUSE_INTENTS).join(",")}`);
   console.log(`[wa-bridge] staffAutoResolve=${STAFF_AUTO_RESOLVE} adminBase=${ADMIN_BASE_URL || "(none)"} adminTokenSet=${Boolean(ADMIN_TOKEN)}`);
+  console.log(`[wa-bridge] outboxEnabled=${OUTBOX_ENABLED} outboxFile=${OUTBOX_FILE}`);
   console.log(`[wa-bridge] currentChat=${snapshot.chatTitle || "unknown"} existingLast=${lastFingerprint || "none"} seededChats=${chatRowFingerprints.size}`);
   console.log("[wa-bridge] waiting for the next incoming message...");
 
@@ -79,6 +88,8 @@ async function main() {
 async function tick() {
   let snapshot = await readWhatsAppSnapshot();
   await syncStaffReplyForSnapshot(snapshot);
+  await processOutboxQueue(snapshot);
+  snapshot = await readWhatsAppSnapshot();
   let incoming = latestIncoming(snapshot);
   if (!incoming || incoming.fingerprint === lastFingerprint) {
     const attention = await openNextChatNeedingAttention({
@@ -692,6 +703,47 @@ async function openNextChatNeedingAttention({ seenFingerprints = {}, activeChatT
 
 async function readSidebarSnapshot() {
   return JSON.parse(await safariJs(buildReadSidebarSnapshotScript()));
+}
+
+async function openChatByKey(chatKey) {
+  return JSON.parse(await safariJs(buildOpenChatByKeyScript(chatKey)));
+}
+
+async function processOutboxQueue(snapshot) {
+  if (!outboxStore) return;
+  try {
+    await processOutboxOnce({
+      store: outboxStore,
+      businessId: BUSINESS_ID,
+      sendToChat: (record) => sendOutboxRecord(record, snapshot),
+      log: (msg) => console.log(`[wa-bridge] ${msg}`)
+    });
+  } catch (error) {
+    console.log(`[wa-bridge] outbox processor failed: ${error.message}`);
+  }
+}
+
+async function sendOutboxRecord(record, snapshot) {
+  const targetKey = String(record.chatDisplayName || record.chatKey || "").trim();
+  if (!targetKey) return { ok: false, error: "no_target_key" };
+  const currentTitle = (snapshot?.chatTitle || "").trim();
+  const alreadyHere = currentTitle && currentTitle.toLowerCase() === record.chatKey;
+  if (!alreadyHere) {
+    const opened = await openChatByKey(targetKey);
+    if (!opened.opened) {
+      return { ok: false, error: opened.reason || "open_failed" };
+    }
+    await sleep(1200);
+  }
+  try {
+    await draftIntoComposer(record.text);
+    await sleep(400);
+    await clickSendButton();
+    await recordBridgeSentMessage(record.chatKey);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
 }
 
 function mergeChatFingerprints(snapshot) {

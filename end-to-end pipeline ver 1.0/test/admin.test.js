@@ -12,6 +12,7 @@ const path = require("node:path");
 const { createWebhookServer } = require("../src/server");
 const { createAvailabilityStore } = require("../../private business backend mock ver 1.0/src/availabilityStore");
 const { createStaffInbox } = require("../../staff inbox ver 1.0/src/staffInbox");
+const { createOutboxStore } = require("../../channel adapter ver 1.0/src/outboxStore");
 
 let testCount = 0;
 function check(label, condition, detail) {
@@ -25,21 +26,23 @@ function eq(label, actual, expected) {
 
 const stubPipeline = { async runMessage() { return { finalStatus: "ready_to_send", outbound: { status: "ready_to_send", payload: { text: "ok" } }, staffItem: null, decision: { action: "auto_send" } }; } };
 
-function freshServer({ adminToken, nodeEnv, withInbox } = {}) {
+function freshServer({ adminToken, nodeEnv, withInbox, withOutbox } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "admin-test-"));
   const filePath = path.join(dir, "availability.json");
   const store = createAvailabilityStore({ filePath });
   const inbox = withInbox ? createStaffInbox() : null;
+  const outboxStore = withOutbox ? createOutboxStore({ filePath: path.join(dir, "outbox.json") }) : null;
   const server = createWebhookServer({
     pipeline: stubPipeline,
     availabilityStore: store,
     staffInbox: inbox,
+    outboxStore,
     adminToken,
     nodeEnv,
     allowUnsignedWebhooks: true,
     conversationContextStore: false
   });
-  return { server, store, inbox, filePath };
+  return { server, store, inbox, outboxStore, filePath };
 }
 
 function sendAdmin({ server, method, urlPath, headers = {}, body }) {
@@ -370,6 +373,78 @@ async function runAll() {
     const { server } = freshServer({ withInbox: true });
     const res = await sendAdmin({ server, method: "POST", urlPath: "/admin/inbox/beauty_demo/staff_does_not_exist/approve", body: {} });
     check("approve unknown id: 404", res.statusCode === 404);
+  }
+
+  // ---- Outbox: approve enqueues a confirmation message ----
+  {
+    const { server, inbox, outboxStore } = freshServer({ withInbox: true, withOutbox: true });
+    const submitted = inbox.submit({
+      decision: { action: "staff_review", businessId: "beauty_demo" },
+      draft: { action: "staff_review", text: "x" },
+      safety: { verdict: "revise", safeToSend: false },
+      normalizedMessage: { businessId: "beauty_demo", senderId: "amy_001", channel: "whatsapp" },
+      customerText: "想book 5月25號 1pm facial",
+      bookingDraft: { businessId: "beauty_demo", date: "2026-05-25", time: "13:00", service: "facial", customer: "amy_001", senderId: "amy_001", channel: "whatsapp" }
+    });
+    const res = await sendAdmin({ server, method: "POST", urlPath: `/admin/inbox/beauty_demo/${submitted.id}/approve`, body: {} });
+    check("approve with outbox: 200", res.statusCode === 200);
+    check("approve with outbox: response has outbox.ok", res.body.outbox?.ok === true);
+    const pending = outboxStore.listPending({ businessId: "beauty_demo" });
+    eq("approve with outbox: enqueues 1 record", pending.length, 1);
+    eq("approve with outbox: chatKey lowercased", pending[0].chatKey, "amy_001");
+    eq("approve with outbox: chatDisplayName preserved", pending[0].chatDisplayName, "amy_001");
+    eq("approve with outbox: channel = whatsapp", pending[0].channel, "whatsapp");
+    eq("approve with outbox: bookingId attached", pending[0].bookingId, res.body.booking.id);
+    check("approve with outbox: text mentions date", pending[0].text.includes("2026-05-25"));
+    check("approve with outbox: text mentions time", pending[0].text.includes("13:00"));
+    check("approve with outbox: text mentions facial", pending[0].text.toLowerCase().includes("facial"));
+  }
+  {
+    // Approve with override → outbox text reflects the override
+    const { server, inbox, outboxStore } = freshServer({ withInbox: true, withOutbox: true });
+    const submitted = inbox.submit({
+      decision: { action: "staff_review", businessId: "beauty_demo" },
+      draft: { action: "staff_review", text: "x" },
+      safety: { verdict: "revise", safeToSend: false },
+      normalizedMessage: { businessId: "beauty_demo", senderId: "may_002", channel: "whatsapp" },
+      customerText: "x",
+      bookingDraft: { businessId: "beauty_demo", date: "2026-05-25", time: "13:00", service: "facial", customer: "may_002", senderId: "may_002", channel: "whatsapp" }
+    });
+    await sendAdmin({ server, method: "POST", urlPath: `/admin/inbox/beauty_demo/${submitted.id}/approve`, body: { time: "14:30" } });
+    const pending = outboxStore.listPending({ businessId: "beauty_demo" });
+    check("approve override outbox: text mentions overridden time", pending[0].text.includes("14:30"));
+    check("approve override outbox: text does NOT mention original time", !pending[0].text.includes("13:00"));
+  }
+  {
+    // No outbox wired → approve still works, response has no outbox field
+    const { server, inbox } = freshServer({ withInbox: true });
+    const submitted = inbox.submit({
+      decision: { action: "staff_review", businessId: "beauty_demo" },
+      draft: { action: "staff_review", text: "x" },
+      safety: { verdict: "revise", safeToSend: false },
+      normalizedMessage: { businessId: "beauty_demo", senderId: "u", channel: "whatsapp" },
+      customerText: "x",
+      bookingDraft: { businessId: "beauty_demo", date: "2026-05-25", time: "13:00", service: "facial", customer: "u", senderId: "u", channel: "whatsapp" }
+    });
+    const res = await sendAdmin({ server, method: "POST", urlPath: `/admin/inbox/beauty_demo/${submitted.id}/approve`, body: {} });
+    check("approve no outbox: 200", res.statusCode === 200);
+    eq("approve no outbox: outbox is null", res.body.outbox, null);
+  }
+  {
+    // Non-whatsapp channel → outbox declines
+    const { server, inbox, outboxStore } = freshServer({ withInbox: true, withOutbox: true });
+    const submitted = inbox.submit({
+      decision: { action: "staff_review", businessId: "beauty_demo" },
+      draft: { action: "staff_review", text: "x" },
+      safety: { verdict: "revise", safeToSend: false },
+      normalizedMessage: { businessId: "beauty_demo", senderId: "u", channel: "instagram" },
+      customerText: "x",
+      bookingDraft: { businessId: "beauty_demo", date: "2026-05-25", time: "13:00", service: "facial", customer: "u", senderId: "u", channel: "instagram" }
+    });
+    const res = await sendAdmin({ server, method: "POST", urlPath: `/admin/inbox/beauty_demo/${submitted.id}/approve`, body: {} });
+    check("approve IG channel: 200", res.statusCode === 200);
+    eq("approve IG channel: outbox declines with channel_unsupported", res.body.outbox?.error, "channel_unsupported");
+    eq("approve IG channel: outbox empty", outboxStore.listPending().length, 0);
   }
 
   // ---- /admin/store dump ----

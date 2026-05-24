@@ -95,7 +95,44 @@ function buildReadSidebarSnapshotScript() {
   })()`;
 }
 
+function buildOpenChatByKeyScript(chatKey) {
+  return `(() => {
+    const target = ${JSON.stringify(String(chatKey || "").trim())};
+    if (!target) return JSON.stringify({ opened: false, reason: 'empty_target' });
+    const targetLower = target.toLowerCase();
+    const rows = [...document.querySelectorAll('[role="row"]')];
+    let match = null;
+    let matchPosition = -1;
+    rows.forEach((row, position) => {
+      const text = (row.innerText || '').replace(/\\s+/g, ' ').trim();
+      if (!text) return;
+      const looksLikeChat = /上午|下午|AM|PM|\\d{1,2}:\\d{2}/i.test(text);
+      if (!looksLikeChat) return;
+      const titleMatch = text.match(/^(?:\\d+\\s*個未讀訊息\\s*)?(.{1,40}?)\\s+(?:上午|下午|AM|PM|\\d{1,2}:\\d{2})/);
+      const chatKey = (titleMatch ? titleMatch[1].trim() : text.slice(0, 30)).toLowerCase();
+      if (chatKey === targetLower && !match) {
+        match = row;
+        matchPosition = position;
+      }
+    });
+    if (!match) return JSON.stringify({ opened: false, reason: 'chat_not_in_sidebar' });
+    match.scrollIntoView({ block: 'center' });
+    const rect = match.getBoundingClientRect();
+    const x = rect.left + Math.min(rect.width - 8, Math.max(8, rect.width / 2));
+    const y = rect.top + Math.min(rect.height - 8, Math.max(8, rect.height / 2));
+    const elementToClick = document.elementFromPoint(x, y) || match;
+    for (const type of ['mouseover', 'mousemove', 'mousedown', 'mouseup', 'click']) {
+      elementToClick.dispatchEvent(new MouseEvent(type, {
+        bubbles: true, cancelable: true, view: window,
+        clientX: x, clientY: y, button: 0
+      }));
+    }
+    return JSON.stringify({ opened: true, chatKey: target, position: matchPosition });
+  })()`;
+}
+
 module.exports = {
   buildOpenNextChatNeedingAttentionScript,
-  buildReadSidebarSnapshotScript
+  buildReadSidebarSnapshotScript,
+  buildOpenChatByKeyScript
 };

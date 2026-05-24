@@ -15,6 +15,7 @@ const { createConversationContextStore } = require("../../conversation context v
 const fakeBusinessData = require("../../private business backend mock ver 1.0/seed/mockBusinessData");
 const { createPromoSync, createPromotionStore } = require("../../google drive promo sync ver 1.0/src/promoSync");
 const { createGoogleDriveClient, loadFoldersFromEnv } = require("../../google drive promo sync ver 1.0/src/googleDriveClient");
+const { createOutboxStore } = require("../../channel adapter ver 1.0/src/outboxStore");
 
 const DEFAULT_MAX_BODY_BYTES = 1_000_000;
 const DEFAULT_REPLAY_WINDOW_SECONDS = 300;
@@ -26,6 +27,7 @@ function createWebhookServer(config = {}) {
   const pipeline = config.pipeline || createPipeline(config);
   const availabilityStore = config.availabilityStore || null;
   const staffInbox = config.staffInbox || (pipeline && typeof pipeline.inbox === "object" ? pipeline.inbox : null);
+  const outboxStore = config.outboxStore || null;
   const conversationContextStore = config.conversationContextStore === false
     ? null
     : (config.conversationContextStore || createConversationContextStore(config.conversationContext || {}));
@@ -46,7 +48,7 @@ function createWebhookServer(config = {}) {
     }
 
     if (req.url && req.url.startsWith("/admin/")) {
-      await handleAdminRequest(req, res, { availabilityStore, staffInbox, config });
+      await handleAdminRequest(req, res, { availabilityStore, staffInbox, outboxStore, config });
       return;
     }
 
@@ -353,7 +355,7 @@ function publicWebhookResponse(result, payload = {}, config = {}, contextResult 
   return response;
 }
 
-async function handleAdminRequest(req, res, { availabilityStore, staffInbox, config }) {
+async function handleAdminRequest(req, res, { availabilityStore, staffInbox, outboxStore, config }) {
   try {
     const auth = verifyAdminRequest(req, config);
     if (auth.error) {
@@ -375,7 +377,7 @@ async function handleAdminRequest(req, res, { availabilityStore, staffInbox, con
     // Inbox endpoints work without availabilityStore, but the approve action
     // needs it to actually write the booking. Keep them outside the availability gate.
     if (url.resource === "inbox") {
-      await handleInboxRequest(req, res, { staffInbox, availabilityStore, url, readPayload });
+      await handleInboxRequest(req, res, { staffInbox, availabilityStore, outboxStore, url, readPayload });
       return;
     }
 
@@ -455,7 +457,7 @@ async function handleAdminRequest(req, res, { availabilityStore, staffInbox, con
   }
 }
 
-async function handleInboxRequest(req, res, { staffInbox, availabilityStore, url, readPayload }) {
+async function handleInboxRequest(req, res, { staffInbox, availabilityStore, outboxStore, url, readPayload }) {
   if (!staffInbox) {
     writeJson(res, 503, { error: "staff_inbox_disabled" });
     return;
@@ -514,7 +516,8 @@ async function handleInboxRequest(req, res, { staffInbox, availabilityStore, url
     }
     staffInbox.recordBookingResult(url.id, { ok: true, bookingId: written.booking.id, booking: written.booking, approvedAt: new Date().toISOString() });
     const updated = staffInbox.approve(url.id, overrides?.actor || "staff");
-    writeJson(res, 200, { item: publicInboxItem(updated), booking: written.booking });
+    const outbox = enqueueBookingConfirmation({ outboxStore, item: updated, booking: written.booking, bookingDraft: finalDraft });
+    writeJson(res, 200, { item: publicInboxItem(updated), booking: written.booking, outbox });
     return;
   }
 
@@ -567,6 +570,44 @@ function mergeBookingOverrides(draft, overrides) {
     }
   }
   return merged;
+}
+
+function enqueueBookingConfirmation({ outboxStore, item, booking, bookingDraft }) {
+  if (!outboxStore || typeof outboxStore.enqueue !== "function") return null;
+  const chatDisplayName = bookingDraft?.senderId || item?.senderId || null;
+  if (!chatDisplayName) return { ok: false, error: "no_sender_id" };
+  if ((item?.channel || bookingDraft?.channel) !== "whatsapp") {
+    return { ok: false, error: "channel_unsupported" };
+  }
+  const text = buildBookingConfirmationText({ booking, bookingDraft });
+  const result = outboxStore.enqueue({
+    businessId: bookingDraft.businessId,
+    chatKey: chatDisplayName,
+    chatDisplayName,
+    channel: "whatsapp",
+    text,
+    bookingId: booking?.id || null
+  });
+  return result.ok ? { ok: true, id: result.record.id } : { ok: false, error: result.error };
+}
+
+function buildBookingConfirmationText({ booking, bookingDraft }) {
+  const date = booking?.date || bookingDraft?.date || "";
+  const time = booking?.time || bookingDraft?.time || "";
+  const service = booking?.service || bookingDraft?.service || null;
+  const partySize = booking?.partySize || bookingDraft?.partySize || null;
+  const lines = ["你好，已為你確認預約："];
+  if (date) lines.push(`- 日期：${date}`);
+  if (time) lines.push(`- 時間：${time}`);
+  if (service) lines.push(`- 療程：${formatServiceLabel(service)}`);
+  if (partySize) lines.push(`- 人數：${partySize}位`);
+  lines.push("到時見！如有問題請隨時通知。");
+  return lines.join("\n");
+}
+
+function formatServiceLabel(service) {
+  const map = { facial: "facial", laser: "脫毛", assessment: "皮膚評估", p3_english: "P3 英文評估" };
+  return map[service] || service;
 }
 
 function parseAdminPath(url) {
@@ -1365,6 +1406,7 @@ function startWebhookServer(config = {}) {
     || (realLlmAdapter && !paraphraseDisabled ? createParaphraser(realLlmAdapter) : null);
   const availabilityStore = config.availabilityStore || createAvailabilityStore({ seed: mockBusinessSeed });
   const backend = config.backend || createBusinessBackend({ availabilityStore });
+  const outboxStore = config.outboxStore ?? createOutboxStore(config.outboxFile ? { filePath: config.outboxFile } : (process.env.OUTBOX_FILE ? { filePath: process.env.OUTBOX_FILE } : {}));
   const driveIntegration = config.promotionStore ? null : maybeCreateDriveIntegration(config);
   const promotionStore = config.promotionStore || (driveIntegration ? driveIntegration.store : null);
   const llmMode = claudeAdapters.llmAdapter
@@ -1383,6 +1425,7 @@ function startWebhookServer(config = {}) {
     paraphraser,
     backend,
     availabilityStore,
+    outboxStore,
     ...(promotionStore ? { promotionStore } : {})
   });
 

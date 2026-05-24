@@ -4,7 +4,8 @@ const assert = require("node:assert/strict");
 const { JSDOM } = require("jsdom");
 const {
   buildOpenNextChatNeedingAttentionScript,
-  buildReadSidebarSnapshotScript
+  buildReadSidebarSnapshotScript,
+  buildOpenChatByKeyScript
 } = require("../src/sidebarScripts");
 
 function escapeAttr(value) {
@@ -187,6 +188,43 @@ testCase("snapshot fingerprint changes when the row's latest message changes", (
   const beforeFp = runSnapshot(before).snapshot.Alice;
   const afterFp = runSnapshot(after).snapshot.Alice;
   assert.notEqual(beforeFp, afterFp);
+});
+
+testCase("openChatByKey: finds exact-match row (case-insensitive)", () => {
+  const dom = buildDom([
+    { aria: "Alice", text: "Alice 上午10:30 hi" },
+    { aria: "Bob", text: "Bob 下午2:00 yo" }
+  ]);
+  const result = JSON.parse(dom.window.eval(buildOpenChatByKeyScript("bob")));
+  assert.equal(result.opened, true);
+  assert.equal(result.chatKey, "bob");
+  assert.equal(result.position, 1);
+});
+
+testCase("openChatByKey: returns chat_not_in_sidebar when no match", () => {
+  const dom = buildDom([
+    { aria: "Alice", text: "Alice 上午10:30 hi" }
+  ]);
+  const result = JSON.parse(dom.window.eval(buildOpenChatByKeyScript("Eve")));
+  assert.equal(result.opened, false);
+  assert.equal(result.reason, "chat_not_in_sidebar");
+});
+
+testCase("openChatByKey: empty target returns empty_target", () => {
+  const dom = buildDom([{ aria: "Alice", text: "Alice 上午10:30 hi" }]);
+  const result = JSON.parse(dom.window.eval(buildOpenChatByKeyScript("  ")));
+  assert.equal(result.opened, false);
+  assert.equal(result.reason, "empty_target");
+});
+
+testCase("openChatByKey: ignores rows without a time pattern", () => {
+  const dom = buildDom([
+    { aria: "Header", text: "Pinned messages" },
+    { aria: "Alice", text: "Alice 上午10:30 hi" }
+  ]);
+  const result = JSON.parse(dom.window.eval(buildOpenChatByKeyScript("Alice")));
+  assert.equal(result.opened, true);
+  assert.equal(result.position, 1);
 });
 
 console.log(`sidebarScripts: ${passed} tests passed`);
