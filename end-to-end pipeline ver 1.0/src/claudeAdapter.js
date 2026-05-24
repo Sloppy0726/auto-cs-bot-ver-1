@@ -20,6 +20,7 @@ function createClaudeAdapters(config = {}) {
     apiKey,
     authToken,
     baseUrl: config.baseUrl || process.env.CLAUDE_BASE_URL || process.env.ANTHROPIC_BASE_URL,
+    oauthBaseUrl: config.oauthBaseUrl || process.env.CLAUDE_OAUTH_BASE_URL,
     apiVersion: config.apiVersion || process.env.CLAUDE_API_VERSION,
     betaHeader: config.betaHeader || process.env.CLAUDE_OAUTH_BETA,
     fetchImpl: config.fetchImpl,
@@ -155,12 +156,17 @@ function createClaudeMessagesClient(config = {}) {
   const oauthToken = config.oauthToken;
   const apiKey = config.apiKey;
   const authToken = config.authToken;
-  const baseUrl = normalizeClaudeBaseUrl(config.baseUrl || "https://api.anthropic.com/v1");
+  // The proxy URL covers auth_token + api_key (e.g. hk.routeai.cc). OAuth tokens
+  // are Anthropic-first-party and almost never accepted by third-party proxies,
+  // so they default to the official Anthropic endpoint so they can serve as a
+  // real fallback when the proxy is down or the auth_token is exhausted.
+  const proxyBaseUrl = normalizeClaudeBaseUrl(config.baseUrl || "https://api.anthropic.com/v1");
+  const oauthBaseUrl = normalizeClaudeBaseUrl(config.oauthBaseUrl || "https://api.anthropic.com/v1");
   const fetchImpl = config.fetchImpl || globalThis.fetch;
   const timeoutMs = config.timeoutMs || DEFAULT_TIMEOUT_MS;
   const apiVersion = config.apiVersion || DEFAULT_API_VERSION;
   const betaHeader = config.betaHeader || DEFAULT_OAUTH_BETA;
-  const credentials = claudeCredentials({ oauthToken, apiKey, authToken });
+  const credentials = claudeCredentials({ oauthToken, apiKey, authToken, proxyBaseUrl, oauthBaseUrl });
 
   if (credentials.length === 0) throw new Error("CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, or ANTHROPIC_AUTH_TOKEN is required");
   if (typeof fetchImpl !== "function") throw new Error("fetch is required for Claude adapter");
@@ -173,7 +179,6 @@ function createClaudeMessagesClient(config = {}) {
           return await sendClaudeMessage({
             credential,
             request,
-            baseUrl,
             fetchImpl,
             timeoutMs,
             apiVersion,
@@ -188,11 +193,11 @@ function createClaudeMessagesClient(config = {}) {
   };
 }
 
-function claudeCredentials({ oauthToken, apiKey, authToken } = {}) {
+function claudeCredentials({ oauthToken, apiKey, authToken, proxyBaseUrl, oauthBaseUrl } = {}) {
   const credentials = [];
-  if (String(authToken || "").trim()) credentials.push({ type: "auth_token", value: authToken });
-  if (String(oauthToken || "").trim()) credentials.push({ type: "oauth", value: oauthToken });
-  if (String(apiKey || "").trim()) credentials.push({ type: "api_key", value: apiKey });
+  if (String(authToken || "").trim()) credentials.push({ type: "auth_token", value: authToken, baseUrl: proxyBaseUrl });
+  if (String(oauthToken || "").trim()) credentials.push({ type: "oauth", value: oauthToken, baseUrl: oauthBaseUrl });
+  if (String(apiKey || "").trim()) credentials.push({ type: "api_key", value: apiKey, baseUrl: proxyBaseUrl });
   return credentials;
 }
 
@@ -207,12 +212,13 @@ function normalizeClaudeBaseUrl(baseUrl) {
   return trimmed;
 }
 
-async function sendClaudeMessage({ credential, request, baseUrl, fetchImpl, timeoutMs, apiVersion, betaHeader }) {
+async function sendClaudeMessage({ credential, request, fetchImpl, timeoutMs, apiVersion, betaHeader, baseUrl }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const requestBody = buildRequestBody({ request, authType: credential.type });
-    const response = await fetchImpl(`${baseUrl}/messages`, {
+    const url = normalizeClaudeBaseUrl(credential.baseUrl || baseUrl || "https://api.anthropic.com/v1");
+    const response = await fetchImpl(`${url}/messages`, {
       method: "POST",
       headers: claudeHeaders({ credential, apiVersion, betaHeader }),
       body: JSON.stringify(requestBody),

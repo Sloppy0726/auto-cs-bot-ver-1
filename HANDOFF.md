@@ -549,4 +549,88 @@ End of Codex addendum.
 
 ---
 
+## 15. Session Addendum — 2026-05-24 (Claude session: no-slots fallback + per-credential baseUrls)
+
+Two features landed in this session. Both customer-visible improvements.
+
+### 15.1 What landed
+
+| # | Feature | Commits |
+|---|---|---|
+| 1 | "No slots today" suggests nearby dates | `21690cc` (pushed) |
+| 2 | Claude adapter per-credential baseUrl (auth_token → proxy, oauth → Anthropic fallback) | uncommitted at section-write time |
+
+All test suites green at session end: `claudeAdapter 41 · pipeline 134 · server 31 · draftEngine 112 · safetyChecker 102 · businessBackendMock 118` = 548 total.
+
+### 15.2 Feature 1: No-slots-today fallback
+
+**Behavior change.** When intent=booking, customer asks "is there a slot on \<date\>?", and the backend computes zero free slots for that date (fully booked OR a closed day OR outside opening hours), the bot used to silently route to staff_review. Now it replies as a `clarify` (ready_to_send) suggesting the next 1–3 dates that DO have openings, including the earliest start time on each:
+
+```text
+唔好意思，2026-05-25 facial 暫時冇位或者已過營業時間。
+最近有時段嘅日期：2026-05-26（最早 11:00）、2026-05-27（最早 11:00）、2026-05-28（最早 11:00）。
+請問你想揀邊一日？
+```
+
+English variant produced when `intent.language === "en"`. Falls through to staff_review only if nothing's available in the next 7 days either.
+
+**How it works.** New three-piece chain:
+
+1. `private business backend mock ver 1.0/src/availabilityStore.js` → `findNextAvailableDates({businessId, fromDate, service, partySize, maxDays=7, maxResults=3})` walks forward N days from `fromDate`, calling `listFreeSlots` on each, and returns `[{date, freeCount, firstSlot}]` for the first dates with at least one free slot.
+2. `private business backend mock ver 1.0/src/businessBackendMock.js` exposes `findNextAvailableDates` on the backend instance (only when an `availabilityStore` is wired).
+3. `end-to-end pipeline ver 1.0/src/pipeline.js` → `inferAvailabilityResponse` now accepts `backend` as a parameter. When slots is empty, it calls `backend.findNextAvailableDates(...)` and, if there are suggestions, builds the clarify reply via the new `noSlotsResponseText` helper. The suggested dates and times still flow through the paraphraser, but the fact-preservation guard catches them (every `YYYY-MM-DD` and `HH:MM` must round-trip).
+
+### 15.3 Feature 2: Per-credential baseUrl
+
+**Why.** The user added a working proxy credential (`ANTHROPIC_AUTH_TOKEN` against `hk.routeai.cc`) and also has a valid `CLAUDE_CODE_OAUTH_TOKEN`. The proxy doesn't accept Anthropic's first-party OAuth flow, so when both credentials were routed through the same baseUrl, the OAuth fallback was useless — it would 401 against the proxy. The proxy ALSO frequently returns transient 502s, which would knock the bot out entirely.
+
+**Behavior change.** Each Claude credential now carries its own baseUrl:
+
+| Credential | Default baseUrl | Override env |
+|---|---|---|
+| `ANTHROPIC_AUTH_TOKEN` (`auth_token` type, 1st priority) | `config.baseUrl` / `CLAUDE_BASE_URL` / `ANTHROPIC_BASE_URL` | (same) |
+| `CLAUDE_CODE_OAUTH_TOKEN` (`oauth` type, 2nd priority) | `https://api.anthropic.com/v1` (Anthropic direct) | `CLAUDE_OAUTH_BASE_URL` |
+| `ANTHROPIC_API_KEY` (`api_key` type, 3rd priority) | same as auth_token (proxy) | (same) |
+
+So when the proxy fails (502 / 429 / network / etc.) on the auth_token attempt, the fallback automatically tries the OAuth credential against Anthropic's official endpoint. Live verification at session end with both credentials present and the proxy currently 502'ing:
+
+```text
+✓ overall result text: "OK"
+Retry trail:
+ • https://hk.routeai.cc/v1/messages       ← auth_token, failed (proxy 502)
+ • https://api.anthropic.com/v1/messages   ← oauth, succeeded
+```
+
+**Files changed.** `end-to-end pipeline ver 1.0/src/claudeAdapter.js` (added per-credential baseUrl in `claudeCredentials` + threaded into `sendClaudeMessage`), `whatsapp-web-test-bridge/.env.example` (documented `CLAUDE_OAUTH_BASE_URL` override).
+
+### 15.4 Compatibility
+
+- All 41 existing claudeAdapter tests still pass. The change is additive — `claudeCredentials` accepts new optional `proxyBaseUrl` / `oauthBaseUrl` params; legacy callers that omit them get a credential record with `baseUrl: undefined`, and `sendClaudeMessage` falls back to a passed-in or default URL.
+- All 134 pipeline tests still pass. The legacy in-memory backend path for tests isn't affected.
+
+### 15.5 Known proxy state (informational)
+
+At session end, `hk.routeai.cc` was returning `502 Upstream service temporarily unavailable` consistently across all credential header forms (`x-api-key`, `authorization: Bearer`, with/without beta header). This is the proxy's upstream Anthropic relay being down, not an auth problem. The fallback chain handles it gracefully (oauth → Anthropic direct).
+
+### 15.6 Files changed (uncommitted at section-write time)
+
+```text
+M  HANDOFF.md
+M  end-to-end pipeline ver 1.0/src/claudeAdapter.js
+M  whatsapp-web-test-bridge/.env.example
+```
+
+### 15.7 Suggested next moves for next session
+
+Still on the list from §13.11 / §14:
+
+1. Booking conflict detection + out-of-hours rejection in admin's `addBooking`.
+2. Per-staff resources (Amy vs Joey calendars) — biggest single UX win for a real salon.
+3. Tests for the new bookings model (`availabilityStore`, `findNextAvailableDates`, admin endpoints).
+4. The `private business backend mock ver 1.0/state/` directory is already gitignored; `mockBusinessData.js` still has legacy `availability: [...]` arrays for the legacy in-memory test path — clean up once tests are rewritten for the store model.
+
+End of Claude session addendum.
+
+---
+
 End of handoff.
