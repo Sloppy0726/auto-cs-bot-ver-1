@@ -1,7 +1,11 @@
 "use strict";
 
 // Staff Inbox ver 1.0
-// In-memory queue for review, handoff, and blocked-message items.
+// Queue for review, handoff, and blocked-message items.
+// In-memory by default; opt into disk persistence by passing `filePath`.
+
+const fs = require("node:fs");
+const path = require("node:path");
 
 const STATUSES = Object.freeze({
   OPEN: "open",
@@ -15,14 +19,29 @@ const STATUSES = Object.freeze({
 function createStaffInbox(config = {}) {
   const items = new Map();
   const nowFn = config.nowFn || (() => new Date());
+  const filePath = config.filePath || null;
+
+  // Disk-backed inbox: hydrate from file first, then layer any explicit
+  // config.items (useful for tests and one-off seeding).
+  if (filePath) {
+    for (const item of loadFromDisk(filePath)) {
+      items.set(item.id, normalizeItem(item));
+    }
+  }
   for (const item of config.items || []) {
     items.set(item.id, normalizeItem(item));
+  }
+
+  function persist() {
+    if (!filePath) return;
+    saveToDisk(filePath, Array.from(items.values()));
   }
 
   return {
     submit(input) {
       const item = createItem(input || {}, items.size + 1, nowFn);
       items.set(item.id, item);
+      persist();
       return item;
     },
     list(filter = {}) {
@@ -32,25 +51,52 @@ function createStaffInbox(config = {}) {
       return items.get(id) || null;
     },
     approve(id, actor = "staff") {
-      return transition(items, id, STATUSES.APPROVED, { actor }, nowFn);
+      const updated = transition(items, id, STATUSES.APPROVED, { actor }, nowFn);
+      if (updated) persist();
+      return updated;
     },
     edit(id, editedText, actor = "staff") {
-      return transition(items, id, STATUSES.EDITED, { actor, editedText }, nowFn);
+      const updated = transition(items, id, STATUSES.EDITED, { actor, editedText }, nowFn);
+      if (updated) persist();
+      return updated;
     },
     reject(id, reason, actor = "staff") {
-      return transition(items, id, STATUSES.REJECTED, { actor, reason }, nowFn);
+      const updated = transition(items, id, STATUSES.REJECTED, { actor, reason }, nowFn);
+      if (updated) persist();
+      return updated;
     },
     takeOver(id, actor = "staff") {
-      return transition(items, id, STATUSES.TAKEN_OVER, { actor }, nowFn);
+      const updated = transition(items, id, STATUSES.TAKEN_OVER, { actor }, nowFn);
+      if (updated) persist();
+      return updated;
     },
     recordBookingResult(id, result) {
       const item = items.get(id);
       if (!item) return null;
       const updated = { ...item, bookingResult: result || null, updatedAt: timestamp(nowFn) };
       items.set(id, updated);
+      persist();
       return updated;
-    }
+    },
+    _filePath: filePath
   };
+}
+
+function loadFromDisk(filePath) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    return Array.isArray(parsed?.items) ? parsed.items : [];
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    return [];
+  }
+}
+
+function saveToDisk(filePath, items) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tmp, JSON.stringify({ items }, null, 2));
+  fs.renameSync(tmp, filePath);
 }
 
 function createItem(input, index, nowFn = () => new Date()) {
