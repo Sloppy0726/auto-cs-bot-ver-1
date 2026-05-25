@@ -28,20 +28,21 @@ function createClaudeAdapters(config = {}) {
   });
   const draftModel = config.draftModel || process.env.CLAUDE_DRAFT_MODEL || process.env.CLAUDE_MODEL || DEFAULT_DRAFT_MODEL;
   const intentModel = config.intentModel || process.env.CLAUDE_INTENT_MODEL || process.env.CLAUDE_MODEL || DEFAULT_INTENT_MODEL;
+  const onUsage = typeof config.onUsage === "function" ? config.onUsage : null;
 
   return {
-    llmAdapter: createDraftAdapter({ client, model: draftModel }),
-    llmIntentAnalyzer: createIntentAnalyzer({ client, model: intentModel })
+    llmAdapter: createDraftAdapter({ client, model: draftModel, onUsage }),
+    llmIntentAnalyzer: createIntentAnalyzer({ client, model: intentModel, onUsage })
   };
 }
 
-function createDraftAdapter({ client, model }) {
+function createDraftAdapter({ client, model, onUsage }) {
   return async function claudeDraftAdapter(prompt, context = {}) {
     const approvedContext = formatApprovedContext(context);
     const callerSystem = context.systemPrompt || "You are a careful customer-support draft writer. Follow the supplied policy exactly.";
     const userPrompt = [context.userPrompt || String(prompt || ""), approvedContext].filter(Boolean).join("\n\n");
 
-    const content = await client.createMessage({
+    const result = await client.createMessage({
       model,
       temperature: 0.2,
       maxTokens: 600,
@@ -51,11 +52,12 @@ function createDraftAdapter({ client, model }) {
         { role: "user", content: [{ type: "text", text: userPrompt }] }
       ]
     });
-    return { text: content };
+    reportUsage(onUsage, { provider: "claude", model, kind: "draft", usage: result.usage });
+    return { text: result.text };
   };
 }
 
-function createIntentAnalyzer({ client, model }) {
+function createIntentAnalyzer({ client, model, onUsage }) {
   return async function claudeIntentAnalyzer(input = {}) {
     const callerSystem = [
       "You are an intent and confidence analyzer for a Hong Kong SME customer-support bot.",
@@ -89,7 +91,7 @@ function createIntentAnalyzer({ client, model }) {
       }
     });
 
-    const content = await client.createMessage({
+    const result = await client.createMessage({
       model,
       temperature: 0,
       maxTokens: 600,
@@ -99,8 +101,14 @@ function createIntentAnalyzer({ client, model }) {
         { role: "user", content: [{ type: "text", text: userPayload }] }
       ]
     });
-    return normalizeIntentJson(content);
+    reportUsage(onUsage, { provider: "claude", model, kind: "intent", usage: result.usage });
+    return normalizeIntentJson(result.text);
   };
+}
+
+function reportUsage(onUsage, record) {
+  if (!onUsage || !record) return;
+  try { onUsage(record); } catch { /* never let telemetry break inference */ }
 }
 
 function buildSystemBlocks(callerSystem, options = {}) {
@@ -229,7 +237,7 @@ async function sendClaudeMessage({ credential, request, fetchImpl, timeoutMs, ap
       const detail = responseBody?.error?.message || response.statusText || "Claude request failed";
       throw new Error(`claude_${response.status}: ${detail}`);
     }
-    return extractText(responseBody);
+    return { text: extractText(responseBody), usage: extractUsage(responseBody) };
   } finally {
     clearTimeout(timeout);
   }
@@ -299,6 +307,17 @@ function extractText(body) {
     .join("");
 }
 
+function extractUsage(body) {
+  const usage = body?.usage;
+  if (!usage || typeof usage !== "object") return null;
+  return {
+    input_tokens: Number(usage.input_tokens) || 0,
+    output_tokens: Number(usage.output_tokens) || 0,
+    cache_read_input_tokens: Number(usage.cache_read_input_tokens) || 0,
+    cache_creation_input_tokens: Number(usage.cache_creation_input_tokens) || 0
+  };
+}
+
 function normalizeIntentJson(content) {
   const parsed = parseJsonObject(content);
   return {
@@ -345,6 +364,8 @@ module.exports = {
     claudeHeaders,
     authorizationHeaderForToken,
     extractText,
+    extractUsage,
+    reportUsage,
     modelDeprecatesTemperature,
     normalizeIntentJson,
     parseJsonObject,

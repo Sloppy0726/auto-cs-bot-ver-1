@@ -112,7 +112,7 @@ function createMetrics() {
 }
 
 function formatLabels(labels = {}) {
-  const entries = Object.entries(labels);
+  const entries = Object.entries(labels).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   if (entries.length === 0) return "";
   const parts = entries.map(([k, v]) => `${k}="${escapeLabel(v)}"`);
   return `{${parts.join(",")}}`;

@@ -51,6 +51,6 @@ const prom = metrics.renderPrometheus();
 assert.ok(prom.includes("# TYPE webhook_requests_total counter"), "prometheus output should declare counter type");
 assert.ok(prom.includes('webhook_requests_total{outcome="ok"} 2'), "prometheus output should include label values");
 assert.ok(prom.includes("# TYPE webhook_latency_ms histogram"), "prometheus output should declare histogram type");
-assert.ok(prom.includes('webhook_latency_ms_bucket{outcome="ok",le="+Inf"} 2'), "prometheus output should include +Inf bucket");
+assert.ok(prom.includes('webhook_latency_ms_bucket{le="+Inf",outcome="ok"} 2'), "prometheus output should include +Inf bucket");
 
 console.log("observability: 13 tests passed");
