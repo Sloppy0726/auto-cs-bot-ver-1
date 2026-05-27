@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # deploy.sh — pull latest, run smoke tests, restart the bot service.
 #
-# Usage (on a shop's box):
-#     sudo /opt/cs-bot/deploy/deploy.sh
+# Usage (on a shop's box, as the cs-bot user):
+#     /opt/cs-bot/deploy/deploy.sh
 #
-# Designed to be safe to run unattended (e.g. from a cron job). If the
+# Also used by .github/workflows/deploy.yml via SSH.
+#
+# Requires a sudoers entry allowing the cs-bot user to run
+# `systemctl restart cs-bot` and `systemctl status cs-bot`
+# without a password. See deploy/cs-bot.sudoers.
+#
+# Designed to be safe to run unattended (e.g. from cron or CI). If the
 # smoke tests fail, the service is NOT restarted and the script exits
 # non-zero so the operator gets a clear signal.
 
@@ -37,9 +43,9 @@ NODE_ENV=test node "end-to-end pipeline ver 1.0/test/server.test.js" >> /tmp/cs-
 echo "[deploy] smoke tests passed"
 
 echo "[deploy] restarting $SERVICE..."
-systemctl restart "$SERVICE"
+sudo -n systemctl restart "$SERVICE"
 sleep 2
-systemctl --no-pager --lines=5 status "$SERVICE" || true
+sudo -n systemctl --no-pager --lines=5 status "$SERVICE" || true
 
 NEW=$(git rev-parse --short HEAD)
 echo "[deploy] done: now at $NEW (was $CURRENT)"
