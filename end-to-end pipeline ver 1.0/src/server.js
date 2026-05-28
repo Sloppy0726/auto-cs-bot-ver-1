@@ -4,7 +4,9 @@ const http = require("node:http");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const { AsyncLocalStorage } = require("node:async_hooks");
 const { createPipeline } = require("./pipeline");
+const { normalizeInbound, buildOutboundMessage } = require("../../channel adapter ver 1.0/src/channelAdapter");
 const { createOpenAIAdapters } = require("./openaiAdapter");
 const { createClaudeAdapters } = require("./claudeAdapter");
 const { buildParaphrasePrompt } = require("../../AI draft engine ver 1.0/src/draftEngine");
@@ -18,12 +20,19 @@ const { createGoogleDriveClient, loadFoldersFromEnv } = require("../../google dr
 const { createOutboxStore } = require("../../channel adapter ver 1.0/src/outboxStore");
 const { createRateLimiter } = require("./rateLimiter");
 const { createLogger, createMetrics } = require("./observability");
+const { createTokenBudgetFromEnv } = require("./tokenBudget");
 
 const DEFAULT_MAX_BODY_BYTES = 1_000_000;
 const DEFAULT_REPLAY_WINDOW_SECONDS = 300;
 const DEFAULT_BODY_TIMEOUT_MS = 5_000;
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3000;
+const DEFAULT_BUDGET_MESSAGE =
+  "我哋暫時未能即時回覆你，請直接聯絡店主，多謝！(Our auto-reply is paused right now — please contact the shop directly. Thank you!)";
+
+// Request-scoped store so the usage reporter can attribute LLM token counts to
+// the right shop without threading businessId through the draft/intent engines.
+const usageContext = new AsyncLocalStorage();
 
 function createWebhookServer(config = {}) {
   const pipeline = config.pipeline || createPipeline(config);
@@ -36,6 +45,7 @@ function createWebhookServer(config = {}) {
   const rateLimiter = config.rateLimiter === false ? null : (config.rateLimiter || createRateLimiter(config.rateLimit || {}));
   const logger = config.logger || createLogger();
   const metrics = config.metrics || createMetrics();
+  const budget = config.budget || null;
   return http.createServer(async (req, res) => {
     if (req.method === "GET" && ["/", "/webhook"].includes(req.url)) {
       writeHtml(res, 200, webChatHtml());
@@ -49,6 +59,11 @@ function createWebhookServer(config = {}) {
 
     if (req.method === "GET" && req.url === "/debug/fake-db") {
       writeJson(res, 200, summarizeFakeDatabase(fakeBusinessData));
+      return;
+    }
+
+    if (req.method === "GET" && req.url === "/debug/token-budget") {
+      writeJson(res, 200, budget ? budget.snapshot() : { enabled: false });
       return;
     }
 
@@ -91,10 +106,30 @@ function createWebhookServer(config = {}) {
       const body = await readBody(req, config.maxBodyBytes, config.bodyTimeoutMs);
       const authContext = verifyWebhookRequest(req, body, config);
       const payload = authorizeWebhookPayload(parseJson(body), authContext, config);
+
+      const businessId = payload?.businessId || null;
+      if (budget) {
+        const verdict = budget.check(businessId);
+        if (!verdict.allowed) {
+          outcome = "budget_exceeded";
+          metrics.incrementCounter("webhook_requests_total", { outcome });
+          logger.warn("webhook_budget_exceeded", {
+            business_id: businessId,
+            used: verdict.used,
+            limit: verdict.limit,
+            month: verdict.month
+          });
+          writeJson(res, 200, budgetExceededResponse(payload, config));
+          return; // skip the pipeline entirely — no LLM call, no token spend
+        }
+      }
+
       const contextResult = conversationContextStore
         ? conversationContextStore.enrichPayload(payload)
         : { payload, changed: false, originalText: payload?.text || null, stitchedText: payload?.text || null, reason: null, commit() {} };
-      const result = await pipeline.runMessage(contextResult.payload);
+      // Tag this request's LLM usage with the shop so the usage reporter can
+      // bill it to the right budget.
+      const result = await usageContext.run({ businessId }, () => pipeline.runMessage(contextResult.payload));
       contextResult.commit();
       const action = result?.decision?.action || result?.action || "unknown";
       metrics.incrementCounter("webhook_requests_total", { outcome: "ok" });
@@ -118,7 +153,7 @@ function remoteAddressKey(req) {
   return req.socket?.remoteAddress || "unknown";
 }
 
-function createUsageReporter({ logger, metrics } = {}) {
+function createUsageReporter({ logger, metrics, budget } = {}) {
   return function reportLlmUsage(record = {}) {
     const provider = record.provider || "unknown";
     const model = record.model || "unknown";
@@ -128,12 +163,16 @@ function createUsageReporter({ logger, metrics } = {}) {
     const output = Number(usage.output_tokens) || 0;
     const cacheRead = Number(usage.cache_read_input_tokens) || 0;
     const cacheCreate = Number(usage.cache_creation_input_tokens) || 0;
+    // Attribute to the shop handling the current request (set in the webhook
+    // handler via AsyncLocalStorage). record can also carry it explicitly.
+    const businessId = record.businessId || usageContext.getStore()?.businessId || null;
 
     if (logger) {
       logger.info("llm_call", {
         provider,
         model,
         kind,
+        business_id: businessId,
         input_tokens: input,
         output_tokens: output,
         cache_read_input_tokens: cacheRead,
@@ -141,6 +180,10 @@ function createUsageReporter({ logger, metrics } = {}) {
         total_tokens: input + output
       });
     }
+
+    // Bill every charged token (fresh input + output + cache writes; cache reads
+    // are billed by the provider too, so count them) against the shop's budget.
+    if (budget) budget.record(businessId, input + output + cacheRead + cacheCreate);
 
     if (metrics) {
       const labels = { provider, model, kind };
@@ -150,6 +193,23 @@ function createUsageReporter({ logger, metrics } = {}) {
       if (cacheRead) metrics.incrementCounter("llm_tokens_total", { ...labels, direction: "cache_read" }, cacheRead);
       if (cacheCreate) metrics.incrementCounter("llm_tokens_total", { ...labels, direction: "cache_creation" }, cacheCreate);
     }
+  };
+}
+
+// Fixed reply sent when a shop is over its monthly token budget. Built from the
+// same channel adapter the pipeline uses so the shape matches a normal reply,
+// but it never touches an LLM.
+function budgetExceededResponse(payload, config = {}) {
+  const text = config.budgetMessage || process.env.TOKEN_BUDGET_MESSAGE || DEFAULT_BUDGET_MESSAGE;
+  const normalizedMessage = normalizeInbound(payload || {});
+  const draft = { action: "auto_send", text };
+  const safety = { verdict: "approve", safeToSend: true, reasons: ["budget_exceeded"] };
+  const outbound = buildOutboundMessage({ normalizedMessage, draft, safety, staffItem: null });
+  return {
+    finalStatus: outbound.status === "ready_to_send" ? "ready_to_send" : "staff_review",
+    outbound,
+    staffItemId: null,
+    action: "budget_exceeded"
   };
 }
 
@@ -1471,7 +1531,8 @@ function startWebhookServer(config = {}) {
   const webhookBusinessId = config.webhookBusinessId || process.env.WEBHOOK_BUSINESS_ID || null;
   const logger = config.logger || createLogger();
   const metrics = config.metrics || createMetrics();
-  const onUsage = config.onUsage || createUsageReporter({ logger, metrics });
+  const budget = config.budget || createTokenBudgetFromEnv();
+  const onUsage = config.onUsage || createUsageReporter({ logger, metrics, budget });
   const claudeAdapters = createClaudeAdapters({ ...(config.claude || {}), onUsage });
   const openAIAdapters = createOpenAIAdapters({ ...(config.openAI || {}), onUsage });
   const allowLocalDemoLlm = config.allowLocalDemoLlm ?? process.env.ALLOW_LOCAL_DEMO_LLM === "true";
@@ -1508,6 +1569,7 @@ function startWebhookServer(config = {}) {
     outboxStore,
     logger,
     metrics,
+    budget,
     ...(promotionStore ? { promotionStore } : {})
   });
 
@@ -1517,6 +1579,7 @@ function startWebhookServer(config = {}) {
     console.log(`LLM mode: ${llmMode}; intent analyzer: ${llmIntentAnalyzer ? llmIntentMode : "deterministic"}; paraphraser: ${paraphraser ? "on" : "off"}`);
     const adminAuth = (config.adminToken || process.env.ADMIN_TOKEN) ? "token required" : (nodeEnv === "production" ? "blocked (set ADMIN_TOKEN)" : "open (local dev)");
     console.log(`Admin slots page: http://${host}:${port}/admin  (auth: ${adminAuth})`);
+    console.log(`Token budget: ${budget ? "enabled (set TOKEN_BUDGET_MONTHLY / TOKEN_BUDGET_<SHOP>)" : "disabled (no monthly cap set)"}; usage: http://${host}:${port}/debug/token-budget`);
     if (driveIntegration) {
       console.log(`Google Drive promo sync: enabled for ${Object.keys(driveIntegration.folders).join(", ") || "(no folders mapped)"}`);
       await driveIntegration.syncAll().catch((error) => {
@@ -1760,6 +1823,7 @@ module.exports = {
     verifyWebhookRequest,
     webhookSecretCandidates,
     writeJson,
-    createUsageReporter
+    createUsageReporter,
+    budgetExceededResponse
   }
 };
