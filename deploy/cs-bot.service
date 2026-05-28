@@ -1,0 +1,36 @@
+[Unit]
+Description=Hong Kong AI Customer Support Bot
+Documentation=https://github.com/Sloppy0726/auto-cs-bot-ver-1
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cs-bot
+Group=cs-bot
+WorkingDirectory=/opt/cs-bot
+
+# Required: LLM credentials, WEBHOOK_SECRET, ADMIN_TOKEN, etc.
+# Optional: LOG_INGEST_URL, LOG_INGEST_TOKEN for shipping logs off-box.
+EnvironmentFile=-/opt/cs-bot/.env
+
+ExecStart=/usr/bin/node end-to-end\x20pipeline\x20ver\x201.0/src/server.js
+
+Restart=on-failure
+RestartSec=5s
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/cs-bot
+
+# journald captures stdout/stderr; query with: journalctl -u cs-bot -f
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

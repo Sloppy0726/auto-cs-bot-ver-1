@@ -1,14 +1,22 @@
 "use strict";
 
+const fs = require("node:fs");
+const path = require("node:path");
 const { normalizeInbound } = require("../../channel adapter ver 1.0/src/channelAdapter");
 
 const DEFAULT_MAX_MESSAGES = 30;
 const DEFAULT_LOOKBACK_MESSAGES = 8;
 
 function createConversationContextStore(options = {}) {
-  const histories = new Map();
   const maxMessages = options.maxMessages || DEFAULT_MAX_MESSAGES;
   const lookbackMessages = options.lookbackMessages || DEFAULT_LOOKBACK_MESSAGES;
+  const filePath = options.filePath || null;
+  const histories = filePath ? loadFromDisk(filePath) : new Map();
+
+  function persist() {
+    if (!filePath) return;
+    saveToDisk(filePath, histories);
+  }
 
   return {
     enrichPayload(input = {}) {
@@ -38,6 +46,7 @@ function createConversationContextStore(options = {}) {
             messageId: normalized.externalMessageId
           }).slice(-maxMessages);
           histories.set(key, nextHistory);
+          persist();
         }
       };
     },
@@ -46,8 +55,32 @@ function createConversationContextStore(options = {}) {
     },
     clear() {
       histories.clear();
-    }
+      persist();
+    },
+    _filePath: filePath
   };
+}
+
+function loadFromDisk(filePath) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    const out = new Map();
+    if (parsed && typeof parsed.histories === "object") {
+      for (const [key, value] of Object.entries(parsed.histories)) {
+        if (Array.isArray(value)) out.set(key, value);
+      }
+    }
+    return out;
+  } catch (error) {
+    return new Map();
+  }
+}
+
+function saveToDisk(filePath, histories) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tmp, JSON.stringify({ histories: Object.fromEntries(histories) }, null, 2));
+  fs.renameSync(tmp, filePath);
 }
 
 function stitchText(input = {}) {

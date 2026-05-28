@@ -19,17 +19,18 @@ function createOpenAIAdapters(config = {}) {
   });
   const draftModel = config.draftModel || process.env.OPENAI_DRAFT_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL;
   const intentModel = config.intentModel || process.env.OPENAI_INTENT_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL;
+  const onUsage = typeof config.onUsage === "function" ? config.onUsage : null;
 
   return {
-    llmAdapter: createDraftAdapter({ client, model: draftModel }),
-    llmIntentAnalyzer: createIntentAnalyzer({ client, model: intentModel })
+    llmAdapter: createDraftAdapter({ client, model: draftModel, onUsage }),
+    llmIntentAnalyzer: createIntentAnalyzer({ client, model: intentModel, onUsage })
   };
 }
 
-function createDraftAdapter({ client, model }) {
+function createDraftAdapter({ client, model, onUsage }) {
   return async function openAIDraftAdapter(prompt, context = {}) {
     const approvedContext = formatApprovedContext(context);
-    const content = await client.chatCompletion({
+    const result = await client.chatCompletion({
       model,
       temperature: 0.2,
       maxTokens: 450,
@@ -44,7 +45,8 @@ function createDraftAdapter({ client, model }) {
         }
       ]
     });
-    return { text: content };
+    reportUsage(onUsage, { provider: "openai", model, kind: "draft", usage: result.usage });
+    return { text: result.text };
   };
 }
 
@@ -75,9 +77,9 @@ function formatApprovedContext(context = {}) {
   ].join("\n");
 }
 
-function createIntentAnalyzer({ client, model }) {
+function createIntentAnalyzer({ client, model, onUsage }) {
   return async function openAIIntentAnalyzer(input = {}) {
-    const content = await client.chatCompletion({
+    const result = await client.chatCompletion({
       model,
       temperature: 0,
       maxTokens: 500,
@@ -121,7 +123,24 @@ function createIntentAnalyzer({ client, model }) {
         }
       ]
     });
-    return normalizeIntentJson(content);
+    reportUsage(onUsage, { provider: "openai", model, kind: "intent", usage: result.usage });
+    return normalizeIntentJson(result.text);
+  };
+}
+
+function reportUsage(onUsage, record) {
+  if (!onUsage || !record) return;
+  try { onUsage(record); } catch { /* never let telemetry break inference */ }
+}
+
+function extractUsage(body) {
+  const usage = body?.usage;
+  if (!usage || typeof usage !== "object") return null;
+  return {
+    input_tokens: Number(usage.prompt_tokens) || 0,
+    output_tokens: Number(usage.completion_tokens) || 0,
+    cache_read_input_tokens: Number(usage.prompt_tokens_details?.cached_tokens) || 0,
+    cache_creation_input_tokens: 0
   };
 }
 
@@ -158,7 +177,10 @@ function createOpenAIChatClient(config = {}) {
           const detail = body?.error?.message || response.statusText || "OpenAI request failed";
           throw new Error(`openai_${response.status}: ${detail}`);
         }
-        return body?.choices?.[0]?.message?.content || "";
+        return {
+          text: body?.choices?.[0]?.message?.content || "",
+          usage: extractUsage(body)
+        };
       } finally {
         clearTimeout(timeout);
       }
@@ -215,5 +237,5 @@ function parseJsonObject(content) {
 module.exports = {
   createOpenAIAdapters,
   createOpenAIChatClient,
-  _internal: { createDraftAdapter, createIntentAnalyzer, normalizeIntentJson, parseJsonObject, formatApprovedContext, openAIHeaders, authorizationHeaderForToken, DEFAULT_MODEL }
+  _internal: { createDraftAdapter, createIntentAnalyzer, normalizeIntentJson, parseJsonObject, formatApprovedContext, openAIHeaders, authorizationHeaderForToken, extractUsage, reportUsage, DEFAULT_MODEL }
 };

@@ -16,6 +16,8 @@ const fakeBusinessData = require("../../private business backend mock ver 1.0/se
 const { createPromoSync, createPromotionStore } = require("../../google drive promo sync ver 1.0/src/promoSync");
 const { createGoogleDriveClient, loadFoldersFromEnv } = require("../../google drive promo sync ver 1.0/src/googleDriveClient");
 const { createOutboxStore } = require("../../channel adapter ver 1.0/src/outboxStore");
+const { createRateLimiter } = require("./rateLimiter");
+const { createLogger, createMetrics } = require("./observability");
 
 const DEFAULT_MAX_BODY_BYTES = 1_000_000;
 const DEFAULT_REPLAY_WINDOW_SECONDS = 300;
@@ -31,6 +33,9 @@ function createWebhookServer(config = {}) {
   const conversationContextStore = config.conversationContextStore === false
     ? null
     : (config.conversationContextStore || createConversationContextStore(config.conversationContext || {}));
+  const rateLimiter = config.rateLimiter === false ? null : (config.rateLimiter || createRateLimiter(config.rateLimit || {}));
+  const logger = config.logger || createLogger();
+  const metrics = config.metrics || createMetrics();
   return http.createServer(async (req, res) => {
     if (req.method === "GET" && ["/", "/webhook"].includes(req.url)) {
       writeHtml(res, 200, webChatHtml());
@@ -47,6 +52,12 @@ function createWebhookServer(config = {}) {
       return;
     }
 
+    if (req.method === "GET" && req.url === "/metrics") {
+      res.writeHead(200, { "content-type": "text/plain; version=0.0.4" });
+      res.end(metrics.renderPrometheus());
+      return;
+    }
+
     if (req.url && req.url.startsWith("/admin/")) {
       await handleAdminRequest(req, res, { availabilityStore, staffInbox, outboxStore, config });
       return;
@@ -57,6 +68,23 @@ function createWebhookServer(config = {}) {
       return;
     }
 
+    const startedAt = Date.now();
+    const ipKey = remoteAddressKey(req);
+    if (rateLimiter) {
+      const verdict = rateLimiter.take(ipKey);
+      if (!verdict.allowed) {
+        metrics.incrementCounter("webhook_requests_total", { outcome: "rate_limited" });
+        logger.warn("webhook_rate_limited", { ip: ipKey, retry_after_ms: verdict.retryAfterMs });
+        res.writeHead(429, {
+          "content-type": "application/json",
+          "retry-after": String(Math.ceil(verdict.retryAfterMs / 1000))
+        });
+        res.end(JSON.stringify({ error: "rate_limited", retry_after_ms: verdict.retryAfterMs }));
+        return;
+      }
+    }
+
+    let outcome = "ok";
     try {
       const envelopeError = validateWebhookEnvelope(req, config);
       if (envelopeError) throw envelopeError;
@@ -68,12 +96,61 @@ function createWebhookServer(config = {}) {
         : { payload, changed: false, originalText: payload?.text || null, stitchedText: payload?.text || null, reason: null, commit() {} };
       const result = await pipeline.runMessage(contextResult.payload);
       contextResult.commit();
+      const action = result?.decision?.action || result?.action || "unknown";
+      metrics.incrementCounter("webhook_requests_total", { outcome: "ok" });
+      logger.info("webhook_handled", { action, business_id: contextResult.payload?.businessId || null, latency_ms: Date.now() - startedAt });
       writeJson(res, 200, publicWebhookResponse(result, contextResult.payload, config, contextResult));
     } catch (error) {
       const statusCode = statusCodeForError(error);
+      outcome = `error_${statusCode}`;
+      metrics.incrementCounter("webhook_requests_total", { outcome });
+      logger.error("webhook_failed", { status: statusCode, reason: String(error?.message || error) });
       writeJson(res, statusCode, { error: publicErrorMessage(error, statusCode) });
+    } finally {
+      metrics.observeHistogram("webhook_latency_ms", { outcome }, Date.now() - startedAt);
     }
   });
+}
+
+function remoteAddressKey(req) {
+  const forwarded = getHeader(req, "x-forwarded-for");
+  if (forwarded) return String(forwarded).split(",")[0].trim();
+  return req.socket?.remoteAddress || "unknown";
+}
+
+function createUsageReporter({ logger, metrics } = {}) {
+  return function reportLlmUsage(record = {}) {
+    const provider = record.provider || "unknown";
+    const model = record.model || "unknown";
+    const kind = record.kind || "unknown";
+    const usage = record.usage || {};
+    const input = Number(usage.input_tokens) || 0;
+    const output = Number(usage.output_tokens) || 0;
+    const cacheRead = Number(usage.cache_read_input_tokens) || 0;
+    const cacheCreate = Number(usage.cache_creation_input_tokens) || 0;
+
+    if (logger) {
+      logger.info("llm_call", {
+        provider,
+        model,
+        kind,
+        input_tokens: input,
+        output_tokens: output,
+        cache_read_input_tokens: cacheRead,
+        cache_creation_input_tokens: cacheCreate,
+        total_tokens: input + output
+      });
+    }
+
+    if (metrics) {
+      const labels = { provider, model, kind };
+      metrics.incrementCounter("llm_calls_total", labels);
+      metrics.incrementCounter("llm_tokens_total", { ...labels, direction: "input" }, input);
+      metrics.incrementCounter("llm_tokens_total", { ...labels, direction: "output" }, output);
+      if (cacheRead) metrics.incrementCounter("llm_tokens_total", { ...labels, direction: "cache_read" }, cacheRead);
+      if (cacheCreate) metrics.incrementCounter("llm_tokens_total", { ...labels, direction: "cache_creation" }, cacheCreate);
+    }
+  };
 }
 
 function readJson(req) {
@@ -1392,8 +1469,11 @@ function startWebhookServer(config = {}) {
   const hasWebhookSecret = Boolean(config.webhookSecret || process.env.WEBHOOK_SECRET);
   const allowUnsignedWebhooks = config.allowUnsignedWebhooks ?? (!hasWebhookSecret && nodeEnv !== "production");
   const webhookBusinessId = config.webhookBusinessId || process.env.WEBHOOK_BUSINESS_ID || null;
-  const claudeAdapters = createClaudeAdapters(config.claude || {});
-  const openAIAdapters = createOpenAIAdapters(config.openAI || {});
+  const logger = config.logger || createLogger();
+  const metrics = config.metrics || createMetrics();
+  const onUsage = config.onUsage || createUsageReporter({ logger, metrics });
+  const claudeAdapters = createClaudeAdapters({ ...(config.claude || {}), onUsage });
+  const openAIAdapters = createOpenAIAdapters({ ...(config.openAI || {}), onUsage });
   const allowLocalDemoLlm = config.allowLocalDemoLlm ?? process.env.ALLOW_LOCAL_DEMO_LLM === "true";
   if (!config.llmAdapter && !claudeAdapters.llmAdapter && !openAIAdapters.llmAdapter && !allowLocalDemoLlm) {
     throw new Error("CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or OPENAI_OAUTH_TOKEN is required to start the bot. Set one in whatsapp-web-test-bridge/.env, or set ALLOW_LOCAL_DEMO_LLM=true for offline demo mode.");
@@ -1426,6 +1506,8 @@ function startWebhookServer(config = {}) {
     backend,
     availabilityStore,
     outboxStore,
+    logger,
+    metrics,
     ...(promotionStore ? { promotionStore } : {})
   });
 
@@ -1677,6 +1759,7 @@ module.exports = {
     verifyFreshTimestamp,
     verifyWebhookRequest,
     webhookSecretCandidates,
-    writeJson
+    writeJson,
+    createUsageReporter
   }
 };
