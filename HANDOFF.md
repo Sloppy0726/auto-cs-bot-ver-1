@@ -1,6 +1,6 @@
 # Handoff - Hong Kong AI Customer Support SaaS
 
-Last verified: 2026-05-24 HKT.
+Last verified: 2026-06-01 HKT (doc sync against repo; see §18 for what landed since §17).
 
 This is the project map for the next session. Read this before editing code.
 
@@ -867,6 +867,284 @@ M  whatsapp-web-test-bridge/.env.example
    var redeploys. Persist alongside the availability store.
 4. **Booking conflict detection** in `addBooking` — still §13.9 #2.
 5. **Per-staff resources** (Amy vs Joey calendars) — still §13.9 #6.
+
+End of session addendum.
+
+---
+
+## 18. Session Addendum — 2026-05-25 → 2026-05-27 (outbound channel sender, production readiness, deploy pipeline)
+
+This section folds in everything that landed between §17 and the merge of PR #2
+(`ddefddf`). All committed to `main`. Working tree is clean except for one
+untracked helper script (§18.9).
+
+Per-commit test counts (from each commit message): `5895e4e` → 2715,
+`9472680` → 2732, `656ac0c` → 2744. Net suites have grown by 12 new runners
+(§18.7). The §4 table is now stale; refresh when next running the full loop.
+
+### 18.1 Bare-hour AM/PM auto-resolution (commit `58d6535`)
+
+Tightens the §14 ambiguity guard. A bare Cantonese time like `2點` or `六點`
+no longer always triggers an AM/PM clarify. The pipeline now checks the
+requested date's opening hours and, if exactly one of `(AM hour, PM hour)`
+falls inside an open window, resolves to that. It only asks when both fit
+(e.g. `8點` at a place open 08:00–22:00) or when no opening-hours context
+is known.
+
+Files: `end-to-end pipeline ver 1.0/src/pipeline.js` (rewrites
+`inferRequestedTime` / `inferAmPmFromContext`), `private business backend mock
+ver 1.0/src/businessBackendMock.js` (exposes a helper), 73 new tests appended
+to `end-to-end pipeline ver 1.0/test/pipeline.store.test.js`.
+
+### 18.2 Staff in-chat reply auto-resolves the pending booking (commit `cf70929`)
+
+Closes the "staff types a confirm directly into WhatsApp instead of clicking
+Approve in the dashboard" gap. While a chat is paused for handoff, the bridge
+classifies the staff's manual reply:
+
+| Phrasing | Action |
+|---|---|
+| Confirm (e.g. `已預約`, `Booking confirmed`, `搞掂`) | `POST /admin/inbox/.../approve` → writes the booking to the calendar |
+| Deny (e.g. `對唔住，冇位`, `fully booked`) | `POST /admin/inbox/.../reject` |
+| Anything unclear | Leaves the item open for the admin dashboard |
+
+The bot sends no extra customer message — staff's own reply IS the
+notification. Auth-aware: forwards `ADMIN_TOKEN` as `x-admin-token`.
+
+New files (all in `whatsapp-web-test-bridge/`):
+
+- `src/staffReplyClassifier.js` — heuristic classifier with an optional LLM
+  fallback hook for ambiguous text.
+- `src/staffReplyAutoResolver.js` — wires classifier → admin endpoints,
+  handles inbox lookup + idempotency.
+- `test/staffReplyClassifier.test.js`, `test/staffReplyAutoResolver.test.js`,
+  `test/staffReplyAutoResolver.integration.test.js`.
+
+Plus changes to `src/whatsappWebBridge.js` to invoke the resolver during the
+handoff-staff-reply path.
+
+### 18.3 Outbound channel sender for admin-approved bookings (commit `78e8cca`)
+
+Closes the §17.2 "approve does not message the customer" limitation. Now when
+staff approves a booking-shaped item in the admin dashboard, the server
+enqueues a customer confirmation message into a file-backed outbox shared
+with the WhatsApp Web bridge. On its next tick the bridge opens the target
+chat (via a new sidebar script that matches by chat name) and sends the
+confirmation, marking the record as `sent`. Failed sends retry up to 3
+attempts per record. Non-`whatsapp` channels decline with `channel_unsupported`.
+
+The in-chat staff-reply path (§18.2) intentionally skips this — staff's own
+reply already serves as the notification.
+
+New files:
+
+- `channel adapter ver 1.0/src/outboxStore.js` + `test/outboxStore.test.js`
+  (file-backed outbox, atomic tmp+rename writes).
+- `whatsapp-web-test-bridge/src/outboxProcessor.js` + `test/outboxProcessor.test.js`
+  (bridge-side tick worker).
+
+Modified: `end-to-end pipeline ver 1.0/src/server.js` (admin approve handler
+enqueues), `whatsapp-web-test-bridge/src/whatsappWebBridge.js` +
+`src/sidebarScripts.js` (chat-by-name open + send), plus admin / sidebar tests
+extended. `.gitignore` now excludes the runtime outbox state file.
+
+### 18.4 Persistence, rate limiting, observability (commit `5895e4e`, PR #2)
+
+Three production-readiness additions. All zero-dep (Node stdlib) and
+backwards compatible (off by default).
+
+**Persistence**
+
+- `staff inbox ver 1.0/src/staffInbox.js` — accepts optional `filePath`,
+  hydrates from disk on init, re-persists after each mutation. Atomic write
+  pattern matches `outboxStore`.
+- `conversation context ver 1.0/src/conversationContext.js` — accepts
+  optional `filePath`; persists per-conversation history map across restarts.
+
+**Rate limiting**
+
+- New `end-to-end pipeline ver 1.0/src/rateLimiter.js` — in-memory token
+  bucket keyed by remote address (X-Forwarded-For aware). Defaults 20
+  req/min burst, refilling at 20/min. Tunable via `RATE_LIMIT_CAPACITY`,
+  `RATE_LIMIT_REFILL_PER_SEC`, `RATE_LIMIT_IDLE_TTL_MS`.
+- Wired into `POST /webhook` before body read. Denied requests return 429 +
+  `Retry-After`.
+
+**Observability**
+
+- New `end-to-end pipeline ver 1.0/src/observability.js` — structured JSON
+  logger (silent under `NODE_ENV=test` or `LOG_LEVEL=silent`) and a
+  counter/histogram registry exposed as Prometheus text at `GET /metrics`.
+- Webhook handler emits `webhook_handled` / `webhook_failed` /
+  `webhook_rate_limited` events and increments `webhook_requests_total` +
+  `webhook_latency_ms` per request.
+
+Tests: `rateLimiter.test.js` (37), `observability.test.js` (56),
+`server.integrations.test.js` (90), `staffInbox.persistence.test.js` (45),
+`conversationContext.persistence.test.js` (49).
+
+### 18.5 LLM token usage telemetry (commit `9472680`)
+
+Per-request visibility into Claude / OpenAI cost.
+
+- `claudeAdapter.js` and `openaiAdapter.js` HTTP clients now return
+  `{ text, usage }` and extract `input_tokens` / `output_tokens` (+
+  Claude cache hit/creation, OpenAI `prompt_tokens_details.cached_tokens`).
+- Both factories accept an `onUsage` callback that fires after every
+  successful draft/intent call. Errors thrown inside `onUsage` are swallowed
+  so telemetry can never break inference.
+- `startWebhookServer` wires a default reporter that emits one `llm_call`
+  JSON log per prompt (`provider, model, kind=draft|intent, token counts`)
+  and increments `llm_calls_total{provider,model,kind}` +
+  `llm_tokens_total{provider,model,kind,direction}` for `/metrics`. Labels
+  are sorted for stable Prometheus output.
+
+New file: `end-to-end pipeline ver 1.0/test/usageReporter.test.js` (17 tests).
+
+### 18.6 Ship logs off-box + systemd deploy (commit `656ac0c`)
+
+So a solo operator can monitor token usage and fix bugs across multiple
+customer shops without physically visiting them.
+
+**Log shipper**
+
+- New `createHttpSink` in `observability.js` — batches log lines and POSTs as
+  a JSON array to `LOG_INGEST_URL` with optional bearer (`LOG_INGEST_TOKEN`).
+  Failures swallowed; the bot never blocks on telemetry. Tunable batch size +
+  flush interval. Auto-enables when `LOG_INGEST_URL` is set.
+- Compatible with hosted services (Better Stack, Axiom, …) or a self-hosted
+  receiver on a $5 VPS.
+
+**Systemd unit**
+
+- `deploy/cs-bot.service` — auto-restart, hardening (`NoNewPrivileges`,
+  `ProtectSystem`, `ReadWritePaths`), journald output.
+- `deploy/deploy.sh` — idempotent updater: fetches origin, exits early if
+  already up to date, runs smoke tests
+  (`pipeline.test.js` + `server.test.js`), restarts the service via
+  passwordless `sudo systemctl restart`. Safe for cron / unattended use.
+
+New file: `end-to-end pipeline ver 1.0/test/httpLogSink.test.js` (12 tests).
+
+### 18.7 GitHub Actions auto-deploy to shops (commit `8c43eed` → PR #2 merge `ddefddf`)
+
+Push to `main` → runs full test suite → SSHes into every shop in
+`deploy/shops.json` over Tailscale → runs `/opt/cs-bot/deploy/deploy.sh` on
+each.
+
+- `.github/workflows/deploy.yml` — `test` job runs every `*.test.js` (skips
+  `sidebarScripts.test.js` since jsdom isn't installed at repo root),
+  `inventory` job emits the shop matrix, `deploy` job runs Tailscale OAuth +
+  matrix-SSH per shop. `workflow_dispatch` accepts a single hostname for
+  one-shop manual deploys. Markdown / `HANDOFF.md` / `CHANGELOG.md` /
+  `legal/**` changes are excluded from the trigger.
+- `deploy/shops.json` — current shop list (one entry: `prince-snooker` /
+  `prince_snooker` / 王子桌球). Add new shops by editing this file and
+  pushing to main; the next deploy includes them.
+- `deploy/cs-bot.sudoers` — sudoers fragment granting passwordless
+  `systemctl restart cs-bot` / `systemctl status cs-bot` to the `cs-bot` user.
+
+Required GitHub secrets: `TAILSCALE_OAUTH_CLIENT_ID`, `TAILSCALE_OAUTH_SECRET`,
+`DEPLOY_SSH_KEY` (the matching public key goes in `~cs-bot/.ssh/authorized_keys`
+on every shop).
+
+### 18.8 New test runners since §17
+
+Add these to §4 when next running the full loop:
+
+```bash
+node "channel adapter ver 1.0/test/outboxStore.test.js"
+node "conversation context ver 1.0/test/conversationContext.persistence.test.js"
+node "end-to-end pipeline ver 1.0/test/httpLogSink.test.js"
+node "end-to-end pipeline ver 1.0/test/observability.test.js"
+node "end-to-end pipeline ver 1.0/test/rateLimiter.test.js"
+node "end-to-end pipeline ver 1.0/test/server.integrations.test.js"
+node "end-to-end pipeline ver 1.0/test/usageReporter.test.js"
+node "google drive promo sync ver 1.0/test/googleDriveClient.test.js"   # was missed in §17.4
+node "staff inbox ver 1.0/test/staffInbox.persistence.test.js"
+node "whatsapp-web-test-bridge/test/outboxProcessor.test.js"
+node "whatsapp-web-test-bridge/test/staffReplyAutoResolver.integration.test.js"
+node "whatsapp-web-test-bridge/test/staffReplyAutoResolver.test.js"
+node "whatsapp-web-test-bridge/test/staffReplyClassifier.test.js"
+```
+
+Pre-existing skip in CI: `whatsapp-web-test-bridge/test/sidebarScripts.test.js`
+needs jsdom and is skipped in `.github/workflows/deploy.yml`. Locally it still
+runs.
+
+### 18.9 Untracked file at section-write time
+
+```text
+?? scripts/testAuthToken.js
+```
+
+A small diagnostic that pings `ANTHROPIC_AUTH_TOKEN` against the proxy
+(`hk.routeai.cc` per §15.5) and exits with a verdict code:
+`0=OK, 3=RATE_LIMIT, 4=AUTH_ERROR, 5=UPSTREAM_DOWN, 6=OTHER, 2=CONFIG`. Loads
+env from `whatsapp-web-test-bridge/.env` (overriding shell env so Claude
+Desktop's `ANTHROPIC_BASE_URL` injection doesn't mask the proxy). Useful for
+separating "proxy is down" from "token is rate-limited / revoked" when the
+fallback chain (§15.3) is misbehaving. Decide whether to commit under
+`scripts/` or delete.
+
+### 18.10 New module-level surface worth knowing about
+
+| Surface | Where | Notes |
+|---|---|---|
+| Outbox (server → bridge) | `channel adapter ver 1.0/src/outboxStore.js` | File-backed, atomic writes. Bridge polls. |
+| Outbox tick worker | `whatsapp-web-test-bridge/src/outboxProcessor.js` | Opens chat by name + sends; retries ≤3. |
+| Staff reply classifier | `whatsapp-web-test-bridge/src/staffReplyClassifier.js` | Heuristics first; optional LLM fallback. |
+| Staff reply resolver | `whatsapp-web-test-bridge/src/staffReplyAutoResolver.js` | Wires classifier → admin approve/reject. |
+| Rate limiter | `end-to-end pipeline ver 1.0/src/rateLimiter.js` | Token bucket per remote addr. |
+| Observability | `end-to-end pipeline ver 1.0/src/observability.js` | JSON logs + Prometheus `/metrics` + HTTP log sink. |
+| Persistence (inbox) | `staff inbox ver 1.0/src/staffInbox.js` | Optional `filePath`. |
+| Persistence (context) | `conversation context ver 1.0/src/conversationContext.js` | Optional `filePath`. |
+| Token usage telemetry | `claudeAdapter.js` / `openaiAdapter.js` `onUsage` | Surfaced through default reporter in server. |
+| Systemd unit | `deploy/cs-bot.service` | Restart-on-fail + filesystem hardening. |
+| One-shot deploy | `deploy/deploy.sh` | Idempotent; smoke-tests before restart. |
+| CI deploy | `.github/workflows/deploy.yml` | Push to main → tests → SSH each shop. |
+| Shop registry | `deploy/shops.json` | Edit + push to onboard a new shop. |
+
+### 18.11 New env vars
+
+| Var | Purpose |
+|---|---|
+| `RATE_LIMIT_CAPACITY` | Token bucket burst capacity (default 20). |
+| `RATE_LIMIT_REFILL_PER_SEC` | Refill rate (default 20/60). |
+| `RATE_LIMIT_IDLE_TTL_MS` | Per-IP bucket GC TTL. |
+| `LOG_LEVEL` | `silent` disables logs. Default emits JSON to stdout. |
+| `LOG_INGEST_URL` | Enables HTTP log sink. POSTs JSON-array batches. |
+| `LOG_INGEST_TOKEN` | Bearer token for the log sink. Optional. |
+| `CS_BOT_DIR`, `CS_BOT_SERVICE`, `CS_BOT_BRANCH` | Overrides for `deploy/deploy.sh`. Defaults: `/opt/cs-bot`, `cs-bot`, `main`. |
+
+Plus the §17 set still applies (`GOOGLE_SERVICE_ACCOUNT_JSON_PATH`,
+`GDRIVE_FOLDER_*`, `ADMIN_TOKEN`, `PARAPHRASE_ENABLED`, `CLAUDE_OAUTH_BASE_URL`).
+
+### 18.12 Open backlog after this work
+
+From §17.6 / §13.9, still outstanding:
+
+1. Booking conflict detection in `addBooking` (out-of-hours rejection landed
+   in §17.1; overlap-with-existing-booking detection did not).
+2. Per-staff resources (Amy vs Joey calendars) — the single biggest UX gap.
+3. Schedule the Drive sync (currently once at startup) using `hkTime.js`
+   helpers.
+4. Per-business folder UI for Drive (so SMEs don't need env var redeploys).
+5. Refresh §4 test runner table + total counts.
+6. Decide on committing `scripts/testAuthToken.js` (§18.9).
+7. The promo store still has no real per-tenant persistence — only the
+   in-memory store hydrated from Drive at boot. Survives only as long as
+   the process.
+
+New items observed this session:
+
+8. Outbox uses file-backed state but isn't wired into the persistence-survival
+   smoke check. If `state/outbox.json` is corrupted, the bridge silently
+   drops un-sent confirmations. Add startup validation + a `/admin/outbox`
+   inspection endpoint.
+9. Rate limiter is per-process and in-memory — a multi-shop or multi-instance
+   deploy would not share buckets. Acceptable for the current single-process
+   per-shop deploy, but flag before scaling out.
 
 End of session addendum.
 
