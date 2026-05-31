@@ -11,7 +11,7 @@ const {
   _internal
 } = require("../src/availabilityStore");
 
-const { validateOpeningHours, validateClosedPeriod, validateBooking, subtractMany, toMinutes, checkBookingFitsOpeningHours } = _internal;
+const { validateOpeningHours, validateClosedPeriod, validateBooking, validateResource, normalizeResource, subtractMany, toMinutes, checkBookingFitsOpeningHours } = _internal;
 
 let testCount = 0;
 function check(label, condition, detail) {
@@ -327,6 +327,142 @@ function freshStore(prefix = "availabilityStore-test") {
   const afterReset = s2.getOpeningHours("beauty_demo");
   eq("reset restores beauty default Monday hours", afterReset["1"], defaultOpeningHours("beauty_demo")["1"]);
   check("reset clears bookings", s2.listBookings("beauty_demo").length === 0);
+})();
+
+// ---------- validateResource ----------
+(function validateResourceTests() {
+  check("rejects missing payload", validateResource(null).error === "resource payload required");
+  check("rejects non-object", validateResource("Amy").error === "resource payload required");
+  check("rejects missing name", validateResource({ openingHours: { "0": [] } }).error === "name is required");
+  check("rejects whitespace-only name", validateResource({ name: "   " }).error === "name is required");
+  check("rejects oversize name", validateResource({ name: "x".repeat(200) }).error?.includes("≤ 80 chars"));
+
+  const minimal = validateResource({ name: "Amy" }).resource;
+  check("minimal resource has trimmed name", minimal.name === "Amy");
+  check("minimal resource defaults active=true", minimal.active === true);
+  check("minimal resource has no openingHours field", minimal.openingHours === undefined);
+
+  const trimmed = validateResource({ name: "  Joey  " }).resource;
+  check("trims whitespace from name", trimmed.name === "Joey");
+
+  const inactive = validateResource({ name: "Old Stylist", active: false }).resource;
+  check("respects active=false", inactive.active === false);
+
+  const withHours = validateResource({ name: "Amy", openingHours: { "1": [{ open: "10:00", close: "18:00" }] } }).resource;
+  eq("preserves openingHours when valid", withHours.openingHours["1"], [{ open: "10:00", close: "18:00" }]);
+
+  const badHours = validateResource({ name: "Amy", openingHours: { "1": [{ open: "9am", close: "5pm" }] } });
+  check("rejects invalid openingHours via wrapper", badHours.error?.startsWith("openingHours:"));
+})();
+
+// ---------- normalizeResource ----------
+(function normalizeResourceTests() {
+  check("normalizeResource drops null", normalizeResource(null) === null);
+  check("normalizeResource drops nameless", normalizeResource({ id: "res_x" }) === null);
+  const norm = normalizeResource({ name: "Table 1" });
+  check("normalizeResource auto-generates id", norm.id.startsWith("res_"));
+  check("normalizeResource defaults active=true", norm.active === true);
+  const preserved = normalizeResource({ id: "res_keep", name: "Amy", active: false });
+  check("normalizeResource preserves id", preserved.id === "res_keep");
+  check("normalizeResource preserves active=false", preserved.active === false);
+})();
+
+// ---------- Resources CRUD ----------
+(function resourcesCrudTests() {
+  const { store } = freshStore("resources-crud");
+
+  // Empty by default
+  eq("listResources empty on fresh business", store.listResources("beauty_demo"), []);
+  check("getResource on missing returns null", store.getResource("beauty_demo", "res_nope") === null);
+
+  // Add
+  const amy = store.addResource("beauty_demo", { name: "Amy" });
+  check("addResource returns ok", amy.ok === true && amy.resource.id.startsWith("res_"));
+  check("addResource defaults active=true", amy.resource.active === true);
+
+  const joey = store.addResource("beauty_demo", { name: "Joey", openingHours: { "0": [], "1": [], "2": [{ open: "14:00", close: "20:00" }], "3": [], "4": [], "5": [], "6": [] } });
+  check("addResource accepts openingHours", joey.ok === true && joey.resource.openingHours["2"][0].open === "14:00");
+
+  // Validation errors at the CRUD layer
+  const noName = store.addResource("beauty_demo", { name: "" });
+  check("addResource rejects empty name", noName.ok === false && noName.error.includes("name is required"));
+
+  const badBiz = store.addResource("nope_demo", { name: "Whoever" });
+  check("addResource rejects unknown businessId", badBiz.ok === false && badBiz.error.includes("unknown businessId"));
+
+  // List
+  const all = store.listResources("beauty_demo");
+  check("listResources returns 2", all.length === 2);
+  check("listResources returns array of resource records", all.every((r) => r.id && r.name));
+
+  // Get
+  const fetched = store.getResource("beauty_demo", amy.resource.id);
+  check("getResource finds by id", fetched && fetched.name === "Amy");
+
+  // Update
+  const renamed = store.updateResource("beauty_demo", amy.resource.id, { name: "Amy Chan" });
+  check("updateResource applies patch", renamed.ok === true && renamed.resource.name === "Amy Chan");
+  check("updateResource preserves id", renamed.resource.id === amy.resource.id);
+
+  const badPatch = store.updateResource("beauty_demo", amy.resource.id, { name: "" });
+  check("updateResource re-validates", badPatch.ok === false && badPatch.error.includes("name is required"));
+
+  const missing = store.updateResource("beauty_demo", "res_nope", { name: "x" });
+  check("updateResource missing → not found", missing.ok === false && missing.error === "resource not found");
+
+  // Remove (soft delete)
+  const removed = store.removeResource("beauty_demo", amy.resource.id);
+  check("removeResource returns ok", removed.ok === true);
+  check("removed resource is marked inactive", removed.resource.active === false);
+
+  const stillThere = store.getResource("beauty_demo", amy.resource.id);
+  check("soft-deleted resource still findable by id", stillThere && stillThere.active === false);
+
+  const activeOnly = store.listResources("beauty_demo", { includeInactive: false });
+  check("listResources excludeInactive filters out soft-deleted", activeOnly.length === 1 && activeOnly[0].id === joey.resource.id);
+  const withInactive = store.listResources("beauty_demo");
+  check("listResources default includes inactive", withInactive.length === 2);
+
+  // Re-activation
+  const reactivated = store.updateResource("beauty_demo", amy.resource.id, { active: true });
+  check("updateResource can re-activate", reactivated.ok === true && reactivated.resource.active === true);
+})();
+
+// ---------- Resources persistence + back-compat ----------
+(function resourcesPersistenceTests() {
+  // Resources survive reload
+  const { filePath } = freshStore("resources-persist");
+  const s1 = createAvailabilityStore({ filePath });
+  s1.addResource("beauty_demo", { name: "Amy" });
+  s1.addResource("beauty_demo", { name: "Joey", openingHours: { "0": [], "1": [{ open: "11:00", close: "20:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] } });
+
+  const s2 = createAvailabilityStore({ filePath });
+  const reloaded = s2.listResources("beauty_demo");
+  check("resources survive reload", reloaded.length === 2);
+  check("reloaded resource openingHours intact", reloaded.find((r) => r.name === "Joey").openingHours["1"][0].open === "11:00");
+
+  // Loading a legacy state file (no `resources` key) does not throw
+  const legacyDir = fs.mkdtempSync(path.join(os.tmpdir(), "resources-legacy-"));
+  const legacyFile = path.join(legacyDir, "availability.json");
+  fs.writeFileSync(legacyFile, JSON.stringify({
+    businesses: {
+      beauty_demo: {
+        openingHours: { "0": [], "1": [{ open: "11:00", close: "19:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] },
+        closedPeriods: [],
+        bookings: [{ id: "book_legacy", date: "2026-05-25", time: "13:00", service: "facial", durationMinutes: 75 }]
+        // no resources key — pre-Phase-1 state
+      }
+    }
+  }, null, 2));
+  const legacyStore = createAvailabilityStore({ filePath: legacyFile });
+  eq("legacy state file → empty resources", legacyStore.listResources("beauty_demo"), []);
+  check("legacy bookings still readable after load", legacyStore.listBookings("beauty_demo").some((b) => b.id === "book_legacy"));
+
+  // Reset clears resources too
+  const { store: s3 } = freshStore("resources-reset");
+  s3.addResource("beauty_demo", { name: "Amy" });
+  s3.reset();
+  eq("reset clears resources", s3.listResources("beauty_demo"), []);
 })();
 
 console.log(`availabilityStore: ${testCount} tests passed`);

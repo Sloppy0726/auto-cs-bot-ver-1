@@ -14,6 +14,7 @@ const VALID_BUSINESS_IDS = new Set(["beauty_demo", "restaurant_demo", "edu_demo"
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const HHMM = /^\d{2}:\d{2}$/;
 const SLOT_STEP_MINUTES = 30;
+const RESOURCE_NAME_MAX = 80;
 
 function createAvailabilityStore(options = {}) {
   const filePath = options.filePath || DEFAULT_FILE;
@@ -42,8 +43,12 @@ function createAvailabilityStore(options = {}) {
       state.businesses[businessId] = {
         openingHours: defaultOpeningHours(businessId),
         closedPeriods: [],
-        bookings: []
+        bookings: [],
+        resources: []
       };
+    }
+    if (!Array.isArray(state.businesses[businessId].resources)) {
+      state.businesses[businessId].resources = [];
     }
     return state.businesses[businessId];
   }
@@ -136,6 +141,50 @@ function createAvailabilityStore(options = {}) {
     return { ok: true, booking: removed };
   }
 
+  // ---- Resources (per-business stylists / tables / rooms) ----
+  // Backwards compatible: a business with zero resources keeps the existing
+  // single-pool free-slot behavior. Resources are surfaced to Phase 2 logic.
+  function listResources(businessId, { includeInactive = true } = {}) {
+    const state = loadAll();
+    const arr = state.businesses[businessId]?.resources || [];
+    return includeInactive ? arr.slice() : arr.filter((r) => r.active !== false);
+  }
+
+  function getResource(businessId, id) {
+    const arr = listResources(businessId);
+    return arr.find((r) => r.id === id) || null;
+  }
+
+  function addResource(businessId, resource) {
+    if (!VALID_BUSINESS_IDS.has(businessId)) return { ok: false, error: `unknown businessId: ${businessId}` };
+    const v = validateResource(resource);
+    if (v.error) return { ok: false, error: v.error };
+    const state = loadAll();
+    const record = v.resource;
+    record.id = record.id || newId("res");
+    ensureBusiness(state, businessId).resources.push(record);
+    saveAll(state);
+    return { ok: true, resource: record };
+  }
+
+  function updateResource(businessId, id, patch) {
+    const state = loadAll();
+    const arr = state.businesses[businessId]?.resources || [];
+    const idx = arr.findIndex((r) => r.id === id);
+    if (idx === -1) return { ok: false, error: "resource not found" };
+    const merged = { ...arr[idx], ...patch, id };
+    const v = validateResource(merged);
+    if (v.error) return { ok: false, error: v.error };
+    arr[idx] = v.resource;
+    saveAll(state);
+    return { ok: true, resource: v.resource };
+  }
+
+  function removeResource(businessId, id) {
+    // Soft delete so existing bookings that reference this resourceId still resolve.
+    return updateResource(businessId, id, { active: false });
+  }
+
   // ---- Free slot computation ----
   function listFreeSlots({ businessId, date, service, durationMinutes, partySize } = {}) {
     if (!businessId || !date || !ISO_DATE.test(date)) {
@@ -202,6 +251,7 @@ function createAvailabilityStore(options = {}) {
     getOpeningHours, setOpeningHours,
     listClosedPeriods, addClosedPeriod, removeClosedPeriod,
     listBookings, addBooking, updateBooking, removeBooking,
+    listResources, getResource, addResource, updateResource, removeResource,
     listFreeSlots, findNextAvailableDates,
     listAll, reset,
     _filePath: filePath
@@ -225,7 +275,8 @@ function buildInitialState() {
     businesses[id] = {
       openingHours: defaultOpeningHours(id),
       closedPeriods: [],
-      bookings: []
+      bookings: [],
+      resources: []
     };
   }
   return { businesses };
@@ -287,8 +338,35 @@ function normalizeState(state) {
         : [],
       bookings: Array.isArray(record.bookings)
         ? record.bookings.map((b) => ({ ...b, id: b.id || newId("book") }))
+        : [],
+      resources: Array.isArray(record.resources)
+        ? record.resources.map((r) => normalizeResource(r)).filter((r) => r !== null)
         : []
     };
+  }
+  return out;
+}
+
+function normalizeResource(resource) {
+  if (!resource || typeof resource !== "object") return null;
+  const name = String(resource.name || "").trim();
+  if (!name) return null;
+  const out = {
+    id: resource.id || newId("res"),
+    name: name.slice(0, RESOURCE_NAME_MAX),
+    active: resource.active !== false
+  };
+  if (resource.openingHours && typeof resource.openingHours === "object") {
+    const normalized = {};
+    for (let d = 0; d < 7; d++) {
+      const key = String(d);
+      const arr = Array.isArray(resource.openingHours[key]) ? resource.openingHours[key] : [];
+      normalized[key] = arr
+        .filter((w) => w && HHMM.test(w.open) && HHMM.test(w.close) && toMinutes(w.close) > toMinutes(w.open))
+        .map((w) => ({ open: w.open, close: w.close }))
+        .sort((a, b) => toMinutes(a.open) - toMinutes(b.open));
+    }
+    out.openingHours = normalized;
   }
   return out;
 }
@@ -374,6 +452,24 @@ function validateBooking(businessId, booking) {
   return { booking: out };
 }
 
+function validateResource(resource) {
+  if (!resource || typeof resource !== "object") return { error: "resource payload required" };
+  const name = String(resource.name || "").trim();
+  if (!name) return { error: "name is required" };
+  if (name.length > RESOURCE_NAME_MAX) return { error: `name must be ≤ ${RESOURCE_NAME_MAX} chars` };
+  const out = {
+    id: resource.id,
+    name,
+    active: resource.active === false ? false : true
+  };
+  if (resource.openingHours != null) {
+    const v = validateOpeningHours(resource.openingHours);
+    if (v.error) return { error: `openingHours: ${v.error}` };
+    out.openingHours = v.hours;
+  }
+  return { resource: out };
+}
+
 function checkBookingFitsOpeningHours(state, businessId, booking) {
   const hours = (state.businesses?.[businessId]?.openingHours) || defaultOpeningHours(businessId);
   const dow = dayOfWeek(booking.date);
@@ -454,8 +550,8 @@ module.exports = {
   defaultDurationForService,
   defaultOpeningHours,
   _internal: {
-    validateOpeningHours, validateClosedPeriod, validateBooking,
-    normalizeState, buildInitialState, subtractOne, subtractMany,
+    validateOpeningHours, validateClosedPeriod, validateBooking, validateResource,
+    normalizeState, normalizeResource, buildInitialState, subtractOne, subtractMany,
     toMinutes, fromMinutes, dayOfWeek, checkBookingFitsOpeningHours
   }
 };
