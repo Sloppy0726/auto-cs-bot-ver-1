@@ -31,10 +31,16 @@ function createBusinessBackend(config = {}) {
     return availabilityStore.getOpeningHours(businessId) || null;
   }
 
+  function listResourcesImpl(businessId, options) {
+    if (!availabilityStore || typeof availabilityStore.listResources !== "function") return [];
+    return availabilityStore.listResources(businessId, options) || [];
+  }
+
   return {
     checkAvailability: checkAvailabilityImpl,
     findNextAvailableDates: findNextAvailableDatesImpl,
     getOpeningHours: getOpeningHoursImpl,
+    listResources: listResourcesImpl,
     lookupOrder(query) {
       return lookupOrder(data, query || {});
     },
@@ -63,7 +69,8 @@ function checkAvailabilityFromStore(store, query) {
     date: query.date,
     service: query.service,
     partySize: query.partySize,
-    durationMinutes: query.durationMinutes
+    durationMinutes: query.durationMinutes,
+    resourceId: query.resourceId
   });
   const free = Array.isArray(result.freeSlots) ? result.freeSlots : [];
 
@@ -77,10 +84,11 @@ function checkAvailabilityFromStore(store, query) {
         time: query.time,
         service: query.service,
         partySize: query.partySize,
+        resourceId: query.resourceId,
         available: Boolean(match),
         durationMinutes: match?.durationMinutes || null,
         endTime: match?.endTime || null
-      }, ["date", "time", "service", "partySize", "available", "durationMinutes", "endTime"]),
+      }, ["date", "time", "service", "partySize", "resourceId", "available", "durationMinutes", "endTime"]),
       reason: match ? "Time is inside opening hours and free." : "Time is closed or already booked."
     };
   }
@@ -89,7 +97,8 @@ function checkAvailabilityFromStore(store, query) {
   const availableSessions = free.map((slot) => ({
     time: slot.time,
     durationMinutes: slot.durationMinutes,
-    endTime: slot.endTime
+    endTime: slot.endTime,
+    availableResources: slot.availableResources
   }));
   return {
     found: true,
@@ -98,9 +107,10 @@ function checkAvailabilityFromStore(store, query) {
       date: query.date,
       service: query.service,
       partySize: query.partySize,
+      resourceId: query.resourceId,
       availableSlots,
       availableSessions
-    }, ["date", "service", "partySize", "availableSlots", "availableSessions"]),
+    }, ["date", "service", "partySize", "resourceId", "availableSlots", "availableSessions"]),
     reason: result.reason || `${free.length} free start time(s)`
   };
 }

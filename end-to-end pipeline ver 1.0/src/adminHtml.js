@@ -138,6 +138,15 @@ function adminSlotsHtml() {
     .inbox-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
     .inbox-err { color: var(--danger); font-size: 12px; margin-top: 6px; }
 
+    /* Resources card */
+    .resource-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+    .resource-row:last-child { border-bottom: 0; }
+    .resource-row .name-edit { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .resource-row .name-edit input { width: 220px; padding: 4px 8px; }
+    .resource-row.inactive .name-edit input { opacity: 0.55; text-decoration: line-through; }
+    .resource-row .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+    .resource-row .pill-inactive { font-size: 11px; padding: 1px 8px; border: 1px solid var(--muted); color: var(--muted); border-radius: 10px; }
+
     @media (max-width: 720px) {
       .day-row { grid-template-columns: 56px 1fr; }
       .day-row .actions { grid-column: 1 / -1; text-align: right; }
@@ -164,8 +173,11 @@ function adminSlotsHtml() {
         <option value="beauty_demo">beauty_demo (Solara Beauty)</option>
         <option value="restaurant_demo">restaurant_demo</option>
         <option value="edu_demo">edu_demo</option>
+        <option value="prince_snooker">prince_snooker (王子桌球)</option>
       </select>
       <button id="refresh" class="subtle">Refresh</button>
+      <label for="resource-filter" style="margin-left: 8px;">Resource:</label>
+      <select id="resource-filter"><option value="">(all)</option></select>
       <span style="flex: 1;"></span>
       <div class="view-toggle-group" role="tablist" aria-label="View">
         <button type="button" class="view-toggle active" data-view="list">List</button>
@@ -213,6 +225,19 @@ function adminSlotsHtml() {
     <section class="view-pane" data-view="list">
 
       <section class="card">
+        <h2>Resources <span id="resources-count" class="small" style="margin-left: 6px;"></span></h2>
+        <p class="small" style="margin-bottom: 12px;">Stylists, tables, classrooms, or any bookable unit. With one or more active resources, every booking must pin to one (any-available stays the default in the chat flow). Leave this empty to keep the legacy single-pool behavior.</p>
+        <form id="resource-add-form">
+          <div class="add-fields">
+            <div style="grid-column: span 2;"><label>Add resource<input id="resource-add-name" required placeholder="Amy / 1號枱 / Room A"></label></div>
+          </div>
+          <div class="add-actions"><button class="primary" type="submit">Add resource</button></div>
+        </form>
+        <div id="resources-list" style="margin-top: 14px;"></div>
+        <div id="resources-empty" class="empty" hidden>No resources yet — chat flow runs in legacy single-pool mode.</div>
+      </section>
+
+      <section class="card">
         <h2>Opening hours</h2>
         <p class="small" style="margin-bottom: 12px;">Set the recurring hours per day. Each day can have multiple windows (e.g. 11:00–13:00 + 14:00–21:00 for a lunch-break split).</p>
         <div id="hours-grid"></div>
@@ -249,6 +274,7 @@ function adminSlotsHtml() {
             <div><label>Start time<input id="book-time" required placeholder="14:00"></label></div>
             <div id="book-service-wrap"><label>Service<input id="book-service" placeholder="facial / laser / assessment"></label></div>
             <div id="book-party-wrap" hidden><label>Party size<input id="book-partySize" type="number" min="1" max="20" placeholder="2"></label></div>
+            <div id="book-resource-wrap" hidden><label>Resource<select id="book-resource"></select></label></div>
             <div><label>End time<input id="book-endTime" placeholder="HH:MM"></label></div>
             <div><label>Customer<input id="book-customer" placeholder="(optional)"></label></div>
             <div><label>Notes<input id="book-notes" placeholder="(optional)"></label></div>
@@ -263,6 +289,7 @@ function adminSlotsHtml() {
               <th>End</th>
               <th id="th-service">Service</th>
               <th id="th-party" hidden>Party</th>
+              <th id="th-resource" hidden>Resource</th>
               <th>Customer</th>
               <th>Notes</th>
               <th></th>
@@ -303,12 +330,23 @@ function adminSlotsHtml() {
     const weekLabel = document.getElementById("week-label");
     const popover = document.getElementById("cal-popover");
 
+    const resourceFilter = document.getElementById("resource-filter");
+    const resourceAddForm = document.getElementById("resource-add-form");
+    const resourcesList = document.getElementById("resources-list");
+    const resourcesEmpty = document.getElementById("resources-empty");
+    const resourcesCount = document.getElementById("resources-count");
+    const bookResourceWrap = document.getElementById("book-resource-wrap");
+    const bookResourceSelect = document.getElementById("book-resource");
+    const thResource = document.getElementById("th-resource");
+
     // --- State ---
     let currentBusiness = businessSelect.value;
     let openingHours = {};
     let closedPeriods = [];
     let bookings = [];
+    let resources = [];
     let weekAnchor = todayDateStr();
+    let activeResourceFilter = "";
 
     const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const SERVICE_DURATIONS = { facial: 75, laser: 30, assessment: 20, p3_english: 45 };
@@ -330,10 +368,42 @@ function adminSlotsHtml() {
 
     function syncBusinessFields() {
       const isRestaurant = currentBusiness === "restaurant_demo";
-      bookServiceWrap.hidden = isRestaurant;
+      const isSnooker = currentBusiness === "prince_snooker";
+      bookServiceWrap.hidden = isRestaurant || isSnooker;
       bookPartyWrap.hidden = !isRestaurant;
-      thService.hidden = isRestaurant;
+      thService.hidden = isRestaurant || isSnooker;
       thParty.hidden = !isRestaurant;
+    }
+
+    function activeResources() {
+      return resources.filter((r) => r.active !== false);
+    }
+
+    function resourceNameFor(id) {
+      if (!id) return "";
+      const r = resources.find((x) => x.id === id);
+      return r ? r.name : id;
+    }
+
+    function syncResourceUI() {
+      const actives = activeResources();
+      const hasResources = actives.length > 0;
+
+      // Filter dropdown
+      const prior = resourceFilter.value;
+      resourceFilter.innerHTML = "<option value=''>(all)</option>" + actives.map((r) => "<option value='" + escapeAttr(r.id) + "'>" + escapeHtml(r.name) + "</option>").join("");
+      if (prior && actives.some((r) => r.id === prior)) {
+        resourceFilter.value = prior;
+        activeResourceFilter = prior;
+      } else {
+        activeResourceFilter = "";
+      }
+      resourceFilter.disabled = !hasResources;
+
+      // Booking form resource picker
+      bookResourceWrap.hidden = !hasResources;
+      thResource.hidden = !hasResources;
+      bookResourceSelect.innerHTML = (hasResources ? "<option value=''>(any)</option>" : "") + actives.map((r) => "<option value='" + escapeAttr(r.id) + "'>" + escapeHtml(r.name) + "</option>").join("");
     }
 
     async function adminFetch(path, options = {}) {
@@ -350,25 +420,115 @@ function adminSlotsHtml() {
         setStatus("Loading…");
         currentBusiness = businessSelect.value;
         syncBusinessFields();
-        const [h, c, b] = await Promise.all([
+        const [h, c, b, rs] = await Promise.all([
           adminFetch("/admin/opening-hours/" + encodeURIComponent(currentBusiness)),
           adminFetch("/admin/closed-periods/" + encodeURIComponent(currentBusiness)),
-          adminFetch("/admin/bookings/" + encodeURIComponent(currentBusiness))
+          adminFetch("/admin/bookings/" + encodeURIComponent(currentBusiness)),
+          adminFetch("/admin/resources/" + encodeURIComponent(currentBusiness))
         ]);
         openingHours = h.openingHours || {};
         closedPeriods = c.closedPeriods || [];
         bookings = b.bookings || [];
+        resources = rs.resources || [];
+        syncResourceUI();
+        renderResources();
         renderHours();
         renderClosed();
         renderBookings();
         renderCalendar();
         // Inbox load is independent — don't fail the whole page if it 503s
         loadInbox().catch(() => {});
-        setStatus("Loaded " + bookings.length + " booking(s), " + closedPeriods.length + " closed period(s).", "ok");
+        setStatus("Loaded " + bookings.length + " booking(s), " + closedPeriods.length + " closed period(s), " + activeResources().length + " active resource(s).", "ok");
       } catch (error) {
         setStatus("Load failed: " + error.message, "err");
       }
     }
+
+    // ---- Resources ----
+    function renderResources() {
+      resourcesList.innerHTML = "";
+      resourcesCount.textContent = resources.length === 0 ? "" : "(" + activeResources().length + " active, " + resources.length + " total)";
+      if (resources.length === 0) { resourcesEmpty.hidden = false; return; }
+      resourcesEmpty.hidden = true;
+      const sorted = [...resources].sort((a, b) => {
+        if ((a.active === false) !== (b.active === false)) return a.active === false ? 1 : -1;
+        return String(a.name).localeCompare(String(b.name));
+      });
+      for (const r of sorted) {
+        const row = document.createElement("div");
+        row.className = "resource-row" + (r.active === false ? " inactive" : "");
+        const inactivePill = r.active === false ? "<span class='pill-inactive'>inactive</span>" : "";
+        row.innerHTML =
+          "<div class='name-edit'>"
+            + "<input type='text' value='" + escapeAttr(r.name) + "' data-id='" + escapeAttr(r.id) + "'>"
+            + inactivePill
+            + "<button type='button' class='subtle' data-action='rename'>Save</button>"
+          + "</div>"
+          + "<div class='row-actions'>"
+            + (r.active === false
+                ? "<button type='button' class='subtle' data-action='reactivate'>Re-activate</button>"
+                : "<button type='button' class='danger' data-action='deactivate'>Deactivate</button>")
+          + "</div>";
+
+        row.querySelector("[data-action='rename']").addEventListener("click", async () => {
+          const next = row.querySelector("input").value.trim();
+          if (!next) { setStatus("Name cannot be empty.", "err"); return; }
+          try {
+            await adminFetch("/admin/resources/" + encodeURIComponent(currentBusiness) + "/" + encodeURIComponent(r.id), {
+              method: "PATCH",
+              body: JSON.stringify({ name: next })
+            });
+            await loadAll();
+            setStatus("Resource renamed.", "ok");
+          } catch (e) { setStatus("Rename failed: " + e.message, "err"); }
+        });
+
+        const deactivate = row.querySelector("[data-action='deactivate']");
+        if (deactivate) deactivate.addEventListener("click", async () => {
+          if (!confirm("Deactivate " + r.name + "? Existing bookings keep their reference, but customers will not see this resource as available.")) return;
+          try {
+            await adminFetch("/admin/resources/" + encodeURIComponent(currentBusiness) + "/" + encodeURIComponent(r.id), { method: "DELETE" });
+            await loadAll();
+            setStatus("Resource deactivated.", "ok");
+          } catch (e) { setStatus("Deactivate failed: " + e.message, "err"); }
+        });
+
+        const reactivate = row.querySelector("[data-action='reactivate']");
+        if (reactivate) reactivate.addEventListener("click", async () => {
+          try {
+            await adminFetch("/admin/resources/" + encodeURIComponent(currentBusiness) + "/" + encodeURIComponent(r.id), {
+              method: "PATCH",
+              body: JSON.stringify({ active: true })
+            });
+            await loadAll();
+            setStatus("Resource re-activated.", "ok");
+          } catch (e) { setStatus("Re-activate failed: " + e.message, "err"); }
+        });
+
+        resourcesList.appendChild(row);
+      }
+    }
+
+    resourceAddForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const name = document.getElementById("resource-add-name").value.trim();
+      if (!name) return;
+      try {
+        await adminFetch("/admin/resources/" + encodeURIComponent(currentBusiness), {
+          method: "POST",
+          body: JSON.stringify({ name })
+        });
+        resourceAddForm.reset();
+        await loadAll();
+        setStatus("Resource added.", "ok");
+      } catch (e) { setStatus("Add failed: " + e.message, "err"); }
+    });
+
+    resourceFilter.addEventListener("change", () => {
+      activeResourceFilter = resourceFilter.value || "";
+      renderBookings();
+      renderCalendar();
+    });
 
     // ---- Pending staff reviews ----
     const inboxList = document.getElementById("inbox-list");
@@ -439,10 +599,18 @@ function adminSlotsHtml() {
         const partySizeOrService = isResto
           ? "<label>Party size<input data-k='partySize' type='number' min='1' max='20' value='" + (bd.partySize ?? "") + "'></label>"
           : "<label>Service<input data-k='service' value='" + escapeAttr(bd.service || "") + "'></label>";
+        const actives = activeResources();
+        const resourceField = actives.length > 0
+          ? "<label>Resource<select data-k='resourceId'>"
+              + "<option value=''>(any)</option>"
+              + actives.map((r) => "<option value='" + escapeAttr(r.id) + "'" + (r.id === bd.resourceId ? " selected" : "") + ">" + escapeHtml(r.name) + "</option>").join("")
+              + "</select></label>"
+          : "";
         fields.innerHTML =
           "<label>Date<input data-k='date' value='" + escapeAttr(bd.date || "") + "'></label>"
           + "<label>Time<input data-k='time' value='" + escapeAttr(bd.time || "") + "'></label>"
           + partySizeOrService
+          + resourceField
           + "<label>Duration (min)<input data-k='durationMinutes' type='number' min='5' max='240' value='" + (bd.durationMinutes ?? "") + "' placeholder='auto'></label>"
           + "<label>Customer<input data-k='customer' value='" + escapeAttr(bd.customer || "") + "'></label>"
           + "<label>Notes<input data-k='notes' value=''></label>";
@@ -477,9 +645,9 @@ function adminSlotsHtml() {
       approveBtn.addEventListener("click", async () => {
         err.hidden = true;
         const overrides = {};
-        card.querySelectorAll(".inbox-fields input").forEach((inp) => {
+        card.querySelectorAll(".inbox-fields input, .inbox-fields select").forEach((inp) => {
           const k = inp.dataset.k;
-          const v = inp.value.trim();
+          const v = String(inp.value || "").trim();
           if (v === "") return;
           overrides[k] = (k === "partySize" || k === "durationMinutes") ? Number(v) : v;
         });
@@ -631,18 +799,26 @@ function adminSlotsHtml() {
     });
 
     // ---- Bookings ----
+    function visibleBookings() {
+      if (!activeResourceFilter) return bookings;
+      return bookings.filter((b) => b.resourceId === activeResourceFilter);
+    }
+
     function renderBookings() {
       bookBody.innerHTML = "";
-      if (bookings.length === 0) { bookEmpty.hidden = false; return; }
+      const visible = visibleBookings();
+      if (visible.length === 0) { bookEmpty.hidden = false; return; }
       bookEmpty.hidden = true;
       const isRestaurant = currentBusiness === "restaurant_demo";
-      const sorted = [...bookings].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+      const showResource = !thResource.hidden;
+      const sorted = [...visible].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
       for (const bk of sorted) {
         const tr = document.createElement("tr");
         tr.innerHTML = "<td>" + escapeHtml(bk.date) + "</td><td>" + escapeHtml(bk.time) + "</td><td>" + escapeHtml(addMinutesToTime(bk.time, bk.durationMinutes) || "") + "</td>" +
           (isRestaurant
             ? "<td>" + escapeHtml(bk.partySize ? bk.partySize + "p" : "") + "</td>"
             : "<td>" + escapeHtml(bk.service || "") + "</td>") +
+          (showResource ? "<td>" + escapeHtml(resourceNameFor(bk.resourceId)) + "</td>" : "") +
           "<td>" + escapeHtml(bk.customer || "") + "</td><td>" + escapeHtml(bk.notes || "") + "</td>" +
           "<td class='actions'><button class='subtle' type='button' data-action='edit'>Edit</button> <button class='danger' type='button' data-action='delete'>Delete</button></td>";
         tr.querySelector("[data-action='delete']").addEventListener("click", async () => {
@@ -670,6 +846,10 @@ function adminSlotsHtml() {
           payload.partySize = Number(document.getElementById("book-partySize").value);
         } else {
           payload.service = document.getElementById("book-service").value.trim();
+        }
+        if (!bookResourceWrap.hidden) {
+          const resourceId = bookResourceSelect.value || "";
+          if (resourceId) payload.resourceId = resourceId;
         }
         const endStr = document.getElementById("book-endTime").value.trim();
         if (endStr) {
@@ -727,7 +907,8 @@ function adminSlotsHtml() {
       });
 
       // Index of bookings: which slots starting here, and which rows are consumed by rowspan
-      const bookingsByCol = dayKeys.map((date) => bookings.filter((b) => b.date === date));
+      const visible = visibleBookings();
+      const bookingsByCol = dayKeys.map((date) => visible.filter((b) => b.date === date));
       const slotsAt = TIME_ROWS.map(() => Array.from({ length: 7 }, () => []));
       const occupied = TIME_ROWS.map(() => Array(7).fill(false));
       for (let col = 0; col < 7; col++) {
@@ -769,9 +950,12 @@ function adminSlotsHtml() {
 
     function bookingPillHtml(bk) {
       const end = addMinutesToTime(bk.time, bk.durationMinutes) || "";
-      const sub = currentBusiness === "restaurant_demo"
-        ? (bk.partySize ? bk.partySize + "p" : "") + (bk.customer ? " · " + bk.customer : "")
-        : (bk.service || "") + (bk.customer ? " · " + bk.customer : "");
+      const head = currentBusiness === "restaurant_demo"
+        ? (bk.partySize ? bk.partySize + "p" : "")
+        : (bk.service || "");
+      const resourceLabel = bk.resourceId ? resourceNameFor(bk.resourceId) : "";
+      const subParts = [head, resourceLabel, bk.customer || ""].filter(Boolean);
+      const sub = subParts.join(" · ");
       return "<span class='booking-pill' data-booking-id='" + escapeAttr(bk.id) + "'><span class='pill-time'>" + escapeHtml(bk.time) + "–" + escapeHtml(end) + "</span><span class='pill-sub'>" + escapeHtml(sub) + "</span></span>";
     }
 
@@ -801,7 +985,15 @@ function adminSlotsHtml() {
       const isNew = !bk.id;
       const isRestaurant = currentBusiness === "restaurant_demo";
       const isBeauty = currentBusiness === "beauty_demo";
+      const isSnooker = currentBusiness === "prince_snooker";
       const endTime = addMinutesToTime(bk.time, bk.durationMinutes) || "";
+      const actives = activeResources();
+      const showResource = actives.length > 0;
+      const presetResource = isNew && activeResourceFilter ? activeResourceFilter : (bk.resourceId || "");
+      const resourceOptions = "<option value=''>(any)</option>" + actives.map((r) => {
+        const selected = r.id === presetResource ? " selected" : "";
+        return "<option value='" + escapeAttr(r.id) + "'" + selected + ">" + escapeHtml(r.name) + "</option>";
+      }).join("");
       const lines = [
         "<div style='font-weight: 700; margin-bottom: 8px;'>" + (isNew ? "New booking" : "Edit booking") + "</div>",
         "<div style='display: grid; gap: 8px;'>",
@@ -809,7 +1001,8 @@ function adminSlotsHtml() {
         "<label>Start time<input id='pop-time' value='" + escapeAttr(bk.time || "") + "'></label>",
         isRestaurant
           ? "<label>Party size<input id='pop-partySize' type='number' min='1' max='20' value='" + escapeAttr(bk.partySize == null ? "" : bk.partySize) + "'></label>"
-          : "<label>Service<input id='pop-service' value='" + escapeAttr(bk.service || "") + "'></label>",
+          : (isSnooker ? "" : "<label>Service<input id='pop-service' value='" + escapeAttr(bk.service || "") + "'></label>"),
+        showResource ? "<label>Resource<select id='pop-resourceId'>" + resourceOptions + "</select></label>" : "",
         isBeauty
           ? "<label>End time<input id='pop-endTime' value='" + escapeAttr(endTime) + "' placeholder='" + escapeAttr(addMinutesToTime(bk.time, defaultDurationForService(bk.service)) || "HH:MM") + "'></label>"
           : "<label>End time<input id='pop-endTime' value='" + escapeAttr(endTime) + "' placeholder='HH:MM'></label>",
@@ -834,7 +1027,11 @@ function adminSlotsHtml() {
             time: document.getElementById("pop-time").value.trim()
           };
           if (isRestaurant) payload.partySize = Number(document.getElementById("pop-partySize").value);
-          else payload.service = document.getElementById("pop-service").value.trim();
+          else if (!isSnooker) payload.service = document.getElementById("pop-service").value.trim();
+          if (showResource) {
+            const resourceId = document.getElementById("pop-resourceId").value || "";
+            if (resourceId) payload.resourceId = resourceId;
+          }
           const endStr = document.getElementById("pop-endTime").value.trim();
           if (endStr) {
             const minutes = minutesBetween(payload.time, endStr);

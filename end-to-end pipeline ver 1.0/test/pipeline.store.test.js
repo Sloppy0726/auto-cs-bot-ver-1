@@ -24,11 +24,16 @@ function eq(label, actual, expected) {
   assert.deepEqual(actual, expected, label);
 }
 
-function freshStorePipeline({ openingHours, bookings = [] } = {}) {
+function freshStorePipeline({ openingHours, bookings = [], resources = [] } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pipeline-store-"));
   const filePath = path.join(dir, "availability.json");
   const store = createAvailabilityStore({ filePath });
   if (openingHours) store.setOpeningHours("beauty_demo", openingHours);
+  const createdResources = [];
+  for (const r of resources) {
+    const added = store.addResource("beauty_demo", r);
+    if (added.ok) createdResources.push(added.resource);
+  }
   for (const b of bookings) store.addBooking("beauty_demo", b);
   const backend = createBusinessBackend({ availabilityStore: store });
   const pipeline = createPipeline({
@@ -36,7 +41,7 @@ function freshStorePipeline({ openingHours, bookings = [] } = {}) {
     backend,
     llmAdapter: async () => ({ text: "fallback canned reply" })
   });
-  return { pipeline, store, backend };
+  return { pipeline, store, backend, resources: createdResources };
 }
 
 async function runAll() {
@@ -250,6 +255,202 @@ async function runAll() {
     });
     check("no-time: ready_to_send (clarify, no staff item)", result.finalStatus === "ready_to_send");
     check("no-time: no staff item to attach bookingDraft to", result.staffItem === null);
+  }
+
+  // ---- Case 8a: customer mentions a stylist by name → resourceId captured in query ----
+  {
+    const { pipeline, resources } = freshStorePipeline({
+      openingHours: { "0": [], "1": [{ open: "11:00", close: "21:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] },
+      resources: [{ name: "Amy" }, { name: "Joey" }]
+    });
+    const amy = resources.find((r) => r.name === "Amy");
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "beauty_demo",
+      from: "stylist-pick-test",
+      text: "想book Amy 5月25號 facial 下午1點"
+    });
+    check("stylist mention: routed to staff_review", result.finalStatus === "staff_review");
+    const bd = result.staffItem?.bookingDraft;
+    check("stylist mention: bookingDraft present", bd !== null && bd !== undefined);
+    eq("stylist mention: resourceId pinned to Amy", bd?.resourceId, amy.id);
+    eq("stylist mention: time/date intact", { date: bd?.date, time: bd?.time, service: bd?.service }, { date: "2026-05-25", time: "13:00", service: "facial" });
+  }
+
+  // ---- Case 8b: no stylist name → resourceId stays absent (any-available) ----
+  {
+    const { pipeline } = freshStorePipeline({
+      openingHours: { "0": [], "1": [{ open: "11:00", close: "21:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] },
+      resources: [{ name: "Amy" }, { name: "Joey" }]
+    });
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "beauty_demo",
+      from: "any-available-test",
+      text: "想book 5月25號 facial 下午1點"
+    });
+    check("no stylist: routed to staff_review", result.finalStatus === "staff_review");
+    const bd = result.staffItem?.bookingDraft;
+    check("no stylist: bookingDraft present", bd !== null && bd !== undefined);
+    check("no stylist: resourceId absent", bd?.resourceId === undefined);
+  }
+
+  // ---- Case 8c: any-available slot listing surfaces availableResources per slot ----
+  {
+    const { pipeline, resources } = freshStorePipeline({
+      openingHours: { "0": [], "1": [{ open: "11:00", close: "12:30" }], "2": [], "3": [], "4": [], "5": [], "6": [] },
+      resources: [{ name: "Amy" }, { name: "Joey" }]
+    });
+    const amy = resources.find((r) => r.name === "Amy");
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "beauty_demo",
+      from: "any-available-list-test",
+      text: "5月25號 laser 有咩時間"
+    });
+    const slots = result.backendFacts.facts.find((f) => f.key === "availableSlots")?.value;
+    eq("any-available list: 3 starts", slots, ["11:00", "11:30", "12:00"]);
+    const sessions = result.backendFacts.facts.find((f) => f.key === "availableSessions")?.value;
+    check("any-available list: each session has availableResources", sessions.every((s) => Array.isArray(s.availableResources) && s.availableResources.length === 2));
+    check("any-available list: 11:00 lists Amy among free resources", sessions[0].availableResources.includes(amy.id));
+  }
+
+  // ---- Case 8d: customer pins a stylist who's booked → slot list narrows ----
+  // Amy booked 11:00-11:30, customer asks "Amy 有咩時間" → only 11:30, 12:00 visible.
+  {
+    const { pipeline, resources, store } = freshStorePipeline({
+      openingHours: { "0": [], "1": [{ open: "11:00", close: "12:30" }], "2": [], "3": [], "4": [], "5": [], "6": [] },
+      resources: [{ name: "Amy" }, { name: "Joey" }]
+    });
+    const amy = resources.find((r) => r.name === "Amy");
+    store.addBooking("beauty_demo", { date: "2026-05-25", time: "11:00", service: "laser", durationMinutes: 30, resourceId: amy.id });
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "beauty_demo",
+      from: "stylist-narrowed-test",
+      text: "Amy 5月25號 laser 有咩時間"
+    });
+    const slots = result.backendFacts.facts.find((f) => f.key === "availableSlots")?.value;
+    eq("Amy-narrowed: 11:00 removed (Amy booked)", slots, ["11:30", "12:00"]);
+    const factResourceId = result.backendFacts.facts.find((f) => f.key === "resourceId")?.value;
+    eq("Amy-narrowed: backend facts carry resourceId", factResourceId, amy.id);
+  }
+
+  // ---- Case 8e: numeric resource name like "1號枱" does not false-match on "11號枱" ----
+  {
+    const { pipeline, resources } = freshStorePipeline({
+      openingHours: { "0": [], "1": [{ open: "11:00", close: "12:30" }], "2": [], "3": [], "4": [], "5": [], "6": [] },
+      resources: [{ name: "1號枱" }, { name: "11號枱" }]
+    });
+    const table11 = resources.find((r) => r.name === "11號枱");
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "beauty_demo",
+      from: "numeric-name-boundary-test",
+      text: "想book 11號枱 5月25號 11:00"
+    });
+    // beauty_demo path requires service so bookingDraft will be null, but query.resourceId should still resolve to 11號枱.
+    // Probe via internal: rerun inferBackendQuery directly via _internal.
+    const { _internal } = require("../src/pipeline");
+    const query = _internal.inferBackendQuery({
+      normalizedMessage: { rawText: "想book 11號枱 5月25號 11:00", businessId: "beauty_demo", senderId: "x" },
+      intent: { primaryIntent: "booking", language: "zh-HK" },
+      now: new Date("2026-05-24T00:00:00.000Z"),
+      backend: result.normalizedMessage ? require("../../private business backend mock ver 1.0/src/businessBackendMock").createBusinessBackend({ availabilityStore: { listResources: () => [{ id: table11.id, name: "11號枱" }, { id: "res_1", name: "1號枱" }] } }) : null
+    });
+    eq("11號枱 matches the longer-prefix resource (boundary safety)", query.resourceId, table11.id);
+  }
+
+  // ---- Case 8f: inferResourceId returns null when no backend wired ----
+  {
+    const { _internal } = require("../src/pipeline");
+    const id = _internal.inferResourceId("想book Amy", null, "beauty_demo");
+    check("no backend → null", id === null);
+    const id2 = _internal.inferResourceId("想book Amy", { listResources: () => [] }, "beauty_demo");
+    check("empty resources → null", id2 === null);
+  }
+
+  // ---- Case 8g: inferBookingDraft drops resourceId when no resourceId in query ----
+  {
+    const { _internal } = require("../src/pipeline");
+    const draft = _internal.inferBookingDraft({
+      intent: { primaryIntent: "booking" },
+      query: { date: "2026-05-25", time: "13:00", service: "facial" },
+      normalizedMessage: { businessId: "beauty_demo", senderId: "x" }
+    });
+    check("no resourceId in query → not in draft", draft !== null && draft.resourceId === undefined);
+  }
+
+  // ---- Case 9: prince_snooker end-to-end through the pipeline ----
+  // Customer says "想book 3號枱 5月25號 下午2點" → bookingDraft pinned to 3號枱.
+  {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "snooker-pipeline-"));
+    const filePath = path.join(dir, "availability.json");
+    const store = createAvailabilityStore({ filePath }); // auto-seeds 12 tables
+    const backend = createBusinessBackend({ availabilityStore: store });
+    const pipeline = createPipeline({
+      nowFn: () => new Date("2026-05-24T00:00:00.000Z"),
+      backend,
+      llmAdapter: async () => ({ text: "snooker reply" })
+    });
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "prince_snooker",
+      from: "snooker-customer-test",
+      text: "想book 3號枱 5月25號 下午2點"
+    });
+    check("snooker pipeline: routed to staff_review", result.finalStatus === "staff_review");
+    const bd = result.staffItem?.bookingDraft;
+    check("snooker pipeline: bookingDraft created", bd !== null && bd !== undefined);
+    eq("snooker pipeline: date captured", bd?.date, "2026-05-25");
+    eq("snooker pipeline: time captured", bd?.time, "14:00");
+    eq("snooker pipeline: resourceId pinned to table 3", bd?.resourceId, "res_prince_table_3");
+    check("snooker pipeline: no service field", bd?.service === undefined);
+    check("snooker pipeline: no partySize field", bd?.partySize === undefined);
+    eq("snooker pipeline: businessId carried through", bd?.businessId, "prince_snooker");
+  }
+
+  // ---- Case 9b: snooker "any-available" customer — no table mentioned ----
+  {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "snooker-any-"));
+    const filePath = path.join(dir, "availability.json");
+    const store = createAvailabilityStore({ filePath });
+    const backend = createBusinessBackend({ availabilityStore: store });
+    const pipeline = createPipeline({
+      nowFn: () => new Date("2026-05-24T00:00:00.000Z"),
+      backend,
+      llmAdapter: async () => ({ text: "snooker reply" })
+    });
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "prince_snooker",
+      from: "snooker-any-test",
+      text: "5月25號 下午2點 想book枱"
+    });
+    const bd = result.staffItem?.bookingDraft;
+    check("snooker any-available: bookingDraft present", bd !== null && bd !== undefined);
+    check("snooker any-available: resourceId absent (staff picks)", bd?.resourceId === undefined);
+  }
+
+  // ---- Case 9c: snooker numeric-name boundary — 11號枱 must not match as "1號枱" ----
+  {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "snooker-boundary-"));
+    const filePath = path.join(dir, "availability.json");
+    const store = createAvailabilityStore({ filePath });
+    const backend = createBusinessBackend({ availabilityStore: store });
+    const pipeline = createPipeline({
+      nowFn: () => new Date("2026-05-24T00:00:00.000Z"),
+      backend,
+      llmAdapter: async () => ({ text: "snooker reply" })
+    });
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "prince_snooker",
+      from: "snooker-boundary-test",
+      text: "想book 11號枱 5月25號 下午2點"
+    });
+    const bd = result.staffItem?.bookingDraft;
+    eq("snooker boundary: 11號枱 picks table 11, not table 1", bd?.resourceId, "res_prince_table_11");
   }
 
   console.log(`pipeline.store: ${testCount} tests passed`);

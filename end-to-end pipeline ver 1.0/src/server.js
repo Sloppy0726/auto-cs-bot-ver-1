@@ -527,6 +527,41 @@ async function handleAdminRequest(req, res, { availabilityStore, staffInbox, out
       return;
     }
 
+    // Resources: GET/POST /admin/resources/:businessId, GET/PATCH/DELETE /admin/resources/:businessId/:id
+    if (url.resource === "resources") {
+      if (req.method === "GET" && url.businessId && !url.id) {
+        const includeInactive = !/[?&]activeOnly=true(&|$)/.test(req.url || "");
+        writeJson(res, 200, { businessId: url.businessId, resources: availabilityStore.listResources(url.businessId, { includeInactive }) });
+        return;
+      }
+      if (req.method === "GET" && url.businessId && url.id) {
+        const resource = availabilityStore.getResource(url.businessId, url.id);
+        if (!resource) {
+          writeJson(res, 404, { error: "resource_not_found" });
+          return;
+        }
+        writeJson(res, 200, { resource });
+        return;
+      }
+      if (req.method === "POST" && url.businessId && !url.id) {
+        const payload = await readPayload();
+        const result = availabilityStore.addResource(url.businessId, payload);
+        writeJson(res, result.ok ? 201 : 400, result.ok ? result : { error: result.error });
+        return;
+      }
+      if (req.method === "PATCH" && url.businessId && url.id) {
+        const payload = await readPayload();
+        const result = availabilityStore.updateResource(url.businessId, url.id, payload);
+        writeJson(res, result.ok ? 200 : (result.error === "resource not found" ? 404 : 400), result.ok ? result : { error: result.error });
+        return;
+      }
+      if (req.method === "DELETE" && url.businessId && url.id) {
+        const result = availabilityStore.removeResource(url.businessId, url.id);
+        writeJson(res, result.ok ? 200 : 404, result.ok ? result : { error: result.error });
+        return;
+      }
+    }
+
     writeJson(res, 405, { error: "method_not_allowed" });
   } catch (error) {
     const statusCode = statusCodeForError(error);
@@ -639,7 +674,7 @@ function publicInboxItem(item) {
 }
 
 function mergeBookingOverrides(draft, overrides) {
-  const allowed = ["date", "time", "service", "partySize", "durationMinutes", "customer", "notes"];
+  const allowed = ["date", "time", "service", "partySize", "durationMinutes", "customer", "notes", "resourceId"];
   const merged = { ...draft };
   for (const key of allowed) {
     if (overrides[key] !== undefined && overrides[key] !== null && overrides[key] !== "") {

@@ -86,7 +86,7 @@ async function runMessage(input = {}, deps = {}) {
   const draft = await generateDraft({ decision, knowledge, intent, gateway, promotions, backendFacts, modelRoute }, { llmAdapter: deps.llmAdapter, paraphraser: deps.paraphraser, modelRoute });
   const safety = checkDraft({ draft, decision, knowledge, intent, gateway });
 
-  const bookingDraft = inferBookingDraft({ intent, query: backendQuery, normalizedMessage });
+  const bookingDraft = inferBookingDraft({ intent, query: backendQuery, normalizedMessage, backend: deps.backend });
 
   let staffItem = null;
   if (!safety.safeToSend || !["auto_send", "clarify"].includes(draft.action)) {
@@ -142,6 +142,8 @@ function inferBackendQuery({ normalizedMessage, intent, now, backend }) {
   } else if (timeDetails?.time) {
     query.time = timeDetails.time;
   }
+  const resourceId = inferResourceId(text, backend, normalizedMessage.businessId);
+  if (resourceId) query.resourceId = resourceId;
   if (/facial|面部|護理|首次|第一次|體驗|trial/i.test(text)) query.service = "facial";
   if (/assessment|評估/i.test(text)) query.service = "assessment";
   if (/p3|小三|english|英文/i.test(text)) query.service = "p3_english";
@@ -290,7 +292,7 @@ function formatServiceEn(service) {
 // so an approve action can write it to the calendar without re-parsing the chat.
 // Returns null when intent isn't a booking-shaped one or when essentials are missing
 // (e.g. ambiguous time, no date). Staff can edit on the admin page before approving.
-function inferBookingDraft({ intent, query, normalizedMessage }) {
+function inferBookingDraft({ intent, query, normalizedMessage, backend }) {
   if (!intent || !["booking", "reschedule"].includes(intent.primaryIntent)) return null;
   if (!query?.date || !query?.time) return null;
   if (query.ambiguousTime) return null;
@@ -312,11 +314,48 @@ function inferBookingDraft({ intent, query, normalizedMessage }) {
   } else if (businessId === "beauty_demo" || businessId === "edu_demo") {
     if (!query.service) return null;
     draft.service = query.service;
+  } else if (hasActiveResources(backend, businessId)) {
+    // Resource-pinned business (e.g., snooker hall): the resource IS the booking unit;
+    // no service/partySize needed. If the customer didn't pin a specific resource,
+    // staff can pick on approve from the admin UI.
   } else {
     return null;
   }
 
+  if (query.resourceId) draft.resourceId = query.resourceId;
+
   return draft;
+}
+
+// Detect a resource mention in the customer's text by matching active resource
+// names. Longest name wins so "12號枱" beats "1號枱". Numeric-prefix names require
+// a non-digit boundary on the left so "1號" doesn't fire inside "11號".
+function inferResourceId(text, backend, businessId) {
+  if (typeof backend?.listResources !== "function") return null;
+  const resources = backend.listResources(businessId, { includeInactive: false }) || [];
+  if (resources.length === 0) return null;
+  const sorted = [...resources]
+    .filter((r) => r && typeof r.name === "string" && r.name)
+    .sort((a, b) => b.name.length - a.name.length);
+  const lowerText = String(text || "").toLowerCase();
+  for (const resource of sorted) {
+    const name = resource.name;
+    const lowerName = name.toLowerCase();
+    const idx = lowerText.indexOf(lowerName);
+    if (idx === -1) continue;
+    if (/^\d/.test(name)) {
+      const prev = idx === 0 ? "" : lowerText[idx - 1];
+      if (/\d/.test(prev)) continue;
+    }
+    return resource.id;
+  }
+  return null;
+}
+
+function hasActiveResources(backend, businessId) {
+  if (typeof backend?.listResources !== "function") return false;
+  const resources = backend.listResources(businessId, { includeInactive: false }) || [];
+  return resources.length > 0;
 }
 
 function factsObject(backendFacts = {}) {
@@ -589,5 +628,5 @@ function result(payload) {
 module.exports = {
   createPipeline,
   runMessage,
-  _internal: { inferBackendQuery, inferPartySize, inferRequestedDate, inferRequestedTime, inferRequestedTimeDetails, requiredClarificationForBackendIntent, inferAvailabilityResponse, intentClassifierOptions }
+  _internal: { inferBackendQuery, inferPartySize, inferRequestedDate, inferRequestedTime, inferRequestedTimeDetails, requiredClarificationForBackendIntent, inferAvailabilityResponse, intentClassifierOptions, inferResourceId, inferBookingDraft, hasActiveResources }
 };

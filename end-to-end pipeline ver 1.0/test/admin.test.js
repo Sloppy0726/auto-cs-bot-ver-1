@@ -471,7 +471,137 @@ async function runAll() {
     check("DELETE opening-hours: 405", res.statusCode === 405);
   }
 
+  // ---- Resources endpoints ----
+  {
+    // Empty list on fresh business
+    const { server } = freshServer({});
+    const res = await sendAdmin({ server, method: "GET", urlPath: "/admin/resources/beauty_demo" });
+    check("GET resources empty: 200", res.statusCode === 200);
+    eq("GET resources empty: list", res.body.resources, []);
+  }
+  {
+    // POST new resource
+    const { server, store } = freshServer({});
+    const res = await sendAdmin({ server, method: "POST", urlPath: "/admin/resources/beauty_demo", body: { name: "Amy" } });
+    check("POST resource: 201", res.statusCode === 201);
+    check("POST resource: id assigned", res.body.resource.id.startsWith("res_"));
+    eq("POST resource: name preserved", res.body.resource.name, "Amy");
+    // Persisted
+    const direct = store.listResources("beauty_demo");
+    check("POST resource: persisted to store", direct.some((r) => r.name === "Amy"));
+  }
+  {
+    // POST invalid → 400
+    const { server } = freshServer({});
+    const res = await sendAdmin({ server, method: "POST", urlPath: "/admin/resources/beauty_demo", body: { name: "" } });
+    check("POST resource invalid: 400", res.statusCode === 400);
+    check("POST resource invalid: error message", res.body.error?.includes("name"));
+  }
+  {
+    // GET single resource
+    const { server, store } = freshServer({});
+    const added = store.addResource("beauty_demo", { name: "Joey" });
+    const res = await sendAdmin({ server, method: "GET", urlPath: `/admin/resources/beauty_demo/${added.resource.id}` });
+    check("GET single resource: 200", res.statusCode === 200);
+    eq("GET single resource: name", res.body.resource.name, "Joey");
+  }
+  {
+    // GET missing resource → 404
+    const { server } = freshServer({});
+    const res = await sendAdmin({ server, method: "GET", urlPath: "/admin/resources/beauty_demo/res_does_not_exist" });
+    check("GET missing resource: 404", res.statusCode === 404);
+  }
+  {
+    // PATCH rename
+    const { server, store } = freshServer({});
+    const added = store.addResource("beauty_demo", { name: "Amy" });
+    const res = await sendAdmin({ server, method: "PATCH", urlPath: `/admin/resources/beauty_demo/${added.resource.id}`, body: { name: "Amy Chan" } });
+    check("PATCH resource: 200", res.statusCode === 200);
+    eq("PATCH resource: name updated", res.body.resource.name, "Amy Chan");
+  }
+  {
+    // PATCH missing → 404
+    const { server } = freshServer({});
+    const res = await sendAdmin({ server, method: "PATCH", urlPath: "/admin/resources/beauty_demo/res_nope", body: { name: "X" } });
+    check("PATCH missing resource: 404", res.statusCode === 404);
+  }
+  {
+    // PATCH invalid → 400
+    const { server, store } = freshServer({});
+    const added = store.addResource("beauty_demo", { name: "Amy" });
+    const res = await sendAdmin({ server, method: "PATCH", urlPath: `/admin/resources/beauty_demo/${added.resource.id}`, body: { name: "" } });
+    check("PATCH resource invalid: 400", res.statusCode === 400);
+  }
+  {
+    // DELETE = soft-delete
+    const { server, store } = freshServer({});
+    const added = store.addResource("beauty_demo", { name: "Amy" });
+    const res = await sendAdmin({ server, method: "DELETE", urlPath: `/admin/resources/beauty_demo/${added.resource.id}` });
+    check("DELETE resource: 200", res.statusCode === 200);
+    eq("DELETE resource: active=false", res.body.resource.active, false);
+    // Active-only filter excludes soft-deleted
+    const activeOnly = await sendAdmin({ server: freshServerWithStore({}, store).server, method: "GET", urlPath: "/admin/resources/beauty_demo?activeOnly=true" });
+    check("GET ?activeOnly=true excludes soft-deleted", !activeOnly.body.resources.some((r) => r.id === added.resource.id));
+  }
+  {
+    // DELETE missing → 404
+    const { server } = freshServer({});
+    const res = await sendAdmin({ server, method: "DELETE", urlPath: "/admin/resources/beauty_demo/res_nope" });
+    check("DELETE missing resource: 404", res.statusCode === 404);
+  }
+  {
+    // POST booking with resourceId
+    const { server, store } = freshServer({});
+    const added = store.addResource("beauty_demo", { name: "Amy" });
+    const res = await sendAdmin({ server, method: "POST", urlPath: "/admin/bookings/beauty_demo", body: { date: "2026-05-25", time: "13:00", service: "facial", resourceId: added.resource.id } });
+    check("POST booking with resourceId: 201", res.statusCode === 201);
+    eq("POST booking with resourceId: pinned", res.body.booking.resourceId, added.resource.id);
+  }
+  {
+    // POST booking with conflicting resource → 400
+    const { server, store } = freshServer({});
+    const added = store.addResource("beauty_demo", { name: "Amy" });
+    await sendAdmin({ server: freshServerWithStore({}, store).server, method: "POST", urlPath: "/admin/bookings/beauty_demo", body: { date: "2026-05-25", time: "13:00", service: "facial", resourceId: added.resource.id } });
+    const res2 = await sendAdmin({ server: freshServerWithStore({}, store).server, method: "POST", urlPath: "/admin/bookings/beauty_demo", body: { date: "2026-05-25", time: "13:30", service: "laser", resourceId: added.resource.id } });
+    check("POST booking conflict: 400", res2.statusCode === 400);
+    check("POST booking conflict: error message", res2.body.error?.includes("resource conflict"));
+  }
+  {
+    // Approve inbox item with resourceId override
+    const { server, store, inbox } = freshServer({ withInbox: true });
+    const added = store.addResource("beauty_demo", { name: "Amy" });
+    const submitted = inbox.submit({
+      decision: { action: "staff_review", businessId: "beauty_demo", reasons: ["test"] },
+      draft: { action: "staff_review", text: "draft" },
+      safety: { verdict: "pass", safeToSend: false },
+      normalizedMessage: { businessId: "beauty_demo", senderId: "u", channel: "whatsapp" },
+      customerText: "want facial",
+      bookingDraft: { businessId: "beauty_demo", date: "2026-05-25", time: "13:00", service: "facial", customer: "u", senderId: "u", channel: "whatsapp" }
+    });
+    const res = await sendAdmin({ server, method: "POST", urlPath: `/admin/inbox/beauty_demo/${submitted.id}/approve`, body: { resourceId: added.resource.id } });
+    check("approve with resourceId override: 200", res.statusCode === 200);
+    eq("approve with resourceId override: written to calendar", res.body.booking.resourceId, added.resource.id);
+  }
+
   console.log(`admin: ${testCount} tests passed`);
+}
+
+// Helper for tests that need to re-open the server after mutating its store from a previous request.
+function freshServerWithStore(opts, store) {
+  const { createWebhookServer: cws } = require("../src/server");
+  const { createStaffInbox } = require("../../staff inbox ver 1.0/src/staffInbox");
+  const inbox = opts.withInbox ? createStaffInbox() : null;
+  return {
+    server: cws({
+      pipeline: stubPipeline,
+      availabilityStore: store,
+      staffInbox: inbox,
+      adminToken: opts.adminToken,
+      nodeEnv: opts.nodeEnv,
+      allowUnsignedWebhooks: true,
+      conversationContextStore: false
+    })
+  };
 }
 
 runAll().catch((error) => {

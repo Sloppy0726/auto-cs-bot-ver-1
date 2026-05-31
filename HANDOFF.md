@@ -1,6 +1,6 @@
 # Handoff - Hong Kong AI Customer Support SaaS
 
-Last verified: 2026-06-01 HKT (doc sync against repo; see §18 for what landed since §17).
+Last verified: 2026-06-01 HKT (doc sync against repo; see §18, §19 for per-resource model design, and §20 for Phases 2–6 landing).
 
 This is the project map for the next session. Read this before editing code.
 
@@ -1145,6 +1145,265 @@ New items observed this session:
 9. Rate limiter is per-process and in-memory — a multi-shop or multi-instance
    deploy would not share buckets. Acceptable for the current single-process
    per-shop deploy, but flag before scaling out.
+
+End of session addendum.
+
+---
+
+## 19. Session Addendum — 2026-06-01 (per-resource model: Phase 1 of 6)
+
+This section is the design record. **Phase 1 is committed at `f7d262d`** (pushed
+during the 2026-06-01 follow-up session). **Phases 2–6 landed in the same
+follow-up session — see §20 for what shipped.** §19.2 captures the settled
+design decisions; do not re-litigate them.
+
+### 19.1 Why "resource" not "staff"
+
+The live shop (`deploy/shops.json`) is `prince-snooker` / 王子桌球 — a snooker
+hall whose bookable unit is a **table**, not a stylist. So the model is
+generic "resources" (`bookings.resourceId`), which covers snooker tables,
+beauty stylists (Amy/Joey), and classrooms with one schema. The handoff's
+older "per-staff" framing is the beauty-demo lens on the same feature.
+
+### 19.2 Settled design decisions (do not re-litigate)
+
+User chose all four "recommended" options when scoping:
+
+1. **Generic resources**, not beauty-only staff. One model, `resourceId` on
+   bookings, each business defines its own resource list.
+2. **Per-resource opening hours** — a resource may carry its own
+   `openingHours`; if absent it inherits the business's hours. Phase 2's
+   free-slot calc must intersect business-hours ∩ resource-hours.
+3. **Any-available by default** — customer asking "3點有冇位?" sees slots from
+   ANY resource; they may optionally pin one ("我想揀Amy" / "想book 1號枱").
+   Never force a resource pick.
+4. **Resource filter on the existing calendar** (a dropdown), NOT a rewritten
+   side-by-side per-resource grid.
+
+### 19.3 Phase plan + status
+
+| Phase | Scope | Status |
+|---|---|---|
+| 1 | `availabilityStore`: resource schema + CRUD + validation + tests | **DONE** `f7d262d` (pushed) |
+| 2 | Per-resource free-slot calc; `resourceId` on bookings; `addBooking`/`updateBooking` require `resourceId` when the business has ≥1 resource; intersect business ∩ resource hours | **DONE** (see §20) |
+| 3 | Pipeline detects resource mentions (Amy/Joey, 1號枱, Table 3); `inferBookingDraft` captures `resourceId`; `businessBackendMock.checkAvailability` passes it through; any-available stays default | **DONE** (see §20) |
+| 4 | Admin endpoints: `GET/POST /admin/resources/:businessId`, `GET/PATCH/DELETE /admin/resources/:businessId/:id`; bookings endpoints accept `resourceId`; tests | **DONE** (see §20) |
+| 5 | Admin UI (`adminHtml.js`): resource management card + resource filter dropdown on bookings table & calendar; booking forms gain a resource select | **DONE** (see §20) |
+| 6 | Seed Prince Snooker tables (12 uniform tables); demo businesses keep **zero** resources for back-compat | **DONE** (see §20) |
+
+Dependency order: 1→2; 2→3; 2→4; 4→5; (3,4)→6.
+
+### 19.4 What Phase 1 actually changed (`f7d262d`)
+
+`private business backend mock ver 1.0/src/availabilityStore.js`:
+
+- Resource shape: `{ id, name, openingHours?, active }`. `name` ≤ 80 chars;
+  `openingHours` optional (same window shape as business hours); `active`
+  defaults true.
+- New methods on the store: `listResources(businessId, {includeInactive=true})`,
+  `getResource`, `addResource`, `updateResource`, `removeResource`.
+- **Soft delete:** `removeResource` sets `active=false` (does not splice) so
+  existing bookings that reference the `resourceId` still resolve.
+- `validateResource` + `normalizeResource` added; both exported on `_internal`.
+- Back-compat: `normalizeState` defaults missing `resources` to `[]`;
+  `buildInitialState` and `reset()` seed `resources: []`; `ensureBusiness`
+  backfills the array. A legacy `availability.json` with no `resources` key
+  loads cleanly (covered by a test).
+
+`private business backend mock ver 1.0/test/availabilityStore.test.js`:
+**+43 tests → 144 total** (was 101). Covers validation, CRUD, soft
+delete/reactivation, legacy-state-file load, persistence round-trip.
+
+**Crucially, Phase 1 changed NO runtime behavior.** `listFreeSlots`,
+`addBooking`, the pipeline, and the admin UI are untouched. A business with
+zero resources behaves exactly as before. Verified: `businessBackendMock 118`,
+`pipeline.store 41`, `admin 85`, `pipeline 134` all still green.
+
+### 19.5 Phase 2 design notes (for whoever picks this up)
+
+The hard part. Sketch settled this session but unimplemented:
+
+- `bookings` gain an optional `resourceId`. `validateBooking` should accept it
+  (string, must reference an existing active resource when the business has
+  resources). When the business has **zero** resources, `resourceId` stays
+  absent and everything behaves as today.
+- `listFreeSlots` gains an optional `resourceId` param:
+  - With `resourceId` → compute against that one resource's effective hours
+    (resource.openingHours ∩ business.openingHours, or business hours if the
+    resource has none) minus that resource's bookings + closed periods.
+  - Without `resourceId`, business has resources → a slot is free if **≥1**
+    resource is free at that time. Surface which: each free slot should carry
+    `availableResources: [resourceId,…]` so the pipeline/admin can show "any"
+    and the booking write can pick one.
+  - Without `resourceId`, business has zero resources → unchanged single-pool
+    path.
+- `findNextAvailableDates` threads `resourceId` the same way.
+- `checkBookingFitsOpeningHours` must use the resource's effective hours when
+  a `resourceId` is present.
+- `addBooking`/`updateBooking`: when the business has ≥1 active resource,
+  require a valid `resourceId`; reject if the chosen resource is already booked
+  for an overlapping window (this is also where §13.9 #2 conflict detection
+  naturally lands — per-resource overlap is a real conflict).
+
+Watch the existing per-service (beauty) and per-partySize (restaurant) booking
+filters in `listFreeSlots` — they must continue to work *within* a resource's
+bookings, not be replaced by the resource filter.
+
+### 19.6 Open question blocking Phase 6
+
+How many tables does 王子桌球 (Prince Snooker) have, and are they uniform
+(pure any-available) or do some have different hours / VIP status? Needed
+before seeding. Until then, `prince_snooker` is not even in
+`VALID_BUSINESS_IDS` in `availabilityStore.js` (still the 4 demo IDs) — Phase 6
+must add it, OR the team decides resources should work for arbitrary business
+IDs (cleaner, but changes the "unknown businessId" rejection that current
+tests assert on).
+
+### 19.7 Files touched this session
+
+```text
+M  HANDOFF.md
+M  private business backend mock ver 1.0/src/availabilityStore.js        (committed f7d262d)
+M  private business backend mock ver 1.0/test/availabilityStore.test.js  (committed f7d262d)
+?? scripts/testAuthToken.js   (still untracked, unrelated — see §18.9)
+```
+
+`f7d262d` is **local only**. Decide whether to push before continuing.
+Because it's a `.js`-only commit, pushing it WILL trigger the
+`.github/workflows/deploy.yml` deploy to every shop in `deploy/shops.json`
+(currently just `prince-snooker`) — but since Phase 1 is behavior-neutral,
+that deploy is safe.
+
+End of session addendum.
+
+---
+
+## 20. Session Addendum — 2026-06-01 (per-resource model: Phases 2–6 of 6)
+
+Follow-up session to §19. All five remaining phases of the per-resource
+model landed in one pass. User decision at scope time: **12 uniform tables
+for Prince Snooker** (any-available default, all share the venue's hours),
+and push Phase 1 first so the deploy pipeline runs against a behavior-neutral
+change before stacking more on top.
+
+### 20.1 What landed (in dependency order)
+
+| Phase | Key files | What the change does |
+|---|---|---|
+| 2 | `private business backend mock ver 1.0/src/availabilityStore.js` | `listFreeSlots` gains three paths: specific resource (intersect business ∩ resource hours, subtract that resource's bookings + pool bookings + closed periods), any-available (union of per-resource free starts, each slot carries `availableResources: [resourceId,…]`), and the legacy single-pool path (unchanged). `addBooking`/`updateBooking` enforce `resourceId` when the business has ≥1 active resource and reject same-resource overlaps. `validateBooking` accepts and coerces `resourceId`. `checkBookingFitsOpeningHours` uses resource-effective hours when a `resourceId` is present. |
+| 3 | `end-to-end pipeline ver 1.0/src/pipeline.js`, `private business backend mock ver 1.0/src/businessBackendMock.js` | `inferBackendQuery` calls a new `inferResourceId(text, backend, businessId)` that matches active resource names against the text (longest-first; numeric-prefix names like `11號枱` enforce a non-digit boundary so they don't fire inside `1號枱`). `inferBookingDraft` captures `resourceId` and supports resource-pinned businesses (no `service`/`partySize` required). `backend.listResources` is a new pass-through, and `checkAvailability` threads `resourceId` into the store. Any-available stays the default whenever the customer doesn't name one. |
+| 4 | `end-to-end pipeline ver 1.0/src/server.js` | New routes: `GET/POST /admin/resources/:businessId`, `GET/PATCH/DELETE /admin/resources/:businessId/:id`. The bookings endpoints already passed payloads through verbatim so `resourceId` flows in. The inbox approve handler's `mergeBookingOverrides` now allows `resourceId` so staff can pin a resource when approving. `GET /admin/resources/:businessId?activeOnly=true` filters out soft-deleted. |
+| 5 | `end-to-end pipeline ver 1.0/src/adminHtml.js` | New "Resources" card at the top of the list pane (add / rename / deactivate / re-activate, soft-delete preserves existing bookings). New resource filter dropdown in the toolbar — filters bookings table and calendar. Quick-add booking form and popover edit form both gain a resource `<select>` (with an "(any)" sentinel that clears the pin). Inbox approve form gains the same picker. Booking pills in the calendar show the resource name. The dropdowns hide automatically when the active business has zero active resources. |
+| 6 | `private business backend mock ver 1.0/src/availabilityStore.js`, `knowledge base ver 1.0/seed/hkSmeSeed.js`, `end-to-end pipeline ver 1.0/src/adminHtml.js` | `VALID_BUSINESS_IDS` adds `prince_snooker`. Default opening hours: every day 11:00–23:30. `defaultResourcesFor("prince_snooker")` returns 12 tables (`res_prince_table_1`…`res_prince_table_12`, names `1號枱`…`12號枱`). `validateBooking("prince_snooker", …)` accepts no `service`/`partySize` and defaults `durationMinutes` to 60. KB seed adds 3 entries (`prince_hours`, `prince_identity`, `prince_booking`) so the booking flow doesn't trip the `kb.gap=true` clarify rule. Admin dropdown adds `prince_snooker (王子桌球)`. |
+
+### 20.2 Resource detection rules (Phase 3 detail)
+
+`inferResourceId` is order-sensitive. Resources are sorted by `name.length`
+descending so longer prefixes win. For each candidate:
+
+1. Case-insensitive `indexOf` substring match in the customer text.
+2. If the resource name starts with a digit, the character immediately
+   before the match must NOT be a digit. So `11號枱` does not match inside
+   `1號枱`, and `1號枱` does not match inside `11號枱`. (Both names are eligible
+   on their own.)
+
+This is the only safety check; everything else is plain substring. Customer
+text like `"想book 3號枱 5月25號 下午2點"` resolves to `res_prince_table_3`.
+Text without a recognizable resource name leaves `query.resourceId` absent
+and the pipeline falls back to any-available behavior.
+
+### 20.3 Upgrade path for existing shops
+
+The state file `private business backend mock ver 1.0/state/availability.json`
+is runtime-generated and won't have a `prince_snooker` key on shops that
+were running pre-§20 code. `normalizeState` now uses `hasOwnProperty` to
+distinguish "business absent from file" (→ seed defaults) from "business
+present but resources field empty" (→ keep empty). Result: on first load of
+new code, a shop that never had `prince_snooker` in its state file gets the
+12-table seed and persists it on next write. Shops that explicitly cleared
+the table list keep their empty state.
+
+A dedicated test (`princeSnookerUpgradeTests` in `availabilityStore.test.js`)
+covers this: a state file pre-populated only with the 4 demos seeds 12 tables
+when `prince_snooker` is loaded; a state file explicitly declaring
+`prince_snooker` with `resources: []` stays empty.
+
+### 20.4 Bookings model summary after §20
+
+A booking record now has these optional fields on top of the §13.3 shape:
+
+```text
+{
+  "id": "book_...",
+  "date": "YYYY-MM-DD",
+  "time": "HH:MM",
+  "durationMinutes": 60,                // default per business
+  "resourceId": "res_prince_table_3",   // required when business has ≥1 active resource
+  "service": "facial",                  // beauty/edu only
+  "partySize": 4,                       // restaurant only
+  "customer": "...",
+  "notes": "..."
+}
+```
+
+Pool bookings (no `resourceId`) still exist in the wild for the legacy
+single-pool path. In a business that has resources, pool bookings act as
+**global blockers**: they remove their time window from every resource's
+free-slot list. New writes into a business-with-resources cannot create pool
+bookings — they must pin.
+
+### 20.5 Test deltas
+
+| Suite | Before §20 | After §20 | New |
+|---|---:|---:|---:|
+| `availabilityStore.test.js` | 144 | 248 | +104 (Phase 2 free-slot + Phase 6 snooker + upgrade path) |
+| `pipeline.store.test.js` | 41 | 68 | +27 (Phase 3 resource detection + Phase 6 end-to-end) |
+| `admin.test.js` | 85 | 110 | +25 (Phase 4 resource endpoints + bookings/approve with resourceId) |
+| Other 35 suites | unchanged | unchanged | 0 |
+
+**Grand total: 2,978 across 38 runners** (was 2,829 before §20 — that's +149).
+Every single runner is green.
+
+### 20.6 Files changed in §20
+
+```text
+M  HANDOFF.md
+M  end-to-end pipeline ver 1.0/src/adminHtml.js
+M  end-to-end pipeline ver 1.0/src/pipeline.js
+M  end-to-end pipeline ver 1.0/src/server.js
+M  end-to-end pipeline ver 1.0/test/admin.test.js
+M  end-to-end pipeline ver 1.0/test/pipeline.store.test.js
+M  knowledge base ver 1.0/seed/hkSmeSeed.js
+M  private business backend mock ver 1.0/src/availabilityStore.js
+M  private business backend mock ver 1.0/src/businessBackendMock.js
+M  private business backend mock ver 1.0/test/availabilityStore.test.js
+```
+
+Plus the pre-existing untracked `scripts/testAuthToken.js` (§18.9) is still
+not committed — same decision pending.
+
+### 20.7 Known gaps / suggested next moves
+
+1. **Refresh §4 test count tables.** The §4 totals are stale by ~600 tests
+   now. Suggest re-running the all-test loop and refreshing on the next
+   passing edit.
+2. **Per-resource opening hours UI.** Phase 5 added the resource card but
+   not a per-resource hours editor — only business-wide hours. The store
+   supports `resource.openingHours`; the API accepts it via PATCH; only the
+   UI is missing. Phase 7 candidate.
+3. **No customer-facing reply that lists which resources are free.** When
+   the bot lists slots, it surfaces `availableSlots` and (now)
+   `availableSessions[i].availableResources`, but the draft text still says
+   "available times: …" without naming who/what is free. Could opt to add a
+   "Amy is free at 11:00; both at 14:00" mode for beauty.
+4. **Prince Snooker production deploy.** Pushing this work triggers the
+   GitHub Actions deploy to `prince-snooker`. The §20.3 upgrade path means
+   first load will seed 12 tables; verify on the shop after deploy.
+5. **`scripts/testAuthToken.js` (§18.9) decision still pending.**
+6. **Per-resource conflict error UX.** `addBooking` rejects same-resource
+   overlap with a 400 + error message. The admin UI surfaces it via
+   `setStatus("Add failed: …")` but doesn't highlight the offending field.
+   Cosmetic.
 
 End of session addendum.
 

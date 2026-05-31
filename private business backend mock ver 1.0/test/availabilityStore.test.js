@@ -11,7 +11,7 @@ const {
   _internal
 } = require("../src/availabilityStore");
 
-const { validateOpeningHours, validateClosedPeriod, validateBooking, validateResource, normalizeResource, subtractMany, toMinutes, checkBookingFitsOpeningHours } = _internal;
+const { validateOpeningHours, validateClosedPeriod, validateBooking, validateResource, normalizeResource, subtractMany, toMinutes, checkBookingFitsOpeningHours, intersectWindows, effectiveWindowsForResource, activeResources, checkBookingResourceRequirement, checkBookingResourceOverlap } = _internal;
 
 let testCount = 0;
 function check(label, condition, detail) {
@@ -463,6 +463,368 @@ function freshStore(prefix = "availabilityStore-test") {
   s3.addResource("beauty_demo", { name: "Amy" });
   s3.reset();
   eq("reset clears resources", s3.listResources("beauty_demo"), []);
+})();
+
+// ---------- intersectWindows ----------
+(function intersectWindowsTests() {
+  eq("intersectWindows empty", intersectWindows([], [{ start: 600, end: 780 }]), []);
+  eq("intersectWindows disjoint", intersectWindows([{ start: 600, end: 660 }], [{ start: 720, end: 780 }]), []);
+  eq("intersectWindows full overlap", intersectWindows([{ start: 600, end: 780 }], [{ start: 600, end: 780 }]), [{ start: 600, end: 780 }]);
+  eq("intersectWindows partial overlap", intersectWindows([{ start: 600, end: 780 }], [{ start: 700, end: 800 }]), [{ start: 700, end: 780 }]);
+  eq("intersectWindows multi-window pair", intersectWindows([{ start: 600, end: 700 }, { start: 800, end: 900 }], [{ start: 650, end: 850 }]), [{ start: 650, end: 700 }, { start: 800, end: 850 }]);
+  eq("intersectWindows sorted output", intersectWindows([{ start: 800, end: 900 }, { start: 600, end: 700 }], [{ start: 500, end: 1000 }]), [{ start: 600, end: 700 }, { start: 800, end: 900 }]);
+})();
+
+// ---------- effectiveWindowsForResource ----------
+(function effectiveWindowsTests() {
+  const bizWindows = [{ start: 660, end: 1140 }]; // 11:00-19:00
+
+  const noOverride = effectiveWindowsForResource(bizWindows, { id: "res_a", name: "Amy", active: true }, 1);
+  eq("no override → inherits business windows", noOverride, bizWindows);
+
+  const undefinedDay = effectiveWindowsForResource(bizWindows, { id: "res_b", name: "Joey", openingHours: { "0": [] }, active: true }, 1);
+  eq("override missing this dow → inherits business windows", undefinedDay, bizWindows);
+
+  const narrower = effectiveWindowsForResource(bizWindows, { id: "res_c", name: "Cara", openingHours: { "1": [{ open: "12:00", close: "16:00" }] }, active: true }, 1);
+  eq("narrower override → intersected", narrower, [{ start: 720, end: 960 }]);
+
+  const closedThatDay = effectiveWindowsForResource(bizWindows, { id: "res_d", name: "Dom", openingHours: { "1": [] }, active: true }, 1);
+  eq("resource closed → empty windows", closedThatDay, []);
+})();
+
+// ---------- activeResources ----------
+(function activeResourcesTests() {
+  const { store } = freshStore("active-resources");
+  const a = store.addResource("beauty_demo", { name: "Amy" });
+  const b = store.addResource("beauty_demo", { name: "Joey" });
+  store.removeResource("beauty_demo", b.resource.id); // soft-delete
+  // Direct internal helper expects state shape — load via listAll wrapper
+  const state = { businesses: { beauty_demo: { resources: store.listResources("beauty_demo") } } };
+  const actives = activeResources(state, "beauty_demo");
+  check("only active resources counted", actives.length === 1 && actives[0].id === a.resource.id);
+  eq("unknown business → empty", activeResources(state, "nope_demo"), []);
+})();
+
+// ---------- listFreeSlots with resources ----------
+(function listFreeSlotsResourceTests() {
+  // Specific resource: Amy 11:00-15:00 on Mon, Joey inherits business 11:00-19:00
+  {
+    const { store } = freshStore("free-slots-specific");
+    store.setOpeningHours("beauty_demo", { "0": [], "1": [{ open: "11:00", close: "19:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] });
+    const amy = store.addResource("beauty_demo", { name: "Amy", openingHours: { "0": [], "1": [{ open: "11:00", close: "15:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] } });
+    const joey = store.addResource("beauty_demo", { name: "Joey" });
+
+    const amySlots = store.listFreeSlots({ businessId: "beauty_demo", date: "2026-05-25", service: "laser", resourceId: amy.resource.id });
+    eq("Amy-only: slots inside her 11-15 window only", amySlots.freeSlots.map((s) => s.time), ["11:00", "11:30", "12:00", "12:30", "13:00", "13:30", "14:00", "14:30"]);
+    check("Amy slot carries resourceId", amySlots.freeSlots[0].resourceId === amy.resource.id);
+    eq("Amy slot availableResources", amySlots.freeSlots[0].availableResources, [amy.resource.id]);
+
+    const joeySlots = store.listFreeSlots({ businessId: "beauty_demo", date: "2026-05-25", service: "laser", resourceId: joey.resource.id });
+    check("Joey (no override): inherits full business window", joeySlots.freeSlots.length === 16); // 11:00-18:30 step 30 with 30min duration
+  }
+
+  // Any-available: union with availableResources lists who's free at each time
+  {
+    const { store } = freshStore("free-slots-any");
+    store.setOpeningHours("beauty_demo", { "0": [], "1": [{ open: "11:00", close: "13:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] });
+    const amy = store.addResource("beauty_demo", { name: "Amy" });
+    const joey = store.addResource("beauty_demo", { name: "Joey" });
+    store.addBooking("beauty_demo", { date: "2026-05-25", time: "11:00", service: "laser", durationMinutes: 30, resourceId: amy.resource.id });
+
+    const any = store.listFreeSlots({ businessId: "beauty_demo", date: "2026-05-25", service: "laser" });
+    eq("any-available: still 4 start times (Joey covers 11:00)", any.freeSlots.map((s) => s.time), ["11:00", "11:30", "12:00", "12:30"]);
+    eq("11:00 only Joey is free", any.freeSlots[0].availableResources, [joey.resource.id]);
+    check("11:30 onward both free", any.freeSlots[1].availableResources.length === 2);
+    check("reason mentions resource count", any.reason.includes("2 resource"));
+  }
+
+  // Any-available where ALL resources are blocked at the same time
+  {
+    const { store } = freshStore("free-slots-all-blocked");
+    store.setOpeningHours("beauty_demo", { "0": [], "1": [{ open: "11:00", close: "13:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] });
+    const amy = store.addResource("beauty_demo", { name: "Amy" });
+    const joey = store.addResource("beauty_demo", { name: "Joey" });
+    store.addBooking("beauty_demo", { date: "2026-05-25", time: "11:00", service: "laser", durationMinutes: 30, resourceId: amy.resource.id });
+    store.addBooking("beauty_demo", { date: "2026-05-25", time: "11:00", service: "laser", durationMinutes: 30, resourceId: joey.resource.id });
+    const any = store.listFreeSlots({ businessId: "beauty_demo", date: "2026-05-25", service: "laser" });
+    check("11:00 no longer in the list", !any.freeSlots.some((s) => s.time === "11:00"));
+    check("later times still available", any.freeSlots.some((s) => s.time === "11:30"));
+  }
+
+  // Specific resource not found
+  {
+    const { store } = freshStore("free-slots-not-found");
+    store.setOpeningHours("beauty_demo", { "0": [], "1": [{ open: "11:00", close: "13:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] });
+    store.addResource("beauty_demo", { name: "Amy" });
+    const missing = store.listFreeSlots({ businessId: "beauty_demo", date: "2026-05-25", service: "laser", resourceId: "res_does_not_exist" });
+    check("unknown resourceId → found=false", missing.found === false && missing.reason.includes("resource not found"));
+  }
+
+  // Resource closed that day
+  {
+    const { store } = freshStore("free-slots-resource-closed");
+    store.setOpeningHours("beauty_demo", { "0": [], "1": [{ open: "11:00", close: "13:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] });
+    const amy = store.addResource("beauty_demo", { name: "Amy", openingHours: { "0": [], "1": [], "2": [{ open: "11:00", close: "13:00" }], "3": [], "4": [], "5": [], "6": [] } });
+    const closed = store.listFreeSlots({ businessId: "beauty_demo", date: "2026-05-25", service: "laser", resourceId: amy.resource.id });
+    check("resource closed on dow → empty list", closed.found === true && closed.freeSlots.length === 0);
+  }
+
+  // Zero resources → legacy single-pool path (no availableResources field on slots)
+  {
+    const { store } = freshStore("free-slots-legacy");
+    store.setOpeningHours("beauty_demo", { "0": [], "1": [{ open: "11:00", close: "13:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] });
+    const legacy = store.listFreeSlots({ businessId: "beauty_demo", date: "2026-05-25", service: "laser" });
+    eq("legacy path slot times", legacy.freeSlots.map((s) => s.time), ["11:00", "11:30", "12:00", "12:30"]);
+    check("legacy path slots do NOT carry availableResources", legacy.freeSlots.every((s) => s.availableResources === undefined));
+  }
+
+  // Pool booking (no resourceId) blocks ALL resources at that time
+  {
+    const { store } = freshStore("free-slots-pool-blocker");
+    store.setOpeningHours("beauty_demo", { "0": [], "1": [{ open: "11:00", close: "13:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] });
+    store.addResource("beauty_demo", { name: "Amy" });
+    store.addResource("beauty_demo", { name: "Joey" });
+    // Inject a legacy pool booking directly via state mutation (since addBooking now requires resourceId)
+    const raw = require("node:fs").readFileSync(store._filePath, "utf8");
+    const state = JSON.parse(raw);
+    state.businesses.beauty_demo.bookings.push({ id: "book_legacy_pool", date: "2026-05-25", time: "11:00", service: "laser", durationMinutes: 30 });
+    require("node:fs").writeFileSync(store._filePath, JSON.stringify(state));
+    const any = store.listFreeSlots({ businessId: "beauty_demo", date: "2026-05-25", service: "laser" });
+    check("pool booking blocks all resources at 11:00", !any.freeSlots.some((s) => s.time === "11:00"));
+  }
+})();
+
+// ---------- findNextAvailableDates with resourceId ----------
+(function findNextWithResourceTests() {
+  const { store } = freshStore("find-next-resource");
+  store.setOpeningHours("beauty_demo", { "0": [], "1": [{ open: "11:00", close: "12:00" }], "2": [], "3": [{ open: "11:00", close: "12:00" }], "4": [], "5": [], "6": [] });
+  const amy = store.addResource("beauty_demo", { name: "Amy", openingHours: { "0": [], "1": [], "2": [], "3": [{ open: "11:00", close: "12:00" }], "4": [], "5": [], "6": [] } });
+  // Joey inherits business hours → available Mon + Wed
+  store.addResource("beauty_demo", { name: "Joey" });
+  // Without resourceId (any-available): Mon (Joey) + Wed (both) both have slots
+  const any = store.findNextAvailableDates({ businessId: "beauty_demo", fromDate: "2026-05-24", service: "laser", maxDays: 7 });
+  eq("any: Mon + Wed in next 7 days", any.map((s) => s.date), ["2026-05-25", "2026-05-27"]);
+  // With Amy (only Wed): just Wed
+  const amyOnly = store.findNextAvailableDates({ businessId: "beauty_demo", fromDate: "2026-05-24", service: "laser", resourceId: amy.resource.id, maxDays: 7 });
+  eq("Amy: only Wed in next 7 days", amyOnly.map((s) => s.date), ["2026-05-27"]);
+})();
+
+// ---------- addBooking requires resourceId when business has resources ----------
+(function addBookingResourceRequirementTests() {
+  const { store } = freshStore("add-booking-requirement");
+  store.setOpeningHours("beauty_demo", { "0": [], "1": [{ open: "11:00", close: "19:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] });
+  const amy = store.addResource("beauty_demo", { name: "Amy" });
+
+  const missingId = store.addBooking("beauty_demo", { date: "2026-05-25", time: "13:00", service: "facial" });
+  check("rejects booking without resourceId when business has resources", missingId.ok === false && missingId.error.includes("resourceId required"));
+
+  const badId = store.addBooking("beauty_demo", { date: "2026-05-25", time: "13:00", service: "facial", resourceId: "res_nope" });
+  check("rejects unknown resourceId", badId.ok === false && badId.error.includes("not found or inactive"));
+
+  const inactive = store.addResource("beauty_demo", { name: "OldStaff" });
+  store.removeResource("beauty_demo", inactive.resource.id);
+  const inactiveId = store.addBooking("beauty_demo", { date: "2026-05-25", time: "13:00", service: "facial", resourceId: inactive.resource.id });
+  check("rejects inactive resourceId", inactiveId.ok === false && inactiveId.error.includes("not found or inactive"));
+
+  const ok = store.addBooking("beauty_demo", { date: "2026-05-25", time: "13:00", service: "facial", resourceId: amy.resource.id });
+  check("accepts valid resourceId", ok.ok === true && ok.booking.resourceId === amy.resource.id);
+
+  // Back-compat: zero resources → resourceId not required (legacy behavior)
+  const { store: legacy } = freshStore("legacy-no-resources");
+  legacy.setOpeningHours("beauty_demo", { "0": [], "1": [{ open: "11:00", close: "19:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] });
+  const noResources = legacy.addBooking("beauty_demo", { date: "2026-05-25", time: "13:00", service: "facial" });
+  check("legacy: no resources → resourceId not required", noResources.ok === true && noResources.booking.resourceId === undefined);
+})();
+
+// ---------- Per-resource overlap detection ----------
+(function overlapTests() {
+  const { store } = freshStore("overlap");
+  store.setOpeningHours("beauty_demo", { "0": [], "1": [{ open: "11:00", close: "19:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] });
+  const amy = store.addResource("beauty_demo", { name: "Amy" });
+  const joey = store.addResource("beauty_demo", { name: "Joey" });
+
+  const first = store.addBooking("beauty_demo", { date: "2026-05-25", time: "13:00", service: "facial", resourceId: amy.resource.id }); // facial = 75 min
+  check("first booking ok", first.ok === true);
+
+  const overlapping = store.addBooking("beauty_demo", { date: "2026-05-25", time: "13:30", service: "laser", resourceId: amy.resource.id });
+  check("rejects overlapping booking on same resource", overlapping.ok === false && overlapping.error.includes("resource conflict"));
+
+  const sameTimeDifferentResource = store.addBooking("beauty_demo", { date: "2026-05-25", time: "13:00", service: "facial", resourceId: joey.resource.id });
+  check("accepts same time on different resource", sameTimeDifferentResource.ok === true);
+
+  const adjacentSameResource = store.addBooking("beauty_demo", { date: "2026-05-25", time: "14:15", service: "laser", resourceId: amy.resource.id }); // facial ends at 14:15
+  check("accepts adjacent booking on same resource", adjacentSameResource.ok === true);
+
+  // updateBooking conflict check
+  const move = store.updateBooking("beauty_demo", sameTimeDifferentResource.booking.id, { resourceId: amy.resource.id });
+  check("updateBooking rejects move into conflict", move.ok === false && move.error.includes("resource conflict"));
+
+  // updateBooking can move within the same resource without false-positive conflict against itself
+  const selfMove = store.updateBooking("beauty_demo", first.booking.id, { time: "12:00" });
+  check("updateBooking allows same-id self-move", selfMove.ok === true && selfMove.booking.time === "12:00");
+})();
+
+// ---------- Resource-aware checkBookingFitsOpeningHours ----------
+(function resourceFitTests() {
+  const { store } = freshStore("resource-fit");
+  store.setOpeningHours("beauty_demo", { "0": [], "1": [{ open: "11:00", close: "19:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] });
+  const amy = store.addResource("beauty_demo", { name: "Amy", openingHours: { "0": [], "1": [{ open: "11:00", close: "15:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] } });
+
+  // Booking inside business hours but outside Amy's window must be rejected
+  const outsideAmy = store.addBooking("beauty_demo", { date: "2026-05-25", time: "16:00", service: "laser", resourceId: amy.resource.id }); // 16:00-16:30 inside biz 11-19 but outside Amy 11-15
+  check("rejects booking outside resource's window even if inside business window", outsideAmy.ok === false && outsideAmy.error.includes("outside opening hours"));
+
+  // Same booking on a resource that inherits business hours: ok
+  const joey = store.addResource("beauty_demo", { name: "Joey" });
+  const okOnJoey = store.addBooking("beauty_demo", { date: "2026-05-25", time: "16:00", service: "laser", resourceId: joey.resource.id });
+  check("accepts booking on resource that inherits business hours", okOnJoey.ok === true);
+
+  // Inside Amy's window: ok
+  const insideAmy = store.addBooking("beauty_demo", { date: "2026-05-25", time: "14:00", service: "laser", resourceId: amy.resource.id });
+  check("accepts booking inside resource's narrower window", insideAmy.ok === true);
+})();
+
+// ---------- Direct helper tests ----------
+(function helperTests() {
+  // checkBookingResourceRequirement
+  const stateNoResources = { businesses: { beauty_demo: { resources: [] } } };
+  check("no resources → requirement passes", checkBookingResourceRequirement(stateNoResources, "beauty_demo", { date: "2026-05-25", time: "13:00" }).ok === true);
+
+  const stateWithResources = { businesses: { beauty_demo: { resources: [{ id: "res_amy", name: "Amy", active: true }] } } };
+  check("with resources but no resourceId → fails", checkBookingResourceRequirement(stateWithResources, "beauty_demo", { date: "2026-05-25", time: "13:00" }).ok === false);
+  check("with resources + valid id → passes", checkBookingResourceRequirement(stateWithResources, "beauty_demo", { date: "2026-05-25", time: "13:00", resourceId: "res_amy" }).ok === true);
+  check("with resources + bad id → fails", checkBookingResourceRequirement(stateWithResources, "beauty_demo", { date: "2026-05-25", time: "13:00", resourceId: "res_nope" }).ok === false);
+
+  const stateAllInactive = { businesses: { beauty_demo: { resources: [{ id: "res_amy", name: "Amy", active: false }] } } };
+  check("all inactive → behaves as no resources", checkBookingResourceRequirement(stateAllInactive, "beauty_demo", { date: "2026-05-25", time: "13:00" }).ok === true);
+
+  // checkBookingResourceOverlap
+  const overlapState = { businesses: { beauty_demo: { bookings: [
+    { id: "book_a", date: "2026-05-25", time: "13:00", durationMinutes: 60, resourceId: "res_amy" }
+  ] } } };
+  check("no resourceId on incoming → no overlap check", checkBookingResourceOverlap(overlapState, "beauty_demo", { date: "2026-05-25", time: "13:00", durationMinutes: 60 }).ok === true);
+  check("overlapping same resource → conflict", checkBookingResourceOverlap(overlapState, "beauty_demo", { date: "2026-05-25", time: "13:30", durationMinutes: 30, resourceId: "res_amy" }).ok === false);
+  check("touching boundary same resource → not a conflict", checkBookingResourceOverlap(overlapState, "beauty_demo", { date: "2026-05-25", time: "14:00", durationMinutes: 30, resourceId: "res_amy" }).ok === true);
+  check("excludeId skips matching booking", checkBookingResourceOverlap(overlapState, "beauty_demo", { date: "2026-05-25", time: "13:00", durationMinutes: 60, resourceId: "res_amy" }, "book_a").ok === true);
+})();
+
+// ---------- Booking validation accepts and coerces resourceId ----------
+(function validateBookingResourceTests() {
+  const withId = validateBooking("beauty_demo", { date: "2026-05-25", time: "13:00", service: "facial", resourceId: "res_amy" }).booking;
+  check("validateBooking preserves resourceId string", withId.resourceId === "res_amy");
+
+  const numericId = validateBooking("beauty_demo", { date: "2026-05-25", time: "13:00", service: "facial", resourceId: 42 }).booking;
+  check("validateBooking coerces numeric resourceId to string", numericId.resourceId === "42");
+
+  const empty = validateBooking("beauty_demo", { date: "2026-05-25", time: "13:00", service: "facial", resourceId: "" }).booking;
+  check("validateBooking drops empty-string resourceId", empty.resourceId === undefined);
+
+  const nullId = validateBooking("beauty_demo", { date: "2026-05-25", time: "13:00", service: "facial", resourceId: null }).booking;
+  check("validateBooking drops null resourceId", nullId.resourceId === undefined);
+})();
+
+// ---------- prince_snooker (Phase 6) ----------
+(function princeSnookerSeedTests() {
+  const { defaultOpeningHours } = require("../src/availabilityStore");
+
+  // Default hours: 11:00–23:30 every day
+  const hours = defaultOpeningHours("prince_snooker");
+  for (let d = 0; d < 7; d++) {
+    const win = hours[String(d)];
+    check(`prince_snooker day ${d} has one window`, Array.isArray(win) && win.length === 1);
+    eq(`prince_snooker day ${d} window`, win[0], { open: "11:00", close: "23:30" });
+  }
+
+  // Fresh store: 12 tables seeded
+  const { store } = freshStore("snooker-seed");
+  const tables = store.listResources("prince_snooker");
+  check("prince_snooker seeded 12 tables", tables.length === 12);
+  for (let i = 1; i <= 12; i++) {
+    const t = tables.find((r) => r.name === `${i}號枱`);
+    check(`prince_snooker table ${i}號枱 seeded`, !!t && t.active === true);
+  }
+  // Stable ids
+  eq("prince_snooker table 1 id stable", tables.find((t) => t.name === "1號枱").id, "res_prince_table_1");
+  eq("prince_snooker table 12 id stable", tables.find((t) => t.name === "12號枱").id, "res_prince_table_12");
+
+  // Other businesses still have zero resources by default
+  for (const id of ["beauty_demo", "restaurant_demo", "edu_demo", "igshop_demo"]) {
+    eq(`${id} stays empty (no auto-seeded resources)`, store.listResources(id), []);
+  }
+})();
+
+(function princeSnookerUpgradeTests() {
+  // A pre-Phase-6 state file with only the 4 demos must auto-seed prince_snooker's
+  // 12 tables on first load, so existing shops pick them up without manual setup.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "snooker-upgrade-"));
+  const filePath = path.join(dir, "availability.json");
+  fs.writeFileSync(filePath, JSON.stringify({
+    businesses: {
+      beauty_demo: { openingHours: { "0": [], "1": [{ open: "11:00", close: "19:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] }, closedPeriods: [], bookings: [], resources: [] },
+      restaurant_demo: { openingHours: {}, closedPeriods: [], bookings: [], resources: [] },
+      edu_demo: { openingHours: {}, closedPeriods: [], bookings: [], resources: [] },
+      igshop_demo: { openingHours: {}, closedPeriods: [], bookings: [], resources: [] }
+      // prince_snooker intentionally absent
+    }
+  }, null, 2));
+
+  const store = createAvailabilityStore({ filePath });
+  const seeded = store.listResources("prince_snooker");
+  check("upgrade: prince_snooker auto-seeded when absent from existing file", seeded.length === 12);
+  check("upgrade: existing beauty_demo resources untouched (still empty)", store.listResources("beauty_demo").length === 0);
+
+  // Persist on first write
+  store.addClosedPeriod("prince_snooker", { date: "2026-05-25", start: "11:00", end: "12:00", reason: "test" });
+  const reload = createAvailabilityStore({ filePath });
+  check("upgrade: seeded tables persisted after first write", reload.listResources("prince_snooker").length === 12);
+
+  // A file that explicitly declares prince_snooker with empty resources keeps that empty state
+  const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), "snooker-explicit-empty-"));
+  const filePath2 = path.join(dir2, "availability.json");
+  fs.writeFileSync(filePath2, JSON.stringify({
+    businesses: {
+      prince_snooker: { openingHours: {}, closedPeriods: [], bookings: [], resources: [] }
+    }
+  }, null, 2));
+  const explicit = createAvailabilityStore({ filePath: filePath2 });
+  eq("upgrade: explicit empty resources stays empty (no re-seed)", explicit.listResources("prince_snooker"), []);
+})();
+
+(function princeSnookerBookingTests() {
+  const { store } = freshStore("snooker-bookings");
+
+  // Booking without resourceId rejects (12 active tables)
+  const noId = store.addBooking("prince_snooker", { date: "2026-05-25", time: "14:00" });
+  check("snooker: addBooking without resourceId rejected", noId.ok === false && noId.error.includes("resourceId required"));
+
+  // Booking on a real table: 60-min default
+  const ok = store.addBooking("prince_snooker", { date: "2026-05-25", time: "14:00", resourceId: "res_prince_table_3" });
+  check("snooker: addBooking on table 3 ok", ok.ok === true);
+  eq("snooker: default durationMinutes is 60", ok.booking.durationMinutes, 60);
+  eq("snooker: resourceId persisted", ok.booking.resourceId, "res_prince_table_3");
+  check("snooker: no service field on booking", ok.booking.service === undefined);
+
+  // Conflict on same table
+  const conflict = store.addBooking("prince_snooker", { date: "2026-05-25", time: "14:30", resourceId: "res_prince_table_3" });
+  check("snooker: overlapping booking on same table rejected", conflict.ok === false && conflict.error.includes("resource conflict"));
+
+  // Same time on different table: ok
+  const otherTable = store.addBooking("prince_snooker", { date: "2026-05-25", time: "14:00", resourceId: "res_prince_table_5" });
+  check("snooker: same time on different table ok", otherTable.ok === true);
+
+  // Out-of-hours rejection still applies (10:00 < 11:00 open)
+  const tooEarly = store.addBooking("prince_snooker", { date: "2026-05-25", time: "10:00", resourceId: "res_prince_table_1" });
+  check("snooker: pre-open booking rejected", tooEarly.ok === false && tooEarly.error.includes("outside opening hours"));
+
+  // Free slot computation respects bookings
+  const slots = store.listFreeSlots({ businessId: "prince_snooker", date: "2026-05-25", durationMinutes: 60, resourceId: "res_prince_table_3" });
+  check("snooker: table 3 14:00 removed (booked)", !slots.freeSlots.some((s) => s.time === "14:00"));
+  check("snooker: table 3 15:00 still free", slots.freeSlots.some((s) => s.time === "15:00"));
+
+  // Any-available: 14:00 still free because tables 1, 2, 4, 6-12 are free
+  const any = store.listFreeSlots({ businessId: "prince_snooker", date: "2026-05-25", durationMinutes: 60 });
+  const fourteen = any.freeSlots.find((s) => s.time === "14:00");
+  check("snooker: any-available 14:00 lists 10 free tables", fourteen && fourteen.availableResources.length === 10);
 })();
 
 console.log(`availabilityStore: ${testCount} tests passed`);

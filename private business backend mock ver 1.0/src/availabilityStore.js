@@ -10,11 +10,12 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 
 const DEFAULT_FILE = path.join(__dirname, "..", "state", "availability.json");
-const VALID_BUSINESS_IDS = new Set(["beauty_demo", "restaurant_demo", "edu_demo", "igshop_demo"]);
+const VALID_BUSINESS_IDS = new Set(["beauty_demo", "restaurant_demo", "edu_demo", "igshop_demo", "prince_snooker"]);
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const HHMM = /^\d{2}:\d{2}$/;
 const SLOT_STEP_MINUTES = 30;
 const RESOURCE_NAME_MAX = 80;
+const PRINCE_SNOOKER_TABLE_COUNT = 12;
 
 function createAvailabilityStore(options = {}) {
   const filePath = options.filePath || DEFAULT_FILE;
@@ -107,6 +108,10 @@ function createAvailabilityStore(options = {}) {
     const v = validateBooking(businessId, booking);
     if (v.error) return { ok: false, error: v.error };
     const state = loadAll();
+    const resReq = checkBookingResourceRequirement(state, businessId, v.booking);
+    if (!resReq.ok) return { ok: false, error: resReq.error };
+    const overlap = checkBookingResourceOverlap(state, businessId, v.booking);
+    if (!overlap.ok) return { ok: false, error: overlap.error };
     const fit = checkBookingFitsOpeningHours(state, businessId, v.booking);
     if (!fit.ok) return { ok: false, error: fit.error };
     const record = v.booking;
@@ -124,6 +129,10 @@ function createAvailabilityStore(options = {}) {
     const merged = { ...arr[idx], ...patch, id };
     const v = validateBooking(businessId, merged);
     if (v.error) return { ok: false, error: v.error };
+    const resReq = checkBookingResourceRequirement(state, businessId, v.booking);
+    if (!resReq.ok) return { ok: false, error: resReq.error };
+    const overlap = checkBookingResourceOverlap(state, businessId, v.booking, id);
+    if (!overlap.ok) return { ok: false, error: overlap.error };
     const fit = checkBookingFitsOpeningHours(state, businessId, v.booking);
     if (!fit.ok) return { ok: false, error: fit.error };
     arr[idx] = v.booking;
@@ -186,51 +195,101 @@ function createAvailabilityStore(options = {}) {
   }
 
   // ---- Free slot computation ----
-  function listFreeSlots({ businessId, date, service, durationMinutes, partySize } = {}) {
+  // Three paths:
+  // 1. Specific resourceId requested → compute against that resource's effective hours
+  //    (resource.openingHours ∩ business.openingHours) minus its own bookings + pool bookings + closed periods.
+  // 2. No resourceId but the business has ≥1 active resource → "any-available": a slot is free if
+  //    at least one active resource is free at that time. Each free slot carries
+  //    `availableResources: [resourceId,…]` so the pipeline can show "any" and the booking write can pick.
+  // 3. No resourceId and zero active resources → legacy single-pool path (unchanged shape).
+  function listFreeSlots({ businessId, date, service, durationMinutes, partySize, resourceId } = {}) {
     if (!businessId || !date || !ISO_DATE.test(date)) {
       return { found: false, freeSlots: [], reason: "businessId and ISO date required" };
     }
-    const hours = getOpeningHours(businessId);
+    const state = loadAll();
     const dow = dayOfWeek(date);
-    const windows = (hours[String(dow)] || []).map((w) => ({ start: toMinutes(w.open), end: toMinutes(w.close) }));
-    if (windows.length === 0) {
-      return { found: true, freeSlots: [], reason: "closed on this date" };
-    }
+    const bizWindows = openWindowsForBusiness(state, businessId, dow);
+    const sessionDuration = Number(durationMinutes) || defaultDurationForService(service);
 
-    const closed = listClosedPeriods(businessId)
+    const closed = (state.businesses?.[businessId]?.closedPeriods || [])
       .filter((p) => p.date === date)
       .map((c) => ({ start: toMinutes(c.start), end: toMinutes(c.end) }));
 
-    const bookings = listBookings(businessId)
+    const allBookings = (state.businesses?.[businessId]?.bookings || [])
       .filter((b) => b.date === date)
       .filter((b) => businessId !== "restaurant_demo" || !partySize || Number(b.partySize) === Number(partySize))
-      .filter((b) => businessId !== "beauty_demo" || !service || !b.service || b.service === service)
-      .map((b) => ({ start: toMinutes(b.time), end: toMinutes(b.time) + (Number(b.durationMinutes) || 30) }));
+      .filter((b) => businessId !== "beauty_demo" || !service || !b.service || b.service === service);
 
-    const open = subtractMany(windows, closed.concat(bookings));
-
-    const sessionDuration = Number(durationMinutes) || defaultDurationForService(service);
-    const free = [];
-    for (const w of open) {
-      const first = ceilTo(w.start, SLOT_STEP_MINUTES);
-      for (let t = first; t + sessionDuration <= w.end; t += SLOT_STEP_MINUTES) {
-        free.push({ time: fromMinutes(t), durationMinutes: sessionDuration, endTime: fromMinutes(t + sessionDuration) });
+    if (resourceId) {
+      const resource = (state.businesses?.[businessId]?.resources || []).find((r) => r.id === resourceId);
+      if (!resource) return { found: false, freeSlots: [], reason: `resource not found: ${resourceId}` };
+      const effective = effectiveWindowsForResource(bizWindows, resource, dow);
+      if (effective.length === 0) {
+        return { found: true, freeSlots: [], reason: "closed on this date" };
       }
+      const blockers = closed.concat(bookingsAsBlockers(allBookings.filter((b) => !b.resourceId || b.resourceId === resourceId)));
+      const open = subtractMany(effective, blockers);
+      const free = walkFreeStarts(open, sessionDuration).map((t) => ({
+        time: fromMinutes(t),
+        durationMinutes: sessionDuration,
+        endTime: fromMinutes(t + sessionDuration),
+        resourceId,
+        availableResources: [resourceId]
+      }));
+      return { found: true, freeSlots: free, reason: `${free.length} free start time(s)` };
     }
+
+    const actives = activeResources(state, businessId);
+
+    if (actives.length === 0) {
+      if (bizWindows.length === 0) {
+        return { found: true, freeSlots: [], reason: "closed on this date" };
+      }
+      const blockers = closed.concat(bookingsAsBlockers(allBookings));
+      const open = subtractMany(bizWindows, blockers);
+      const free = walkFreeStarts(open, sessionDuration).map((t) => ({
+        time: fromMinutes(t),
+        durationMinutes: sessionDuration,
+        endTime: fromMinutes(t + sessionDuration)
+      }));
+      return { found: true, freeSlots: free, reason: `${free.length} free start time(s)` };
+    }
+
+    // Any-available path: union of per-resource free start times.
+    const perResource = actives.map((resource) => {
+      const effective = effectiveWindowsForResource(bizWindows, resource, dow);
+      if (effective.length === 0) return { resource, starts: new Set() };
+      // Pool bookings (no resourceId) block every resource. Per-resource bookings only block their own resource.
+      const ownBookings = allBookings.filter((b) => !b.resourceId || b.resourceId === resource.id);
+      const blockers = closed.concat(bookingsAsBlockers(ownBookings));
+      const open = subtractMany(effective, blockers);
+      return { resource, starts: new Set(walkFreeStarts(open, sessionDuration)) };
+    });
+
+    const allStarts = new Set();
+    for (const r of perResource) for (const t of r.starts) allStarts.add(t);
+    const sortedStarts = [...allStarts].sort((a, b) => a - b);
+
+    const free = sortedStarts.map((t) => ({
+      time: fromMinutes(t),
+      durationMinutes: sessionDuration,
+      endTime: fromMinutes(t + sessionDuration),
+      availableResources: perResource.filter((r) => r.starts.has(t)).map((r) => r.resource.id)
+    }));
 
     return {
       found: true,
       freeSlots: free,
-      reason: `${free.length} free start time(s)`
+      reason: `${free.length} free start time(s) across ${actives.length} resource(s)`
     };
   }
 
-  function findNextAvailableDates({ businessId, fromDate, service, partySize, durationMinutes, maxDays = 7, maxResults = 3 } = {}) {
+  function findNextAvailableDates({ businessId, fromDate, service, partySize, durationMinutes, resourceId, maxDays = 7, maxResults = 3 } = {}) {
     if (!businessId || !fromDate || !ISO_DATE.test(fromDate)) return [];
     const out = [];
     for (let i = 1; i <= maxDays && out.length < maxResults; i++) {
       const date = shiftDateStr(fromDate, i);
-      const result = listFreeSlots({ businessId, date, service, partySize, durationMinutes });
+      const result = listFreeSlots({ businessId, date, service, partySize, durationMinutes, resourceId });
       const slots = Array.isArray(result.freeSlots) ? result.freeSlots : [];
       if (slots.length > 0) {
         out.push({ date, freeCount: slots.length, firstSlot: slots[0] });
@@ -276,10 +335,19 @@ function buildInitialState() {
       openingHours: defaultOpeningHours(id),
       closedPeriods: [],
       bookings: [],
-      resources: []
+      resources: defaultResourcesFor(id)
     };
   }
   return { businesses };
+}
+
+function defaultResourcesFor(businessId) {
+  if (businessId !== "prince_snooker") return [];
+  const out = [];
+  for (let i = 1; i <= PRINCE_SNOOKER_TABLE_COUNT; i++) {
+    out.push({ id: `res_prince_table_${i}`, name: `${i}號枱`, active: true });
+  }
+  return out;
 }
 
 function defaultOpeningHours(businessId) {
@@ -317,6 +385,12 @@ function defaultOpeningHours(businessId) {
       "6": [{ open: "10:00", close: "18:00" }]
     };
   }
+  if (businessId === "prince_snooker") {
+    // Typical HK snooker hall: open every day 11:00 to late evening. Schema can't
+    // span midnight, so we cap at 23:30 (last booking slot starts before then).
+    const window = [{ open: "11:00", close: "23:30" }];
+    return { "0": window, "1": window, "2": window, "3": window, "4": window, "5": window, "6": window };
+  }
   // igshop_demo or unknown: closed all days (no slot booking)
   return { "0": [], "1": [], "2": [], "3": [], "4": [], "5": [], "6": [] };
 }
@@ -330,7 +404,8 @@ function normalizeState(state) {
   const out = { businesses: {} };
   const businesses = state && typeof state.businesses === "object" && state.businesses !== null ? state.businesses : {};
   for (const id of VALID_BUSINESS_IDS) {
-    const record = businesses[id] || {};
+    const present = Object.prototype.hasOwnProperty.call(businesses, id);
+    const record = present ? businesses[id] : {};
     out.businesses[id] = {
       openingHours: normalizeOpeningHours(record.openingHours, id),
       closedPeriods: Array.isArray(record.closedPeriods)
@@ -339,9 +414,13 @@ function normalizeState(state) {
       bookings: Array.isArray(record.bookings)
         ? record.bookings.map((b) => ({ ...b, id: b.id || newId("book") }))
         : [],
+      // Businesses absent from the loaded file get the default resource seed —
+      // this is the one-time upgrade path so existing shops pick up prince_snooker's
+      // 12 tables on first load of the new code. Once persisted, the file is the
+      // source of truth.
       resources: Array.isArray(record.resources)
         ? record.resources.map((r) => normalizeResource(r)).filter((r) => r !== null)
-        : []
+        : (present ? [] : defaultResourcesFor(id))
     };
   }
   return out;
@@ -439,6 +518,11 @@ function validateBooking(businessId, booking) {
     out.durationMinutes = dur;
   } else if (businessId === "igshop_demo") {
     return { error: "igshop_demo does not support bookings" };
+  } else if (businessId === "prince_snooker") {
+    // Snooker booking: per-table. No service, no partySize. Default 60-min sessions.
+    const dur = out.durationMinutes != null && out.durationMinutes !== "" ? Number(out.durationMinutes) : 60;
+    if (!Number.isInteger(dur) || dur < 5 || dur > 240) return { error: "durationMinutes must be 5-240" };
+    out.durationMinutes = dur;
   } else {
     if (!out.service || typeof out.service !== "string") return { error: "service is required" };
     const dur = out.durationMinutes != null && out.durationMinutes !== ""
@@ -449,6 +533,11 @@ function validateBooking(businessId, booking) {
   }
   if (out.customer != null) out.customer = String(out.customer).slice(0, 200);
   if (out.notes != null) out.notes = String(out.notes).slice(0, 500);
+  if (out.resourceId != null && out.resourceId !== "") {
+    out.resourceId = String(out.resourceId);
+  } else {
+    delete out.resourceId;
+  }
   return { booking: out };
 }
 
@@ -471,11 +560,19 @@ function validateResource(resource) {
 }
 
 function checkBookingFitsOpeningHours(state, businessId, booking) {
-  const hours = (state.businesses?.[businessId]?.openingHours) || defaultOpeningHours(businessId);
   const dow = dayOfWeek(booking.date);
-  const windows = (hours[String(dow)] || []).map((w) => ({ start: toMinutes(w.open), end: toMinutes(w.close) }));
+  const bizWindows = openWindowsForBusiness(state, businessId, dow);
+  let windows = bizWindows;
+  let scope = businessId;
+  if (booking.resourceId) {
+    const resource = (state.businesses?.[businessId]?.resources || []).find((r) => r.id === booking.resourceId);
+    if (resource) {
+      windows = effectiveWindowsForResource(bizWindows, resource, dow);
+      scope = `${businessId} resource ${resource.name || resource.id}`;
+    }
+  }
   if (windows.length === 0) {
-    return { ok: false, error: `outside opening hours: ${businessId} is closed on ${booking.date}` };
+    return { ok: false, error: `outside opening hours: ${scope} is closed on ${booking.date}` };
   }
 
   const closed = (state.businesses?.[businessId]?.closedPeriods || [])
@@ -492,6 +589,90 @@ function checkBookingFitsOpeningHours(state, businessId, booking) {
       ? "no open window on this date"
       : open.map((w) => `${fromMinutes(w.start)}-${fromMinutes(w.end)}`).join(", ");
     return { ok: false, error: `outside opening hours: ${booking.time}-${fromMinutes(endMin)} not within open window(s) on ${booking.date} (open: ${windowList})` };
+  }
+  return { ok: true };
+}
+
+function openWindowsForBusiness(state, businessId, dow) {
+  const hours = (state.businesses?.[businessId]?.openingHours) || defaultOpeningHours(businessId);
+  return (hours[String(dow)] || []).map((w) => ({ start: toMinutes(w.open), end: toMinutes(w.close) }));
+}
+
+function effectiveWindowsForResource(bizWindows, resource, dow) {
+  if (!resource || !resource.openingHours) return bizWindows;
+  const resHours = resource.openingHours[String(dow)];
+  if (!Array.isArray(resHours)) return bizWindows;
+  const resWindows = resHours.map((w) => ({ start: toMinutes(w.open), end: toMinutes(w.close) }));
+  return intersectWindows(bizWindows, resWindows);
+}
+
+function intersectWindows(a, b) {
+  const out = [];
+  for (const x of a) {
+    for (const y of b) {
+      const start = Math.max(x.start, y.start);
+      const end = Math.min(x.end, y.end);
+      if (end > start) out.push({ start, end });
+    }
+  }
+  return out.sort((p, q) => p.start - q.start);
+}
+
+function activeResources(state, businessId) {
+  return (state.businesses?.[businessId]?.resources || []).filter((r) => r.active !== false);
+}
+
+function bookingsAsBlockers(bookings) {
+  return bookings.map((b) => ({
+    start: toMinutes(b.time),
+    end: toMinutes(b.time) + (Number(b.durationMinutes) || 30)
+  }));
+}
+
+function walkFreeStarts(openWindows, sessionDuration) {
+  const out = [];
+  for (const w of openWindows) {
+    const first = ceilTo(w.start, SLOT_STEP_MINUTES);
+    for (let t = first; t + sessionDuration <= w.end; t += SLOT_STEP_MINUTES) {
+      out.push(t);
+    }
+  }
+  return out;
+}
+
+// When a business has ≥1 active resource, every new booking must pin to one.
+// Bookings without a resourceId in such a business are pool bookings — created
+// in earlier sessions before this requirement landed — and remain valid as
+// global blockers, but new writes must specify a resource.
+function checkBookingResourceRequirement(state, businessId, booking) {
+  const actives = activeResources(state, businessId);
+  if (actives.length === 0) return { ok: true };
+  if (!booking.resourceId) {
+    return { ok: false, error: `resourceId required: ${businessId} has ${actives.length} active resource(s)` };
+  }
+  const found = actives.find((r) => r.id === booking.resourceId);
+  if (!found) {
+    return { ok: false, error: `resourceId not found or inactive: ${booking.resourceId}` };
+  }
+  return { ok: true, resource: found };
+}
+
+// Two bookings on the same date with the same resourceId whose time ranges overlap
+// are a conflict. Pool bookings (no resourceId) skip this — they're handled by
+// the legacy free-slot subtraction path.
+function checkBookingResourceOverlap(state, businessId, booking, excludeId) {
+  if (!booking.resourceId) return { ok: true };
+  const startMin = toMinutes(booking.time);
+  const endMin = startMin + Number(booking.durationMinutes || 30);
+  const others = (state.businesses?.[businessId]?.bookings || [])
+    .filter((b) => b.id !== excludeId)
+    .filter((b) => b.date === booking.date && b.resourceId === booking.resourceId);
+  for (const b of others) {
+    const bStart = toMinutes(b.time);
+    const bEnd = bStart + Number(b.durationMinutes || 30);
+    if (startMin < bEnd && bStart < endMin) {
+      return { ok: false, error: `resource conflict: ${booking.resourceId} already booked ${b.time}-${fromMinutes(bEnd)} on ${b.date} (id ${b.id})` };
+    }
   }
   return { ok: true };
 }
@@ -552,6 +733,8 @@ module.exports = {
   _internal: {
     validateOpeningHours, validateClosedPeriod, validateBooking, validateResource,
     normalizeState, normalizeResource, buildInitialState, subtractOne, subtractMany,
-    toMinutes, fromMinutes, dayOfWeek, checkBookingFitsOpeningHours
+    toMinutes, fromMinutes, dayOfWeek, checkBookingFitsOpeningHours,
+    intersectWindows, effectiveWindowsForResource, activeResources,
+    checkBookingResourceRequirement, checkBookingResourceOverlap
   }
 };

@@ -229,5 +229,46 @@ module.exports = [
       en: "P3 English: HK$1,280/month (4 lessons). Pay for 10 lessons, get 1 free. Materials HK$120/term.",
       mixed: "P3 English $1,280/月（4堂），10堂送1堂，教材$120/term。"
     }
+  },
+
+  // ---------------- Prince Snooker (snooker hall, per-table booking) ----------------
+  {
+    id: "prince_hours",
+    businessId: "prince_snooker",
+    intent: "hours_location",
+    question: "營業時間 / opening hours",
+    keywords: ["幾點", "營業", "開門", "收工", "hours", "open", "close", "點開"],
+    tone: "polite_professional",
+    answers: {
+      "zh-HK": "我哋每日11:00–23:30開門。",
+      en: "We're open daily 11:00–23:30.",
+      mixed: "我哋每日11:00–23:30 open。"
+    }
+  },
+  {
+    id: "prince_identity",
+    businessId: "prince_snooker",
+    intent: "hours_location",
+    question: "店名 / identity",
+    keywords: ["邊間", "店名", "公司名", "間舖", "間鋪", "叫咩", "brand", "shop name", "你係"],
+    tone: "polite_professional",
+    answers: {
+      "zh-HK": "我哋係王子桌球，提供桌球枱租用服務。",
+      en: "We are Prince Snooker, a snooker hall offering table rentals.",
+      mixed: "我哋係王子桌球，提供snooker table rental。"
+    }
+  },
+  {
+    id: "prince_booking",
+    businessId: "prince_snooker",
+    intent: "booking",
+    question: "預約桌球枱 / book a snooker table",
+    keywords: ["book", "預約", "訂枱", "訂位", "想book", "想訂", "table", "枱", "snooker", "桌球"],
+    tone: "polite_professional",
+    answers: {
+      "zh-HK": "請問你想book邊張枱、邊日同邊個時間？我哋會由真人同事再次確認後正式幫你留位。",
+      en: "Which table, date, and time would you like to book? Our staff will confirm before holding the slot for you.",
+      mixed: "請問你想book邊張枱、邊日同邊個時間？我哋會由staff confirm之後正式為你hold住。"
+    }
   }
 ];
