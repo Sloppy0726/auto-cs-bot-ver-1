@@ -154,6 +154,8 @@ function adminSlotsHtml() {
     .resource-hours-editor .editor-hint { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
     .resource-hours-editor .editor-grid .day-row { padding: 4px 0; }
     .resource-hours-editor .save-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+    .field-error { color: var(--danger); font-size: 12px; margin-top: 4px; padding: 4px 8px; border: 1px solid var(--danger); border-radius: 6px; background: var(--closed-bg); }
+    .input-error { outline: 2px solid var(--danger); outline-offset: -2px; }
 
     @media (max-width: 720px) {
       .day-row { grid-template-columns: 56px 1fr; }
@@ -282,7 +284,10 @@ function adminSlotsHtml() {
             <div><label>Start time<input id="book-time" required placeholder="14:00"></label></div>
             <div id="book-service-wrap"><label>Service<input id="book-service" placeholder="facial / laser / assessment"></label></div>
             <div id="book-party-wrap" hidden><label>Party size<input id="book-partySize" type="number" min="1" max="20" placeholder="2"></label></div>
-            <div id="book-resource-wrap" hidden><label>Resource<select id="book-resource"></select></label></div>
+            <div id="book-resource-wrap" hidden>
+              <label>Resource<select id="book-resource"></select></label>
+              <div id="book-resource-error" class="field-error" hidden></div>
+            </div>
             <div><label>End time<input id="book-endTime" placeholder="HH:MM"></label></div>
             <div><label>Customer<input id="book-customer" placeholder="(optional)"></label></div>
             <div><label>Notes<input id="book-notes" placeholder="(optional)"></label></div>
@@ -345,6 +350,7 @@ function adminSlotsHtml() {
     const resourcesCount = document.getElementById("resources-count");
     const bookResourceWrap = document.getElementById("book-resource-wrap");
     const bookResourceSelect = document.getElementById("book-resource");
+    const bookResourceErrorEl = document.getElementById("book-resource-error");
     const thResource = document.getElementById("th-resource");
 
     // --- State ---
@@ -372,6 +378,30 @@ function adminSlotsHtml() {
     function setStatus(text, level) {
       statusBar.textContent = text;
       statusBar.className = "status-bar" + (level ? " " + level : "");
+    }
+
+    // Server returns "resource conflict: <resourceId> already booked HH:MM-HH:MM on YYYY-MM-DD (id book_XXX)"
+    // when an add/edit hits an overlap on the same resource. Parsing it here lets the UI route the
+    // failure to a field-level highlight instead of leaving it as a status-bar string.
+    function parseBookingError(message) {
+      if (typeof message !== "string") return null;
+      const m = message.match(/resource conflict:\\s*(\\S+)\\s+already booked\\s+(\\d{2}:\\d{2}-\\d{2}:\\d{2})\\s+on\\s+(\\d{4}-\\d{2}-\\d{2})/);
+      if (m) return { kind: "resource_conflict", resourceId: m[1], range: m[2], date: m[3] };
+      return null;
+    }
+
+    function showBookingResourceConflict({ selectEl, errorEl, parsed }) {
+      if (!parsed || parsed.kind !== "resource_conflict" || !selectEl || !errorEl) return false;
+      const name = resourceNameFor(parsed.resourceId) || parsed.resourceId;
+      errorEl.textContent = name + " is already booked " + parsed.range + " on " + parsed.date + ". Pick a different resource or change the time.";
+      errorEl.hidden = false;
+      selectEl.classList.add("input-error");
+      return true;
+    }
+
+    function clearBookingResourceConflict({ selectEl, errorEl }) {
+      if (errorEl) { errorEl.hidden = true; errorEl.textContent = ""; }
+      if (selectEl) selectEl.classList.remove("input-error");
     }
 
     function syncBusinessFields() {
@@ -428,6 +458,7 @@ function adminSlotsHtml() {
         setStatus("Loading…");
         currentBusiness = businessSelect.value;
         syncBusinessFields();
+        clearBookingResourceConflict({ selectEl: bookResourceSelect, errorEl: bookResourceErrorEl });
         const [h, c, b, rs] = await Promise.all([
           adminFetch("/admin/opening-hours/" + encodeURIComponent(currentBusiness)),
           adminFetch("/admin/closed-periods/" + encodeURIComponent(currentBusiness)),
@@ -1022,14 +1053,24 @@ function adminSlotsHtml() {
         const notes = document.getElementById("book-notes").value.trim();
         if (customer) payload.customer = customer;
         if (notes) payload.notes = notes;
+        clearBookingResourceConflict({ selectEl: bookResourceSelect, errorEl: bookResourceErrorEl });
         await adminFetch("/admin/bookings/" + encodeURIComponent(currentBusiness), {
           method: "POST", body: JSON.stringify(payload)
         });
         bookAddForm.reset();
         await loadAll();
         setStatus("Booking added.", "ok");
-      } catch (e) { setStatus("Add failed: " + e.message, "err"); }
+      } catch (e) {
+        const parsed = parseBookingError(e.message);
+        if (parsed) showBookingResourceConflict({ selectEl: bookResourceSelect, errorEl: bookResourceErrorEl, parsed });
+        setStatus("Add failed: " + e.message, "err");
+      }
     });
+
+    // Changing any of the conflict-relevant fields invalidates the previous error.
+    bookResourceSelect.addEventListener("change", () => clearBookingResourceConflict({ selectEl: bookResourceSelect, errorEl: bookResourceErrorEl }));
+    document.getElementById("book-date").addEventListener("input", () => clearBookingResourceConflict({ selectEl: bookResourceSelect, errorEl: bookResourceErrorEl }));
+    document.getElementById("book-time").addEventListener("input", () => clearBookingResourceConflict({ selectEl: bookResourceSelect, errorEl: bookResourceErrorEl }));
 
     document.getElementById("book-service").addEventListener("input", suggestBookEndTime);
     document.getElementById("book-time").addEventListener("input", suggestBookEndTime);
@@ -1163,7 +1204,7 @@ function adminSlotsHtml() {
         isRestaurant
           ? "<label>Party size<input id='pop-partySize' type='number' min='1' max='20' value='" + escapeAttr(bk.partySize == null ? "" : bk.partySize) + "'></label>"
           : (isSnooker ? "" : "<label>Service<input id='pop-service' value='" + escapeAttr(bk.service || "") + "'></label>"),
-        showResource ? "<label>Resource<select id='pop-resourceId'>" + resourceOptions + "</select></label>" : "",
+        showResource ? "<label>Resource<select id='pop-resourceId'>" + resourceOptions + "</select><div id='pop-resourceId-error' class='field-error' hidden></div></label>" : "",
         isBeauty
           ? "<label>End time<input id='pop-endTime' value='" + escapeAttr(endTime) + "' placeholder='" + escapeAttr(addMinutesToTime(bk.time, defaultDurationForService(bk.service)) || "HH:MM") + "'></label>"
           : "<label>End time<input id='pop-endTime' value='" + escapeAttr(endTime) + "' placeholder='HH:MM'></label>",
@@ -1204,6 +1245,9 @@ function adminSlotsHtml() {
           if (customer) payload.customer = customer;
           if (notes) payload.notes = notes;
 
+          const popSelectEl = document.getElementById("pop-resourceId");
+          const popErrorEl = document.getElementById("pop-resourceId-error");
+          clearBookingResourceConflict({ selectEl: popSelectEl, errorEl: popErrorEl });
           if (isNew) {
             setStatus("Adding booking…");
             await adminFetch("/admin/bookings/" + encodeURIComponent(currentBusiness), { method: "POST", body: JSON.stringify(payload) });
@@ -1214,8 +1258,26 @@ function adminSlotsHtml() {
           popover.hidden = true;
           await loadAll();
           setStatus(isNew ? "Booking added." : "Booking saved.", "ok");
-        } catch (e) { setStatus("Save failed: " + e.message, "err"); }
+        } catch (e) {
+          const parsed = parseBookingError(e.message);
+          if (parsed) {
+            showBookingResourceConflict({
+              selectEl: document.getElementById("pop-resourceId"),
+              errorEl: document.getElementById("pop-resourceId-error"),
+              parsed
+            });
+          }
+          setStatus("Save failed: " + e.message, "err");
+        }
       });
+      // Clear popover conflict highlight when the user edits a relevant field.
+      const popSelectEl = document.getElementById("pop-resourceId");
+      const popErrorEl = document.getElementById("pop-resourceId-error");
+      if (popSelectEl) popSelectEl.addEventListener("change", () => clearBookingResourceConflict({ selectEl: popSelectEl, errorEl: popErrorEl }));
+      const popDateEl = document.getElementById("pop-date");
+      const popTimeEl = document.getElementById("pop-time");
+      if (popDateEl) popDateEl.addEventListener("input", () => clearBookingResourceConflict({ selectEl: popSelectEl, errorEl: popErrorEl }));
+      if (popTimeEl) popTimeEl.addEventListener("input", () => clearBookingResourceConflict({ selectEl: popSelectEl, errorEl: popErrorEl }));
       if (!isNew) {
         document.getElementById("pop-del").addEventListener("click", async () => {
           if (!confirm("Delete this booking?")) return;

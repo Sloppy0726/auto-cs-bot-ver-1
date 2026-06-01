@@ -1608,4 +1608,70 @@ End of session addendum.
 
 ---
 
+## 23. Session Addendum — 2026-06-01 (per-resource conflict UX)
+
+Closes the last open §21.7 item. When adding or editing a booking
+fails because the resource is already taken on that date/time, the
+admin UI now surfaces the error on the resource field (red outline +
+inline message) instead of leaving it as a status-bar string only.
+
+### 23.1 What landed
+
+| File | Change |
+|---|---|
+| `end-to-end pipeline ver 1.0/src/adminHtml.js` | New `.field-error` + `.input-error` CSS rules. Top add-form gains a `<div id="book-resource-error" class="field-error" hidden>` slot under the resource select. Popover edit form gains a `<div id="pop-resourceId-error">` slot inside its resource label. New helpers in the script: `parseBookingError(message)` (regex-parses the server's `resource conflict: <id> already booked HH:MM-HH:MM on YYYY-MM-DD` string), `showBookingResourceConflict({ selectEl, errorEl, parsed })`, `clearBookingResourceConflict(...)`. Both forms' catch blocks now call the parser; on a match they decorate the field and still call `setStatus` so the status bar keeps the full server message. The top form clears the error on `change`/`input` of resource/date/time and on business switch (inside `loadAll`). The popover wires the same clear-on-edit listeners after rendering. |
+
+No store / server / pipeline changes — pure admin-page presentation.
+
+### 23.2 Gotcha worth knowing about
+
+`adminHtml.js` builds the entire admin page as a template literal,
+which means **any regex you put inside the embedded `<script>` needs
+doubled backslashes**. A `/\s/` literal becomes `/s/` by the time it
+reaches the browser because the template-literal evaluator treats `\s`
+as an unrecognized escape and drops the backslash. The regex in this
+section uses `\\s`, `\\S`, `\\d` so the served HTML contains `\s`,
+`\S`, `\d`. Caught this only by inspecting the served HTML with
+`curl /admin` after `parseBookingError.toString()` showed the escapes
+stripped at runtime.
+
+Pre-existing regexes in this file all happened to use literals that
+don't need escaping (`/&/`, `/</`, `/>/`, `/"/`), so this is the first
+case where the gotcha surfaced. Future regex additions in this file
+should follow the same rule.
+
+### 23.3 Manual verification (Claude_Preview)
+
+Booted preview on `:4198`, beauty_demo with Amy + Joey, added Amy at
+14:00–14:30 then tried Amy at 14:15–14:45. Captured:
+
+- `field_error_visible: true`
+- `field_error_text: "Amy is already booked 14:00-14:30 on 2026-05-25. Pick a different resource or change the time."`
+- `select_has_input_error_class: true`
+- `status_text: "Add failed: resource conflict: res_e007282adfd5 already booked 14:00-14:30 on 2026-05-25 (id book_…)"`
+
+Changing the date triggered `clear-on-edit`:
+- `field_error_cleared: true`
+- `select_class_cleared: true`
+
+### 23.4 Test deltas
+
+Same string-parsing logic doesn't have unit-test coverage; behavior is
+verified via `Claude_Preview` end-to-end. The existing admin tests
+already cover the server-side conflict path (`POST booking conflict:
+400` + `error message`); the new UI code only consumes that error string.
+
+All four affected suites stayed green: admin 120, pipeline.store 79,
+server 31, availabilityStore 248.
+
+### 23.5 What's still open
+
+The §21.7 backlog is now empty. The §22.5 items remain wait-and-see
+(multi-tenant config, large-shop thresholds, copy tweaks); revisit
+when usability data or scale demands.
+
+End of session addendum.
+
+---
+
 End of handoff.
