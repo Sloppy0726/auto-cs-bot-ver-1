@@ -224,10 +224,36 @@ function inferAvailabilityResponse({ normalizedMessage, intent, query, backendFa
     };
   }
 
+  const businessId = normalizedMessage.businessId;
+  const resourceNamesById = shouldNameResources(businessId, query)
+    ? buildResourceNameMap(backend, businessId)
+    : null;
+
   return {
     reason: "availability_check_with_slots",
-    text: availabilityResponseText({ language, facts, slots, sessions, query })
+    text: availabilityResponseText({ language, facts, slots, sessions, query, resourceNamesById })
   };
+}
+
+// Per-business policy: do we name which staff/table is free next to each slot
+// in the customer-facing reply? Yes for businesses with named, customer-relevant
+// resources (stylists, instructors). No for snooker — 12 near-identical tables
+// where "any table" is the default expectation and naming would be noisy.
+// Also no whenever the customer pinned a resource — they already picked.
+function shouldNameResources(businessId, query) {
+  if (query && query.resourceId) return false;
+  return businessId === "beauty_demo" || businessId === "edu_demo";
+}
+
+function buildResourceNameMap(backend, businessId) {
+  if (typeof backend?.listResources !== "function") return null;
+  const list = backend.listResources(businessId, { includeInactive: false }) || [];
+  if (list.length === 0) return null;
+  const map = {};
+  for (const r of list) {
+    if (r && r.id && typeof r.name === "string") map[r.id] = r.name;
+  }
+  return map;
 }
 
 function noSlotsResponseText({ language, query, suggestions }) {
@@ -250,12 +276,12 @@ function noSlotsResponseText({ language, query, suggestions }) {
   return `唔好意思，${head} 暫時冇位或者已過營業時間。最近有時段嘅日期：${altList}。請問你想揀邊一日？`;
 }
 
-function availabilityResponseText({ language, facts, slots, sessions, query }) {
+function availabilityResponseText({ language, facts, slots, sessions, query, resourceNamesById }) {
   const english = language === "en";
   const date = facts.date || query.date;
   const service = facts.service || query.service;
   const partySize = facts.partySize || query.partySize;
-  const slotDisplay = formatSlotsForDisplay(slots, sessions);
+  const slotDisplay = formatSlotsForDisplay(slots, sessions, { resourceNamesById, english });
 
   if (english) {
     const headParts = [date, formatServiceEn(service), partySize ? `for ${partySize}` : null].filter(Boolean);
@@ -268,11 +294,22 @@ function availabilityResponseText({ language, facts, slots, sessions, query }) {
   return `我幫你睇咗，${head} 暫時見到以下時段：${slotDisplay.join("、")}。請問你想揀邊個時間？我哋會由真人同事再次確認後正式幫你留位。`;
 }
 
-function formatSlotsForDisplay(slots, sessions) {
+function formatSlotsForDisplay(slots, sessions, opts = {}) {
   if (!Array.isArray(sessions) || sessions.length !== slots.length) return slots;
+  const { resourceNamesById, english } = opts;
+  const totalActive = resourceNamesById ? Object.keys(resourceNamesById).length : 0;
   return sessions.map((session, index) => {
-    if (session && session.endTime) return `${session.time}–${session.endTime}`;
-    return slots[index];
+    const base = session && session.endTime ? `${session.time}–${session.endTime}` : slots[index];
+    if (!resourceNamesById || !session || !Array.isArray(session.availableResources)) return base;
+    // When every active resource is free at this slot, omit the name list — "(...)" reads
+    // as a constraint, so adding it when no constraint exists is just noise. Only annotate
+    // slots where the free set is a proper subset.
+    if (session.availableResources.length >= totalActive) return base;
+    const names = session.availableResources
+      .map((id) => resourceNamesById[id])
+      .filter((n) => typeof n === "string" && n.length > 0);
+    if (names.length === 0) return base;
+    return english ? `${base} (${names.join(", ")})` : `${base}（${names.join("、")}）`;
   });
 }
 

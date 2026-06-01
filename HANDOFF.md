@@ -1505,4 +1505,76 @@ End of session addendum.
 
 ---
 
+## 22. Session Addendum — 2026-06-01 (customer-facing resource naming)
+
+Follow-up to §21.7 item 1. The bot's slot list (`availabilityResponseText`
+in `pipeline.js`) now annotates each free start time with the resource
+names that are free at that slot — but **only when the free set is a
+proper subset of active resources.** When everyone is free, the slot is
+left clean. Convention: no parens = anyone free; `(...)` = constraint.
+
+### 22.1 Example output
+
+3-stylist beauty shop (Amy, Joey, Alice). Amy booked 11:00, Joey + Alice
+both booked at 13:00, otherwise free. Customer asks for laser slots:
+
+```
+我幫你睇咗，2026-05-25 脫毛 暫時見到以下時段：
+11:00–11:30（Joey、Alice）、11:30–12:00、12:00–12:30、12:30–13:00、
+13:00–13:30（Amy）、13:30–14:00、14:00–14:30、14:30–15:00、15:00–15:30、
+15:30–16:00。請問你想揀邊個時間？…
+```
+
+Only the two constrained slots carry name annotations.
+
+### 22.2 Policy decisions
+
+| Business | Names in reply? | Reason |
+|---|---|---|
+| `beauty_demo` | yes | stylists are customer-relevant; naming helps the customer match a preference |
+| `edu_demo` | yes | named instructors; same reasoning |
+| `restaurant_demo` | n/a | no per-resource model in this codebase |
+| `prince_snooker` | **no** | 12 near-identical tables; "any table" is the default expectation and naming would be noisy |
+| `igshop_demo` | n/a | no bookings |
+| unknown / future | no (default) | safer default; opt-in per business in `shouldNameResources` |
+
+When the customer pinned a specific resource in their message
+(`query.resourceId` set), naming is also skipped — they already chose,
+so restating the name in every slot would be redundant.
+
+### 22.3 What landed
+
+| File | Change |
+|---|---|
+| `end-to-end pipeline ver 1.0/src/pipeline.js` | New `shouldNameResources(businessId, query)` and `buildResourceNameMap(backend, businessId)` helpers. `inferAvailabilityResponse` resolves the name map when policy allows and passes it through to `availabilityResponseText`. `formatSlotsForDisplay` gained an `opts = { resourceNamesById, english }` parameter and appends `(...)` annotations only when `session.availableResources.length < totalActive`. English uses ASCII `( )` + `, ` separator; Chinese uses full-width `（）` + `、` separator. |
+| `end-to-end pipeline ver 1.0/test/pipeline.store.test.js` | +11 checks across 5 cases (Case 10a–10e): zh subset-naming, en subset-naming, customer-pinned skip, snooker opt-out, legacy single-pool skip. |
+
+No store or admin changes needed — this is pure draft-text formatting.
+
+### 22.4 Test deltas
+
+| Suite | Before §22 | After §22 | New |
+|---|---:|---:|---:|
+| `pipeline.store.test.js` | 68 | 79 | +11 |
+| Other 37 suites | unchanged | unchanged | 0 |
+
+### 22.5 Known follow-ups
+
+- **Per-business opt-in is hardcoded.** `shouldNameResources` lists the
+  IDs directly. If the SaaS grows to multi-tenant config, this should
+  move into the business config object.
+- **No "all free" hint copy.** If a shop has many slots that are all-free,
+  the customer just sees a long string of times with no annotations —
+  which is the same as today's behavior, just longer when there are
+  partial slots. Acceptable for v1; revisit if usability data says
+  otherwise.
+- **Threshold for very large resource lists.** With 5+ active stylists,
+  even the subset annotation can get long: `(Amy、Joey、Alice、Bob)`.
+  Consider a count fallback (e.g., `(4 stylists free)`) if any tenant
+  hits that scale.
+
+End of session addendum.
+
+---
+
 End of handoff.

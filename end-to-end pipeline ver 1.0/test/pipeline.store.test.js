@@ -453,6 +453,102 @@ async function runAll() {
     eq("snooker boundary: 11號枱 picks table 11, not table 1", bd?.resourceId, "res_prince_table_11");
   }
 
+  // ---- Case 10a: beauty slot reply names which stylists are free (zh) ----
+  // Amy booked 11:00-11:30 so Joey is the only one free at 11:00; both at 11:30 and 12:00.
+  {
+    const { pipeline, resources, store } = freshStorePipeline({
+      openingHours: { "0": [], "1": [{ open: "11:00", close: "12:30" }], "2": [], "3": [], "4": [], "5": [], "6": [] },
+      resources: [{ name: "Amy" }, { name: "Joey" }]
+    });
+    const amy = resources.find((r) => r.name === "Amy");
+    store.addBooking("beauty_demo", { date: "2026-05-25", time: "11:00", service: "laser", durationMinutes: 30, resourceId: amy.id });
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "beauty_demo",
+      from: "named-resources-zh",
+      text: "5月25號 laser 有咩時間"
+    });
+    const text = result.draft.text || "";
+    check("beauty named (zh): 11:00 shows only Joey (subset)", /11:00–11:30（Joey）/.test(text));
+    check("beauty named (zh): 11:30 unannotated (all free)", /11:30–12:00(?!（)/.test(text));
+    check("beauty named (zh): 12:00 unannotated (all free)", /12:00–12:30(?!（)/.test(text));
+  }
+
+  // ---- Case 10b: beauty slot reply in english uses ASCII parens + commas ----
+  {
+    const { pipeline, resources, store } = freshStorePipeline({
+      openingHours: { "0": [], "1": [{ open: "11:00", close: "12:30" }], "2": [], "3": [], "4": [], "5": [], "6": [] },
+      resources: [{ name: "Amy" }, { name: "Joey" }]
+    });
+    const amy = resources.find((r) => r.name === "Amy");
+    store.addBooking("beauty_demo", { date: "2026-05-25", time: "11:00", service: "laser", durationMinutes: 30, resourceId: amy.id });
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "beauty_demo",
+      from: "named-resources-en",
+      text: "any laser slots on 2026-05-25"
+    });
+    const text = result.draft.text || "";
+    check("beauty named (en): 11:00 (Joey) subset noted", /11:00–11:30 \(Joey\)/.test(text));
+    check("beauty named (en): 11:30 unannotated (all free)", /11:30–12:00(?! \()/.test(text));
+  }
+
+  // ---- Case 10c: customer pinned a resource → reply does NOT restate the name ----
+  {
+    const { pipeline } = freshStorePipeline({
+      openingHours: { "0": [], "1": [{ open: "11:00", close: "12:30" }], "2": [], "3": [], "4": [], "5": [], "6": [] },
+      resources: [{ name: "Amy" }, { name: "Joey" }]
+    });
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "beauty_demo",
+      from: "named-resources-pinned",
+      text: "Amy 5月25號 laser 有咩時間"
+    });
+    const text = result.draft.text || "";
+    check("pinned: reply does not name Amy in slot list", !/（Amy）|（Amy、|、Amy）|\(Amy\)/.test(text));
+    check("pinned: still lists at least one slot time", /11:00|11:30|12:00/.test(text));
+  }
+
+  // ---- Case 10d: snooker is opt-out — slot reply must NOT name tables ----
+  {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "snooker-no-naming-"));
+    const filePath = path.join(dir, "availability.json");
+    const store = createAvailabilityStore({ filePath });
+    const backend = createBusinessBackend({ availabilityStore: store });
+    const pipeline = createPipeline({
+      nowFn: () => new Date("2026-05-24T00:00:00.000Z"),
+      backend,
+      llmAdapter: async () => ({ text: "snooker reply" })
+    });
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "prince_snooker",
+      from: "snooker-no-naming",
+      text: "5月25號 下午有咩時間"
+    });
+    const text = result.draft.text || "";
+    check("snooker: reply lists slot times", /14:00|15:00|16:00/.test(text));
+    check("snooker: reply does NOT enumerate table names like 1號枱", !/（[^（）]*號枱[^（）]*）/.test(text));
+  }
+
+  // ---- Case 10e: beauty with zero configured resources → no naming (legacy single-pool path) ----
+  {
+    const { pipeline } = freshStorePipeline({
+      openingHours: { "0": [], "1": [{ open: "11:00", close: "12:30" }], "2": [], "3": [], "4": [], "5": [], "6": [] }
+      // no `resources` → store keeps beauty_demo in legacy single-pool mode
+    });
+    const result = await pipeline.runMessage({
+      channel: "whatsapp",
+      businessId: "beauty_demo",
+      from: "no-resources",
+      text: "5月25號 laser 有咩時間"
+    });
+    const text = result.draft.text || "";
+    check("beauty no-resources: reply lists slots", /11:00|11:30|12:00/.test(text));
+    check("beauty no-resources: reply has no (...) name parens", !/（[^（）]+）|\([A-Za-z][^()]*\)/.test(text));
+  }
+
   console.log(`pipeline.store: ${testCount} tests passed`);
 }
 
