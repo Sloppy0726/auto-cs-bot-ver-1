@@ -533,6 +533,41 @@ async function runAll() {
     check("PATCH resource invalid: 400", res.statusCode === 400);
   }
   {
+    // PATCH openingHours: set per-resource override
+    const { server, store } = freshServer({});
+    const added = store.addResource("beauty_demo", { name: "Amy" });
+    const hours = { "0": [], "1": [{ open: "13:00", close: "18:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] };
+    const res = await sendAdmin({ server, method: "PATCH", urlPath: `/admin/resources/beauty_demo/${added.resource.id}`, body: { openingHours: hours } });
+    check("PATCH resource openingHours: 200", res.statusCode === 200);
+    eq("PATCH resource openingHours: Mon window saved", res.body.resource.openingHours["1"], [{ open: "13:00", close: "18:00" }]);
+    eq("PATCH resource openingHours: Sun stored as empty", res.body.resource.openingHours["0"], []);
+    // Persisted in the store too
+    const reloaded = store.getResource("beauty_demo", added.resource.id);
+    eq("PATCH resource openingHours: persisted Mon window", reloaded.openingHours["1"], [{ open: "13:00", close: "18:00" }]);
+  }
+  {
+    // PATCH openingHours: null clears the override (resource falls back to business hours)
+    const { server, store } = freshServer({});
+    const added = store.addResource("beauty_demo", {
+      name: "Amy",
+      openingHours: { "0": [], "1": [{ open: "13:00", close: "18:00" }], "2": [], "3": [], "4": [], "5": [], "6": [] }
+    });
+    check("setup: resource starts with override", added.resource.openingHours["1"][0].open === "13:00");
+    const res = await sendAdmin({ server, method: "PATCH", urlPath: `/admin/resources/beauty_demo/${added.resource.id}`, body: { openingHours: null } });
+    check("PATCH openingHours null: 200", res.statusCode === 200);
+    check("PATCH openingHours null: override cleared", res.body.resource.openingHours === undefined);
+    const reloaded = store.getResource("beauty_demo", added.resource.id);
+    check("PATCH openingHours null: persisted clear", reloaded.openingHours === undefined);
+  }
+  {
+    // PATCH openingHours: invalid window shape → 400
+    const { server, store } = freshServer({});
+    const added = store.addResource("beauty_demo", { name: "Amy" });
+    const res = await sendAdmin({ server, method: "PATCH", urlPath: `/admin/resources/beauty_demo/${added.resource.id}`, body: { openingHours: { "1": [{ open: "bad", close: "18:00" }] } } });
+    check("PATCH openingHours invalid: 400", res.statusCode === 400);
+    check("PATCH openingHours invalid: error mentions openingHours", res.body.error?.includes("openingHours"));
+  }
+  {
     // DELETE = soft-delete
     const { server, store } = freshServer({});
     const added = store.addResource("beauty_demo", { name: "Amy" });

@@ -139,13 +139,21 @@ function adminSlotsHtml() {
     .inbox-err { color: var(--danger); font-size: 12px; margin-top: 6px; }
 
     /* Resources card */
-    .resource-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
-    .resource-row:last-child { border-bottom: 0; }
+    .resource-entry { padding: 6px 0; border-bottom: 1px solid var(--line); }
+    .resource-entry:last-child { border-bottom: 0; }
+    .resource-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
     .resource-row .name-edit { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
     .resource-row .name-edit input { width: 220px; padding: 4px 8px; }
     .resource-row.inactive .name-edit input { opacity: 0.55; text-decoration: line-through; }
     .resource-row .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
     .resource-row .pill-inactive { font-size: 11px; padding: 1px 8px; border: 1px solid var(--muted); color: var(--muted); border-radius: 10px; }
+    .resource-hours-editor { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--open-bg); }
+    .resource-hours-editor .editor-heading { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+    .resource-hours-editor .editor-toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; margin-bottom: 6px; }
+    .resource-hours-editor .editor-toggle input[type=checkbox] { width: auto; margin: 0; }
+    .resource-hours-editor .editor-hint { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .resource-hours-editor .editor-grid .day-row { padding: 4px 0; }
+    .resource-hours-editor .save-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
 
     @media (max-width: 720px) {
       .day-row { grid-template-columns: 56px 1fr; }
@@ -455,58 +463,211 @@ function adminSlotsHtml() {
         return String(a.name).localeCompare(String(b.name));
       });
       for (const r of sorted) {
-        const row = document.createElement("div");
-        row.className = "resource-row" + (r.active === false ? " inactive" : "");
-        const inactivePill = r.active === false ? "<span class='pill-inactive'>inactive</span>" : "";
-        row.innerHTML =
-          "<div class='name-edit'>"
-            + "<input type='text' value='" + escapeAttr(r.name) + "' data-id='" + escapeAttr(r.id) + "'>"
-            + inactivePill
-            + "<button type='button' class='subtle' data-action='rename'>Save</button>"
-          + "</div>"
-          + "<div class='row-actions'>"
-            + (r.active === false
-                ? "<button type='button' class='subtle' data-action='reactivate'>Re-activate</button>"
-                : "<button type='button' class='danger' data-action='deactivate'>Deactivate</button>")
-          + "</div>";
-
-        row.querySelector("[data-action='rename']").addEventListener("click", async () => {
-          const next = row.querySelector("input").value.trim();
-          if (!next) { setStatus("Name cannot be empty.", "err"); return; }
-          try {
-            await adminFetch("/admin/resources/" + encodeURIComponent(currentBusiness) + "/" + encodeURIComponent(r.id), {
-              method: "PATCH",
-              body: JSON.stringify({ name: next })
-            });
-            await loadAll();
-            setStatus("Resource renamed.", "ok");
-          } catch (e) { setStatus("Rename failed: " + e.message, "err"); }
-        });
-
-        const deactivate = row.querySelector("[data-action='deactivate']");
-        if (deactivate) deactivate.addEventListener("click", async () => {
-          if (!confirm("Deactivate " + r.name + "? Existing bookings keep their reference, but customers will not see this resource as available.")) return;
-          try {
-            await adminFetch("/admin/resources/" + encodeURIComponent(currentBusiness) + "/" + encodeURIComponent(r.id), { method: "DELETE" });
-            await loadAll();
-            setStatus("Resource deactivated.", "ok");
-          } catch (e) { setStatus("Deactivate failed: " + e.message, "err"); }
-        });
-
-        const reactivate = row.querySelector("[data-action='reactivate']");
-        if (reactivate) reactivate.addEventListener("click", async () => {
-          try {
-            await adminFetch("/admin/resources/" + encodeURIComponent(currentBusiness) + "/" + encodeURIComponent(r.id), {
-              method: "PATCH",
-              body: JSON.stringify({ active: true })
-            });
-            await loadAll();
-            setStatus("Resource re-activated.", "ok");
-          } catch (e) { setStatus("Re-activate failed: " + e.message, "err"); }
-        });
-
-        resourcesList.appendChild(row);
+        resourcesList.appendChild(buildResourceEntry(r));
       }
+    }
+
+    function buildResourceEntry(r) {
+      const entry = document.createElement("div");
+      entry.className = "resource-entry";
+
+      const row = document.createElement("div");
+      row.className = "resource-row" + (r.active === false ? " inactive" : "");
+      const inactivePill = r.active === false ? "<span class='pill-inactive'>inactive</span>" : "";
+      const hasCustomHours = r.openingHours && typeof r.openingHours === "object";
+      const hoursBtnLabel = hasCustomHours ? "Hours ✎" : "Hours";
+      row.innerHTML =
+        "<div class='name-edit'>"
+          + "<input type='text' value='" + escapeAttr(r.name) + "' data-id='" + escapeAttr(r.id) + "'>"
+          + inactivePill
+          + "<button type='button' class='subtle' data-action='rename'>Save</button>"
+        + "</div>"
+        + "<div class='row-actions'>"
+          + "<button type='button' class='subtle' data-action='toggle-hours' title='Edit per-resource opening hours'>" + hoursBtnLabel + "</button>"
+          + (r.active === false
+              ? "<button type='button' class='subtle' data-action='reactivate'>Re-activate</button>"
+              : "<button type='button' class='danger' data-action='deactivate'>Deactivate</button>")
+        + "</div>";
+      entry.appendChild(row);
+
+      let editorEl = null;
+      row.querySelector("[data-action='toggle-hours']").addEventListener("click", () => {
+        if (!editorEl) {
+          editorEl = buildResourceHoursEditor(r);
+          entry.appendChild(editorEl);
+        } else {
+          editorEl.hidden = !editorEl.hidden;
+        }
+      });
+
+      row.querySelector("[data-action='rename']").addEventListener("click", async () => {
+        const next = row.querySelector("input").value.trim();
+        if (!next) { setStatus("Name cannot be empty.", "err"); return; }
+        try {
+          await adminFetch("/admin/resources/" + encodeURIComponent(currentBusiness) + "/" + encodeURIComponent(r.id), {
+            method: "PATCH",
+            body: JSON.stringify({ name: next })
+          });
+          await loadAll();
+          setStatus("Resource renamed.", "ok");
+        } catch (e) { setStatus("Rename failed: " + e.message, "err"); }
+      });
+
+      const deactivate = row.querySelector("[data-action='deactivate']");
+      if (deactivate) deactivate.addEventListener("click", async () => {
+        if (!confirm("Deactivate " + r.name + "? Existing bookings keep their reference, but customers will not see this resource as available.")) return;
+        try {
+          await adminFetch("/admin/resources/" + encodeURIComponent(currentBusiness) + "/" + encodeURIComponent(r.id), { method: "DELETE" });
+          await loadAll();
+          setStatus("Resource deactivated.", "ok");
+        } catch (e) { setStatus("Deactivate failed: " + e.message, "err"); }
+      });
+
+      const reactivate = row.querySelector("[data-action='reactivate']");
+      if (reactivate) reactivate.addEventListener("click", async () => {
+        try {
+          await adminFetch("/admin/resources/" + encodeURIComponent(currentBusiness) + "/" + encodeURIComponent(r.id), {
+            method: "PATCH",
+            body: JSON.stringify({ active: true })
+          });
+          await loadAll();
+          setStatus("Resource re-activated.", "ok");
+        } catch (e) { setStatus("Re-activate failed: " + e.message, "err"); }
+      });
+
+      return entry;
+    }
+
+    function buildResourceHoursEditor(r) {
+      const editor = document.createElement("div");
+      editor.className = "resource-hours-editor";
+
+      const hasCustom = r.openingHours && typeof r.openingHours === "object";
+      let useDefault = !hasCustom;
+      let hours = hasCustom
+        ? JSON.parse(JSON.stringify(r.openingHours))
+        : JSON.parse(JSON.stringify(openingHours || {}));
+
+      function buildPill(dayKey, open, close) {
+        const pill = document.createElement("span");
+        pill.className = "window-pill";
+        pill.innerHTML = "<input type='text' class='win-open' placeholder='HH:MM' value='" + escapeAttr(open) + "'>–<input type='text' class='win-close' placeholder='HH:MM' value='" + escapeAttr(close) + "'><button type='button' title='Remove'>✕</button>";
+        pill.querySelector("button").addEventListener("click", () => {
+          readFromForm();
+          const idx = (hours[dayKey] || []).findIndex((w) => w.open === open && w.close === close);
+          if (idx !== -1) hours[dayKey].splice(idx, 1);
+          render();
+        });
+        return pill;
+      }
+
+      function readFromForm() {
+        const next = { "0": [], "1": [], "2": [], "3": [], "4": [], "5": [], "6": [] };
+        editor.querySelectorAll(".editor-grid .windows").forEach((container) => {
+          const key = container.dataset.day;
+          container.querySelectorAll(".window-pill").forEach((pill) => {
+            const open = pill.querySelector(".win-open").value.trim();
+            const close = pill.querySelector(".win-close").value.trim();
+            if (open && close) next[key].push({ open, close });
+          });
+        });
+        hours = next;
+        return next;
+      }
+
+      function render() {
+        editor.innerHTML = "";
+
+        const heading = document.createElement("div");
+        heading.className = "editor-heading";
+        heading.textContent = r.name + " — opening hours";
+        editor.appendChild(heading);
+
+        const toggle = document.createElement("label");
+        toggle.className = "editor-toggle";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = useDefault;
+        cb.addEventListener("change", () => {
+          if (cb.checked) {
+            useDefault = true;
+          } else {
+            useDefault = false;
+            // Pre-fill from business hours so the user sees a starting point.
+            hours = JSON.parse(JSON.stringify(openingHours || {}));
+          }
+          render();
+        });
+        toggle.appendChild(cb);
+        toggle.appendChild(document.createTextNode(" Use business default hours"));
+        editor.appendChild(toggle);
+
+        if (useDefault) {
+          const hint = document.createElement("div");
+          hint.className = "editor-hint";
+          hint.textContent = "Inherits business-wide hours. Uncheck to set a per-resource override.";
+          editor.appendChild(hint);
+        } else {
+          const hint = document.createElement("div");
+          hint.className = "editor-hint";
+          hint.textContent = "Resource hours are intersected with business hours, so they can only narrow availability, not extend it.";
+          editor.appendChild(hint);
+
+          const grid = document.createElement("div");
+          grid.className = "editor-grid";
+          for (let d = 0; d < 7; d++) {
+            const key = String(d);
+            const windows = Array.isArray(hours[key]) ? hours[key] : [];
+            const dayRow = document.createElement("div");
+            dayRow.className = "day-row";
+            dayRow.innerHTML = "<div class='day-name'>" + DAY_NAMES[d] + "</div><div class='windows' data-day='" + key + "'></div><div><button type='button' class='subtle' data-add-day='" + key + "'>+ window</button></div>";
+            const winContainer = dayRow.querySelector(".windows");
+            if (windows.length === 0) {
+              const closed = document.createElement("span");
+              closed.className = "closed";
+              closed.textContent = "Closed";
+              winContainer.appendChild(closed);
+            } else {
+              for (const w of windows) winContainer.appendChild(buildPill(key, w.open, w.close));
+            }
+            grid.appendChild(dayRow);
+          }
+          grid.querySelectorAll("[data-add-day]").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              readFromForm();
+              const key = btn.dataset.addDay;
+              if (!Array.isArray(hours[key])) hours[key] = [];
+              hours[key].push({ open: "09:00", close: "17:00" });
+              render();
+            });
+          });
+          editor.appendChild(grid);
+        }
+
+        const saveRow = document.createElement("div");
+        saveRow.className = "save-row";
+        saveRow.innerHTML = "<button type='button' class='subtle' data-action='cancel'>Close</button> <button type='button' class='primary' data-action='save'>Save hours</button>";
+        saveRow.querySelector("[data-action='cancel']").addEventListener("click", () => {
+          editor.hidden = true;
+        });
+        saveRow.querySelector("[data-action='save']").addEventListener("click", async () => {
+          try {
+            const payload = useDefault
+              ? { openingHours: null }
+              : { openingHours: readFromForm() };
+            await adminFetch("/admin/resources/" + encodeURIComponent(currentBusiness) + "/" + encodeURIComponent(r.id), {
+              method: "PATCH",
+              body: JSON.stringify(payload)
+            });
+            await loadAll();
+            setStatus("Resource hours saved.", "ok");
+          } catch (e) { setStatus("Save failed: " + e.message, "err"); }
+        });
+        editor.appendChild(saveRow);
+      }
+
+      render();
+      return editor;
     }
 
     resourceAddForm.addEventListener("submit", async (event) => {

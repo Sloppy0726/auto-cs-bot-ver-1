@@ -1409,4 +1409,100 @@ End of session addendum.
 
 ---
 
+## 21. Session Addendum — 2026-06-01 (Phase 7: per-resource opening-hours editor)
+
+Follow-up to §20.7 item 2. Store + API already supported
+`resource.openingHours`; only the admin UI was missing. This session adds
+the editor and a couple of API tests that codify the round-trip.
+
+### 21.1 What landed
+
+| File | Change |
+|---|---|
+| `end-to-end pipeline ver 1.0/src/adminHtml.js` | New `buildResourceHoursEditor(r)` helper. Each resource row gains a `Hours` button (label flips to `Hours ✎` when the resource has a custom override). Clicking opens a collapsible editor with a "Use business default hours" checkbox; unchecking exposes the same 7-day window grid the business-wide editor uses, pre-filled from business hours. Save sends `PATCH /admin/resources/:businessId/:id` with either `{ openingHours: {…} }` or `{ openingHours: null }` (clears the override). |
+| `end-to-end pipeline ver 1.0/src/adminHtml.js` | Resource rows now wrap in a `.resource-entry` container so the editor can hang below each row without breaking the `:last-child` border rule. CSS reuses `.day-row` / `.window-pill` from the business-wide editor. |
+| `end-to-end pipeline ver 1.0/test/admin.test.js` | +10 checks across 3 blocks: PATCH with valid `openingHours`, PATCH with `openingHours: null` (clears persisted override), PATCH with invalid window shape (400). |
+
+No server-side change — `updateResource` already merge-validates the
+payload via `validateResource`, and `validateResource` skips
+`openingHours` when the field is null on the merged record (which is how
+"clear" works: the resource record ends with no `openingHours` key →
+`effectiveWindowsForResource` falls back to the business windows).
+
+### 21.2 UI behaviour summary
+
+- **First open on a resource with no override** — checkbox checked, no
+  grid shown, hint reads "Inherits business-wide hours."
+- **Uncheck** — `hours` is snapshot from the current
+  business-wide `openingHours` so the user has a starting point, the
+  7-day grid renders.
+- **Re-check after editing** — the in-progress edits are discarded
+  intentionally (clicking Save sends `openingHours: null`).
+- **Save** — `loadAll()` re-fetches; the resource row's button label
+  flips to `Hours ✎` if an override is now persisted.
+- **Close** — does not save; just hides the editor for that resource.
+
+### 21.3 Manual verification (Claude_Preview)
+
+Booted the server on `:4198`, switched to `prince_snooker`:
+
+1. 12 resource entries rendered, each with a Hours button.
+2. Opened editor on `10號枱` → checkbox checked, no grid → matched
+   "no override" state.
+3. Unchecked → 7-day grid rendered, each day pre-filled with the
+   business default `11:00–23:30`.
+4. Changed Monday's close to `20:00`, clicked Save → status read
+   `Resource hours saved.`, server GET returned
+   `openingHours["1"] = [{open:"11:00", close:"20:00"}]` and
+   `openingHours["0"] = [{open:"11:00", close:"23:30"}]` (Sunday kept
+   default).
+5. Re-opened — button label was now `Hours ✎`, checkbox started
+   unchecked (override present), Monday window showed `11:00-20:00`.
+6. Re-checked the box, clicked Save → server GET returned the resource
+   with no `openingHours` field (override cleared, falls back to
+   business hours).
+
+### 21.4 Test deltas
+
+| Suite | Before §21 | After §21 | New |
+|---|---:|---:|---:|
+| `admin.test.js` | 110 (per §20.5; 120 actual; see §21.5) | 120 | +10 |
+| Other 37 suites | unchanged | unchanged | 0 |
+
+### 21.5 Known counts drift (carrying over from §20.7 item 1)
+
+`admin.test.js` started this session at **110 checks** (§20.5 number)
+but the runner reported **120** before any §21 edits. Most likely the
+§20.5 table dropped a block by accident. The §21 edits add a clean +10,
+bringing the post-§21 total to **130**. §4's table still says 37 — it
+was stale before §20 and is still stale; suggest a full refresh on a
+quiet next session.
+
+### 21.6 Files changed in §21
+
+```text
+M  HANDOFF.md
+M  end-to-end pipeline ver 1.0/src/adminHtml.js
+M  end-to-end pipeline ver 1.0/test/admin.test.js
+A  .claude/launch.json    (preview-only; gitignore? not currently — see below)
+```
+
+The new `.claude/launch.json` was added to drive `Claude_Preview` for
+the verification step. It's a one-config file pointing at
+`end-to-end pipeline ver 1.0/src/server.js` on port 4198. Leave or
+delete depending on whether the team wants a checked-in launch profile.
+
+### 21.7 Still open after §21
+
+The other items from §20.7 are untouched:
+
+- Customer-facing reply that names which resources are free.
+- Refresh §4 test count tables.
+- `scripts/testAuthToken.js` (§18.9) commit decision.
+- Per-resource conflict error UX (cosmetic field highlight).
+
+End of session addendum.
+
+---
+
 End of handoff.
