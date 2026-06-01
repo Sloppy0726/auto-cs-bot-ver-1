@@ -84,7 +84,8 @@ Important source modules:
 
 ## 4. Current Verification
 
-All test runners passed at handoff time: **2,428 checks**.
+All 38 test runners passed at last refresh (2026-06-01, after §22):
+**3,003 checks**.
 
 The easiest way to run every suite is the quick all-test loop further down. Individual runners (run from the repo root):
 
@@ -92,13 +93,21 @@ The easiest way to run every suite is the quick all-test loop further down. Indi
 node "AI draft engine ver 1.0/test/draftEngine.test.js"
 node "business rules ver 1.0/test/businessRules.test.js"
 node "channel adapter ver 1.0/test/channelAdapter.test.js"
+node "channel adapter ver 1.0/test/outboxStore.test.js"
+node "conversation context ver 1.0/test/conversationContext.persistence.test.js"
 node "conversation context ver 1.0/test/conversationContext.test.js"
 node "end-to-end pipeline ver 1.0/test/admin.test.js"
 node "end-to-end pipeline ver 1.0/test/claudeAdapter.test.js"
+node "end-to-end pipeline ver 1.0/test/httpLogSink.test.js"
+node "end-to-end pipeline ver 1.0/test/observability.test.js"
 node "end-to-end pipeline ver 1.0/test/openaiAdapter.test.js"
 node "end-to-end pipeline ver 1.0/test/pipeline.store.test.js"
 node "end-to-end pipeline ver 1.0/test/pipeline.test.js"
+node "end-to-end pipeline ver 1.0/test/rateLimiter.test.js"
+node "end-to-end pipeline ver 1.0/test/server.integrations.test.js"
 node "end-to-end pipeline ver 1.0/test/server.test.js"
+node "end-to-end pipeline ver 1.0/test/usageReporter.test.js"
+node "google drive promo sync ver 1.0/test/googleDriveClient.test.js"
 node "google drive promo sync ver 1.0/test/promoSync.test.js"
 node "intent classifier ver 1.0/test/intentClassifier.edge.test.js"
 node "intent classifier ver 1.0/test/intentClassifier.test.js"
@@ -110,26 +119,39 @@ node "privacy gateway ver 1.0/test/privacyGateway.test.js"
 node "private business backend mock ver 1.0/test/availabilityStore.test.js"
 node "private business backend mock ver 1.0/test/businessBackendMock.test.js"
 node "safety checker ver 1.0/test/safetyChecker.test.js"
+node "staff inbox ver 1.0/test/staffInbox.persistence.test.js"
 node "staff inbox ver 1.0/test/staffInbox.test.js"
 node "whatsapp-web-test-bridge/test/handoffState.test.js"
 node "whatsapp-web-test-bridge/test/messageHeuristics.test.js"
+node "whatsapp-web-test-bridge/test/outboxProcessor.test.js"
 node "whatsapp-web-test-bridge/test/sidebarScripts.test.js"
+node "whatsapp-web-test-bridge/test/staffReplyAutoResolver.integration.test.js"
+node "whatsapp-web-test-bridge/test/staffReplyAutoResolver.test.js"
+node "whatsapp-web-test-bridge/test/staffReplyClassifier.test.js"
 ```
 
-Observed passing counts:
+Observed passing counts (2026-06-01):
 
 | Runner | Count |
 |---|---:|
 | `AI draft engine ver 1.0/test/draftEngine.test.js` | 112 |
 | `business rules ver 1.0/test/businessRules.test.js` | 101 |
 | `channel adapter ver 1.0/test/channelAdapter.test.js` | 105 |
+| `channel adapter ver 1.0/test/outboxStore.test.js` | 24 |
+| `conversation context ver 1.0/test/conversationContext.persistence.test.js` | 8 |
 | `conversation context ver 1.0/test/conversationContext.test.js` | 13 |
-| `end-to-end pipeline ver 1.0/test/admin.test.js` | 37 |
+| `end-to-end pipeline ver 1.0/test/admin.test.js` | 120 |
 | `end-to-end pipeline ver 1.0/test/claudeAdapter.test.js` | 41 |
+| `end-to-end pipeline ver 1.0/test/httpLogSink.test.js` | 12 |
+| `end-to-end pipeline ver 1.0/test/observability.test.js` | 13 |
 | `end-to-end pipeline ver 1.0/test/openaiAdapter.test.js` | 15 |
-| `end-to-end pipeline ver 1.0/test/pipeline.store.test.js` | 20 |
+| `end-to-end pipeline ver 1.0/test/pipeline.store.test.js` | 79 |
 | `end-to-end pipeline ver 1.0/test/pipeline.test.js` | 134 |
+| `end-to-end pipeline ver 1.0/test/rateLimiter.test.js` | 8 |
+| `end-to-end pipeline ver 1.0/test/server.integrations.test.js` | 8 |
 | `end-to-end pipeline ver 1.0/test/server.test.js` | 31 |
+| `end-to-end pipeline ver 1.0/test/usageReporter.test.js` | 17 |
+| `google drive promo sync ver 1.0/test/googleDriveClient.test.js` | 39 |
 | `google drive promo sync ver 1.0/test/promoSync.test.js` | 108 |
 | `intent classifier ver 1.0/test/intentClassifier.edge.test.js` | 23 |
 | `intent classifier ver 1.0/test/intentClassifier.test.js` | 118 |
@@ -138,13 +160,22 @@ Observed passing counts:
 | `privacy filter ver 1.0/test/privacyFilter.edge.test.js` | 207 |
 | `privacy filter ver 1.0/test/privacyFilter.test.js` | 500 |
 | `privacy gateway ver 1.0/test/privacyGateway.test.js` | 207 |
-| `private business backend mock ver 1.0/test/availabilityStore.test.js` | 86 |
+| `private business backend mock ver 1.0/test/availabilityStore.test.js` | 248 |
 | `private business backend mock ver 1.0/test/businessBackendMock.test.js` | 118 |
 | `safety checker ver 1.0/test/safetyChecker.test.js` | 102 |
+| `staff inbox ver 1.0/test/staffInbox.persistence.test.js` | 8 |
 | `staff inbox ver 1.0/test/staffInbox.test.js` | 107 |
 | `whatsapp-web-test-bridge/test/handoffState.test.js` | 11 |
 | `whatsapp-web-test-bridge/test/messageHeuristics.test.js` | 14 |
-| `whatsapp-web-test-bridge/test/sidebarScripts.test.js` | 12 |
+| `whatsapp-web-test-bridge/test/outboxProcessor.test.js` | 20 |
+| `whatsapp-web-test-bridge/test/sidebarScripts.test.js` | 16 |
+| `whatsapp-web-test-bridge/test/staffReplyAutoResolver.integration.test.js` | 16 |
+| `whatsapp-web-test-bridge/test/staffReplyAutoResolver.test.js` | 33 |
+| `whatsapp-web-test-bridge/test/staffReplyClassifier.test.js` | 61 |
+
+Most runners report their tally as "<suite>: N tests passed". One — the
+intent classifier edge file — uses "N checks passed" instead. Both
+forms are counted as passing.
 
 Quick all-test loop:
 
