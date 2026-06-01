@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "admin",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["end-to-end pipeline ver 1.0/src/server.js"],
+      "port": 4198,
+      "env": { "PORT": "4198" }
+    }
+  ]
+}
