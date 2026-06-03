@@ -26,9 +26,9 @@ customer channel
   -> send reply or staff inbox
 ```
 
-Current test total: **2,121 passing** across 16 plain Node.js test runners.
+Current test total: **3,077 passing** across 43 plain Node.js test runners. Run them all with `npm test`.
 
-No npm dependencies are required. Everything is plain Node.js stdlib.
+The core pipeline has no runtime npm dependencies — every module runs on the Node.js stdlib. The only devDependency is `jsdom`, used by the WhatsApp Web bridge's sidebar-script tests in [`whatsapp-web-test-bridge/`](whatsapp-web-test-bridge/).
 
 ## Why this exists
 
@@ -58,6 +58,9 @@ Most customer-support AI examples are English-first and prompt-first. This proje
 | 12 | `staff inbox ver 1.0` | In-memory review / handoff queue. |
 | 13 | `end-to-end pipeline ver 1.0` | Orchestrates the whole local workflow. |
 | 14 | `conversation context ver 1.0` | Shared deterministic stitching for fragmented booking follow-ups before the pipeline. |
+| 15 | `package ops ver 1.0` | Read-only prepaid package entitlement lookup (remaining sessions, expiry, usage history) for beauty / fitness / education shops. |
+| 16 | `usage tracker ver 0.1` | Per-turn token-usage JSONL recording for cost observability. |
+| 17 | `whatsapp web automation prototype ver 0.1` | Local burner-number WhatsApp Web demo. Prototype only — not a production channel integration. |
 
 ## Legal and trust drafts
 

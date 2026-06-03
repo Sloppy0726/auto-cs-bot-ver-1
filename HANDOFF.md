@@ -1674,4 +1674,102 @@ End of session addendum.
 
 ---
 
+## 24. Session Addendum — 2026-06-02 (OSS readiness package + late commits)
+
+Backfills the 2026-06-02 OSS-prep work plus two 2026-06-01 commits that landed
+after §23 and were never logged. Nothing in this block changes runtime behaviour
+of the per-resource model; it's positioning, packaging, and new LLM adapters.
+
+### 24.1 Commits covered
+
+| Commit | Date | What |
+|---|---|---|
+| `3c5d6a1` | 2026-06-01 | `scripts/testAuthToken.js` — pings `ANTHROPIC_AUTH_TOKEN` through the configured proxy with distinct exit codes (OK / RATE_LIMIT / AUTH_ERROR / UPSTREAM_DOWN / OTHER / CONFIG). Reads creds from `whatsapp-web-test-bridge/.env`. **Closes the §18.9 / §20.7 backlog item.** |
+| `192af01` | 2026-06-01 | `.claude/launch.json` — Claude_Preview MCP launch profile for the admin/webhook server on `:4198`. |
+| `bb590a2` | 2026-06-02 | OSS prep pass on `docs/oss-ready-chinese-positioning`. See §24.2 — mis-labelled `docs:` but ships substantial code. |
+| `9b18468` | 2026-06-02 | Merge `origin/main` into the OSS branch (conflict-resolution merge). |
+| `4a10fad` | 2026-06-02 | Restore CI workflow + resolve branch conflicts. Notably adds `solara_bazi` KB entries (see §24.3). |
+| `c2e1fb6` | 2026-06-02 | Merge PR #3. OSS branch lands on `main`. |
+
+### 24.2 OSS readiness package (`bb590a2`)
+
+**Positioning rebrand.** Repo headline shifts from *Hong Kong AI Customer
+Support SaaS for Cantonese SMEs* to *Privacy-first Traditional Chinese / English
+AI customer-support safety framework*. Module READMEs (`AI draft engine`,
+`knowledge base`, `intent classifier`, `model router`, legal drafts) all
+rewritten in the same commit. **HANDOFF.md was rebranded on the OSS branch but
+the merge resolved in favour of main's version — see §24.5 #4.**
+
+**Top-level OSS files (new).**
+
+| File | Purpose |
+|---|---|
+| [`README.md`](README.md) | OSS landing page. |
+| [`LICENSE`](LICENSE) | MIT. |
+| [`SECURITY.md`](SECURITY.md) | Vulnerability reporting + sensitive-data rules. |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Dev setup, contribution areas, PR checklist. |
+| `.env.example` | Sample env scaffolding. |
+| `.gitignore` | Expanded ignore set. |
+| `.github/workflows/ci.yml` | Push + PR runs `npm test` on Node 20. |
+| [`package.json`](package.json) | `license: MIT`, `private: false`, keywords, `engines.node: >=20`, `npm test` → `node scripts/run-tests.js`. **Adds `jsdom` as devDependency.** |
+| [`scripts/run-tests.js`](scripts/run-tests.js) | Recursive `*.test.js` discovery (skips `.git`, `node_modules`, `deliverables`, `.local`, `.cache`). One `npm test` runs the whole suite. |
+
+**New LLM adapters in `AI draft engine ver 1.0/src/`.**
+
+- `claudeOAuthAdapter.js` — Claude OAuth (Pro/Max subscription tokens) adapter. 17 unit tests.
+- `codexCliAdapter.js` — Codex CLI bridge for the OpenAI-OAuth fallback path. 29 unit tests.
+- `anthropicAdapter.js` — touched (surface preserved).
+- `draftEngine.js` — `TONE_PROFILES` rewritten ("Hong Kong Cantonese" → "Traditional Chinese"). `normalizeTokenUsage` now preserves `totalTokens` when the provider returns it (previously inferred or dropped).
+
+**New smoke scripts in `AI draft engine ver 1.0/scripts/`.** `loginCodexFromEnv.js`,
+`runClaudeOAuthSmoke.js`, `runCodexLlmSmoke.js`. Live-call only — **not part of
+`npm test`, no logged live run yet.**
+
+### 24.3 KB seed expansion (`4a10fad`)
+
+`knowledge base ver 1.0/seed/hkSmeSeed.js` adds 7 entries under `solara_bazi`
+(a BaZi-consultation archetype already declared in the README demo table):
+
+- `solara_bazi_hours` (24-hour enquiry)
+- `solara_bazi_pricing` (NT$400 / NT$1,200 / NT$2,000 / NT$4,000 — note **TWD, not HKD**)
+- `solara_bazi_intake` (birth date / time / place)
+- `solara_bazi_payment_methods` (`safeAutoSend: true`)
+- `solara_bazi_delivery_format` (same-day text / voice / call)
+- `solara_bazi_scope` (relationships / career / wealth / luck cycles; explicit disclaimer)
+- `solara_bazi_restricted_topics` (no legal cases)
+
+Same commit also touched `business rules`, `intent classifier`,
+`safety checker`, `pipeline.js`, `pipeline.cases.js` — all small alignment fixes
+around `solara_bazi` and the rebrand.
+
+### 24.4 Test totals after the merge
+
+`npm test` (via the new runner) now reports **3,077 tests across 43 runners**,
+up from §13's baseline of 3,003 / 38. The +2 new runners are
+`claudeOAuthAdapter` and `codexCliAdapter`; the rest of the delta is from
+expanded suites picked up by recursive discovery.
+
+### 24.5 Inconsistencies introduced (read before touching these)
+
+1. **README test counts are stale.** [README.md:29](README.md:29) says "2,121 passing across 16 plain Node.js test runners". Actual: 3,077 / 43.
+2. **README claims "No npm dependencies are required. Everything is plain Node.js stdlib."** ([README.md:31](README.md:31)) — but [package.json](package.json) ships `jsdom: ^29.1.1` and CI runs `npm install`. Pick one: drop the claim, or drop `jsdom` (find what test pulls it).
+3. **Module table missing three folders.** README's table has 14 entries but `package ops ver 1.0`, `usage tracker ver 0.1`, and `whatsapp web automation prototype ver 0.1` aren't listed (the first appears in the pipeline diagram, the other two are present and tested).
+4. **HANDOFF.md was NOT rebranded.** The OSS branch had an HK→Traditional-Chinese rename of HANDOFF.md, but the merge resolved by keeping main's per-resource-rich version, which still uses "Hong Kong AI Customer Support SaaS" / "Cantonese" throughout. The repo is now bilingual in tone: OSS-facing docs say "Traditional Chinese", this internal log keeps the HK framing.
+5. **`bb590a2` is mis-labelled `docs:`** despite shipping ~1,500 lines of adapter code, tests, and a test runner. Worth knowing when reading `git log --grep=docs`.
+6. **No live-smoke trace for the new adapters.** `runClaudeOAuthSmoke.js` and `runCodexLlmSmoke.js` have unit coverage but the live-call paths haven't been verified against real tokens in any logged session.
+
+### 24.6 Suggested next moves
+
+In rough priority:
+
+1. **Fix README counts and dependency claim** ([README.md:29-31](README.md:29)) — replace the stale numbers; reconcile the "no npm dependencies" line with the actual `jsdom` devDependency.
+2. **Add the three missing modules to README's module table.**
+3. **Live-smoke the new adapters.** Run `runClaudeOAuthSmoke.js` and `runCodexLlmSmoke.js` against real creds; log §25 with the outcome. Don't ship to tenants until there's a real round-trip.
+4. **Decide HANDOFF rebranding policy.** If HANDOFF stays HK-internal, add a one-line note at the top so future readers aren't confused by the tone mismatch with the OSS docs.
+5. **§22.5 wait-and-see items still wait** — no new signal, no action unless a user reports the failure modes.
+
+End of session addendum.
+
+---
+
 End of handoff.
