@@ -45,7 +45,7 @@ async function runCase(testCase) {
     assert.ok(result.citations.includes(testCase.expectCitation), `${label}: missing citation`);
   }
   if (testCase.expectAction === "auto_send") {
-    assert.equal(result.text, pipeline.knowledge.bestMatch.answer, `${label}: auto_send must quote KB verbatim`);
+    assert.equal(result.text, pipeline.knowledge.autoReplyText || pipeline.knowledge.bestMatch.answer, `${label}: auto_send must quote approved KB text verbatim`);
   }
   if (testCase.expectAction === "clarify") {
     assert.equal(result.text, pipeline.decision.clarificationText, `${label}: clarify must return decision text verbatim`);
@@ -77,6 +77,7 @@ async function run() {
   assert.equal(defaultResult.llmUsed, true, "default stub should mark LLM used for staff_review");
   assert.ok(defaultResult.text.startsWith("[stub] "), "default LLM adapter should return stub text");
 
+  const beautyPricing = beautyBookingDefault;
   const usageResult = await generateDraft(beautyPricing, {
     llmAdapter: async () => ({ text: "草稿：請同事覆核價錢。", usage: { input_tokens: 42, output_tokens: 9 } })
   });

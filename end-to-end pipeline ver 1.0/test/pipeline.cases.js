@@ -105,14 +105,14 @@ const seedCases = [
     input: { channel: "whatsapp", businessId: "solara_bazi", from: "bazi-stacked-price-pay", text: "我想知點收錢同幾多錢" },
     expectStatus: "ready_to_send",
     expectAction: "auto_send",
-    expectReplyIncludes: ["Solara Bazi 價目", "FPS、PayMe 或 Alipay"]
+    expectReplyIncludes: ["Solara Bazi 價目", "轉帳、行動支付或信用卡"]
   },
   {
     name: "solara bazi stacked payment and scope can auto send both",
     input: { channel: "whatsapp", businessId: "solara_bazi", from: "bazi-stacked-pay-scope", text: "點收錢同有咩可以問" },
     expectStatus: "ready_to_send",
     expectAction: "auto_send",
-    expectReplyIncludes: ["FPS、PayMe 或 Alipay", "可以問感情、事業、財運"]
+    expectReplyIncludes: ["轉帳、行動支付或信用卡", "可以問感情、事業、財運"]
   }
 ];
 

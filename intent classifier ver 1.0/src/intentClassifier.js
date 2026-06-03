@@ -58,6 +58,12 @@ const intentRules = [
     pattern: /地址|邊度|位置|分店|旺角|銅鑼灣|尖沙咀|幾點開|幾點收|營業|開門|收工|邊間公司|邊間店|店名|公司名|間舖|間鋪|舖名|鋪名|叫咩|brand|business name|shop name|store name|hours|location|address|branch|open|close|closing|opening|directions|nearest mtr|where are you|地鐵|港鐵|出口|mtr/i
   },
   {
+    intent: "service_info",
+    confidence: 0.89,
+    reason: "Matched delivery or reading format keyword",
+    pattern: /(?:付款後|俾錢後|畀錢後).*(?:幾時有|幾耐|交付|即日|文字|語音|通話)|(?:幾時有|幾耐|交付|即日|文字|語音|通話).*(?:詳細批|流年|大運|八字|付款後|俾錢後|畀錢後)/i
+  },
+  {
     intent: "aftercare",
     confidence: 0.86,
     reason: "Matched aftercare keyword",
@@ -109,7 +115,7 @@ const intentRules = [
     intent: "service_info",
     confidence: 0.76,
     reason: "Matched service information keyword",
-    pattern: /療程|服務|做咩|包括|需時|效果|推介|推薦|建議|介紹|有冇list|有無list|list|menu|recommend|recommendation|underarm|腋下|laser|facial|HIFU|脫毛|nail|spa|service|treatment/i
+    pattern: /八字|命理|算命|流年|大運|詳細批|問事|問問題|有咩可以問|可以問咩|問咩|出生時間|出生地|唔準確|不準確|分鐘|即日|交付|幾時有|文字|語音|通話|法律|官司|合約|犯法|告人|療程|服務|做咩|包括|需時|效果|推介|推薦|建議|介紹|有冇list|有無list|list|menu|recommend|recommendation|underarm|腋下|laser|facial|HIFU|脫毛|nail|spa|service|treatment|bazi|four pillars|legal|lawsuit|contract/i
   }
 ];
 

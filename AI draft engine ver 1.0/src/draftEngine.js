@@ -111,7 +111,7 @@ async function defaultLlmAdapter(prompt) {
 }
 
 async function generateDraft(input, options = {}) {
-  const { decision = {}, knowledge = {}, intent = {}, gateway = {}, promotions = null, backendFacts = null, modelRoute = options.modelRoute || null } = input || {};
+  const { decision = {}, knowledge = {}, intent = {}, gateway = {}, promotions = null, packageFacts = null, backendFacts = null, modelRoute = options.modelRoute || null } = input || {};
   const action = decision.action;
   const llmAdapter = options.llmAdapter || defaultLlmAdapter;
   const paraphraser = typeof options.paraphraser === "function" ? options.paraphraser : null;
@@ -120,7 +120,7 @@ async function generateDraft(input, options = {}) {
   const reasons = [...(decision.reasons || [])];
 
   if (action === ACTIONS.AUTO_SEND) {
-    const baseText = knowledge.bestMatch?.answer || null;
+    const baseText = packageFacts?.approvedReplyText || knowledge.autoReplyText || knowledge.bestMatch?.answer || null;
     const promoSuffix = activePromoSuffix(promotions, intent);
     const text = baseText && promoSuffix ? [baseText, promoSuffix].join("\n\n") : baseText;
     const guard = validateAgainstForbidden(text, decision.forbiddenCapabilities);
@@ -476,7 +476,7 @@ function validateAgainstForbidden(text, forbiddenCapabilities = []) {
   return { ok: true };
 }
 
-function buildResult({ text, action, citations, tone, llmUsed, reasons, staffNote, approvedSuffix, approvedSource, paraphrased }) {
+function buildResult({ text, action, citations, tone, llmUsed, tokenUsage, reasons, staffNote, approvedSuffix, approvedSource, paraphrased }) {
   return {
     text,
     action,

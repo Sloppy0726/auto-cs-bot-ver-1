@@ -34,7 +34,7 @@ function createPipeline(config = {}) {
 
   return {
     async runMessage(input) {
-      return runMessage(input, { kb, backend, inbox, promotionStore, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
+      return runMessage(input, { kb, backend, inbox, promotionStore, packageStore, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
     },
     inbox,
     backend,
@@ -59,7 +59,7 @@ async function runMessage(input = {}, deps = {}) {
   const gateway = routeMessage(normalizedMessage.rawText);
   const intent = await classifyIntent(gateway, intentClassifierOptions(deps));
   const knowledge = deps.kb.lookup({ businessId: normalizedMessage.businessId, sanitizedText: gateway.sanitizedText, intent });
-  const packageFacts = shouldLookupPackageFacts(gateway.sanitizedText, intent)
+  const packageFacts = deps.packageStore && shouldLookupPackageFacts(gateway.sanitizedText, intent)
     ? deps.packageStore.lookup({
       businessId: normalizedMessage.businessId,
       senderId: normalizedMessage.senderId,
@@ -94,16 +94,16 @@ async function runMessage(input = {}, deps = {}) {
     backend: deps.backend,
     language: knowledge.language || intent.language
   });
-  const decision = evaluate({ gateway, intent, knowledge, businessConfig, requiredClarification });
+  const decision = evaluate({ gateway, intent, knowledge, packageFacts, businessConfig, requiredClarification });
   const modelRoute = routeModel({ decision, intent, gateway });
-  const draft = await generateDraft({ decision, knowledge, intent, gateway, promotions, backendFacts, modelRoute }, { llmAdapter: deps.llmAdapter, paraphraser: deps.paraphraser, modelRoute });
-  const safety = checkDraft({ draft, decision, knowledge, intent, gateway });
+  const draft = await generateDraft({ decision, knowledge, packageFacts, intent, gateway, promotions, backendFacts, modelRoute }, { llmAdapter: deps.llmAdapter, paraphraser: deps.paraphraser, modelRoute });
+  const safety = checkDraft({ draft, decision, knowledge, packageFacts, intent, gateway });
 
   const bookingDraft = inferBookingDraft({ intent, query: backendQuery, normalizedMessage, backend: deps.backend });
 
   let staffItem = null;
   if (!safety.safeToSend || !["auto_send", "clarify"].includes(draft.action)) {
-    staffItem = deps.inbox.submit({ decision, draft, safety, normalizedMessage, customerText: gateway.sanitizedText, backendFacts, promotions, bookingDraft });
+    staffItem = deps.inbox.submit({ decision, draft, safety, normalizedMessage, customerText: gateway.sanitizedText, backendFacts, promotions, packageFacts, bookingDraft });
   }
 
   const outbound = buildOutboundMessage({ normalizedMessage, draft, safety, staffItem });
@@ -126,6 +126,10 @@ async function runMessage(input = {}, deps = {}) {
     finalStatus,
     errors: []
   });
+}
+
+function shouldLookupPackageFacts(text, intent = {}) {
+  return intent.primaryIntent === "package_status" || /package|套票|剩幾多次|仲有幾多次|到期|expiry|remaining sessions?/i.test(String(text || ""));
 }
 
 function intentClassifierOptions(deps = {}) {

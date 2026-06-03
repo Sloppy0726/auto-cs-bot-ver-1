@@ -59,7 +59,7 @@ function checkDraft(input = {}) {
   }
 
   if (action === "auto_send") {
-    const approvedAnswer = knowledge.bestMatch?.answer || "";
+    const approvedAnswer = packageFacts?.approvedReplyText || knowledge.autoReplyText || knowledge.bestMatch?.answer || "";
     const approvedSuffix = draft.approvedSuffix || "";
     const allowed = approvedSuffix
       ? approvedAnswer + "\n\n" + approvedSuffix

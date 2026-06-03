@@ -18,6 +18,7 @@ const ACTIONS = Object.freeze({
 });
 
 const ANGRY_PATTERN = /搞錯|嬲|憤怒|不滿|唔滿意|投訴|退錢|退款|屌|廢|垃圾|咁廢|chargeback|refund|complaint|angry|furious|terrible|worst|bad bot|useless bot/i;
+const PAYMENT_STATUS_PATTERN = /已(?:經)?(?:付款|付咗款|入數|轉帳|轉賬|pay(?:咗|左)?|paid)|(?:付款|入數|轉帳|轉賬|payme|fps|alipay).*(?:截圖|收唔收到|收到未)|(?:收唔收到|收到未|未收到).*(?:款|付款|錢|payment)|payment sent|paid already|receipt|screenshot/i;
 
 const POLICY_TO_FORBIDDEN = Object.freeze({
   no_medical_claim: ["give_medical_advice", "promise_treatment_result", "diagnose"],
@@ -57,6 +58,7 @@ function evaluate(input) {
     gateway = {},
     intent = {},
     knowledge = {},
+    packageFacts = null,
     businessConfig,
     requiredClarification = null
   } = input || {};

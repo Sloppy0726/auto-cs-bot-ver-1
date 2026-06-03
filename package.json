@@ -1,10 +1,14 @@
 {
-  "name": "hk-ai-customer-support-saas",
-  "version": "1.0.0",
-  "private": true,
+  "name": "chinese-support-guardrails",
+  "version": "0.1.0",
+  "description": "Privacy-first Traditional Chinese/English AI customer-support safety framework for SMEs.",
+  "license": "MIT",
   "type": "commonjs",
+  "private": false,
   "scripts": {
     "start": "node \"end-to-end pipeline ver 1.0/src/server.js\"",
+    "test": "node scripts/run-tests.js",
+    "test:verbose": "node scripts/run-tests.js --verbose",
     "test:context": "node \"conversation context ver 1.0/test/conversationContext.test.js\"",
     "test:e2e": "node \"end-to-end pipeline ver 1.0/test/pipeline.test.js\" && node \"end-to-end pipeline ver 1.0/test/server.test.js\"",
     "bridge:whatsapp": "node \"scripts/whatsappWebBridge.js\"",
@@ -13,5 +17,22 @@
     "bridge:whatsapp-web:stop": "cd \"whatsapp-web-test-bridge\" && npm run stop",
     "bridge:whatsapp-web:status": "cd \"whatsapp-web-test-bridge\" && npm run status",
     "bridge:whatsapp-web:handoff:clear": "cd \"whatsapp-web-test-bridge\" && npm run handoff:clear"
+  },
+  "keywords": [
+    "traditional-chinese",
+    "zh-tw",
+    "ai-safety",
+    "customer-support",
+    "privacy",
+    "llm",
+    "human-in-the-loop",
+    "sme",
+    "nodejs"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
   }
 }
