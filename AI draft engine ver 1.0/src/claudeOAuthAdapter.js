@@ -18,15 +18,12 @@ const OAUTH_BETAS = Object.freeze([
 
 function createClaudeOAuthAdapter(config = {}) {
   return async function claudeOAuthAdapter(prompt, context = {}) {
-    const authPath = config.authPath || process.env.CLAUDE_OAUTH_AUTH_PATH || DEFAULT_AUTH_PATH;
     const model = config.model || process.env.CLAUDE_OAUTH_MODEL || context.modelRoute?.model || DEFAULT_MODEL;
     const maxTokens = Number(config.maxTokens || process.env.CLAUDE_OAUTH_MAX_TOKENS || context.modelRoute?.maxTokens || 700);
     const version = config.claudeCodeVersion || process.env.CLAUDE_CODE_VERSION || DEFAULT_VERSION;
-    const tokenStore = loadHermesAnthropicCredential(authPath);
     const fetchImpl = config.fetch || fetch;
-    const credential = await ensureFreshCredential({
-      tokenStore,
-      authPath,
+    const credential = await resolveCredential({
+      config,
       fetchImpl,
       now: config.nowFn ? config.nowFn() : Date.now(),
       version
@@ -38,10 +35,14 @@ function createClaudeOAuthAdapter(config = {}) {
       body: JSON.stringify(buildMessagesPayload({ prompt, context, model, maxTokens }))
     });
 
-    const json = await response.json().catch(() => ({}));
+    const rawBody = await response.text().catch(() => "");
+    const json = rawBody ? safeJsonParse(rawBody) : {};
     if (!response.ok) {
-      const message = json.error?.message || response.statusText || "Claude OAuth request failed";
-      throw new Error(message);
+      const detail = json.error?.message
+        || (rawBody && rawBody.slice(0, 240))
+        || response.statusText
+        || "no body";
+      throw new Error(`Claude OAuth request failed (HTTP ${response.status}): ${detail}`);
     }
 
     return {
@@ -55,6 +56,50 @@ function createClaudeOAuthAdapter(config = {}) {
       }
     };
   };
+}
+
+async function resolveCredential({ config = {}, fetchImpl = fetch, now = Date.now(), version = DEFAULT_VERSION }) {
+  // 1. Caller-supplied config takes precedence (used by tests and internal callers).
+  if (config.authPath) {
+    return loadAndRefreshHermes({ authPath: config.authPath, fetchImpl, now, version });
+  }
+  if (config.staticToken) {
+    return {
+      id: "config:staticToken",
+      access_token: config.staticToken,
+      base_url: config.baseUrl || DEFAULT_BASE_URL
+    };
+  }
+  // 2. Env-var bearer token — OSS-friendly path. Pairs with `claude setup-token`.
+  if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
+    return {
+      id: "env:CLAUDE_CODE_OAUTH_TOKEN",
+      access_token: process.env.CLAUDE_CODE_OAUTH_TOKEN,
+      base_url: process.env.ANTHROPIC_BASE_URL || DEFAULT_BASE_URL
+    };
+  }
+  // 3. Hermes credential-pool file — env override, then default location.
+  const authPath = process.env.CLAUDE_OAUTH_AUTH_PATH || DEFAULT_AUTH_PATH;
+  if (fs.existsSync(authPath)) {
+    return loadAndRefreshHermes({ authPath, fetchImpl, now, version });
+  }
+  throw new Error(
+    "No Claude OAuth credentials available. " +
+    "Set CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`), " +
+    `or provide a Hermes credential-pool file at ${authPath} ` +
+    "(override with CLAUDE_OAUTH_AUTH_PATH)."
+  );
+}
+
+async function loadAndRefreshHermes({ authPath, fetchImpl, now, version }) {
+  const tokenStore = loadHermesAnthropicCredential(authPath);
+  return ensureFreshCredential({
+    tokenStore,
+    authPath,
+    fetchImpl,
+    now,
+    version
+  });
 }
 
 function loadHermesAnthropicCredential(authPath = DEFAULT_AUTH_PATH) {
@@ -181,6 +226,10 @@ function claudeUserAgent(version = DEFAULT_VERSION) {
   return `claude-cli/${version || DEFAULT_VERSION} (external, cli)`;
 }
 
+function safeJsonParse(text) {
+  try { return JSON.parse(text); } catch { return {}; }
+}
+
 function extractText(json) {
   return (json.content || [])
     .filter((block) => block && block.type === "text")
@@ -213,6 +262,7 @@ module.exports = {
     isCredentialFresh,
     loadHermesAnthropicCredential,
     normalizeClaudeUsage,
-    refreshClaudeOAuthToken
+    refreshClaudeOAuthToken,
+    resolveCredential
   }
 };

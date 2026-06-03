@@ -26,7 +26,7 @@ customer channel
   -> send reply or staff inbox
 ```
 
-Current test total: **3,077 passing** across 43 plain Node.js test runners. Run them all with `npm test`.
+Current test total: **3,088 passing** across 43 plain Node.js test runners. Run them all with `npm test`.
 
 The core pipeline has no runtime npm dependencies — every module runs on the Node.js stdlib. The only devDependency is `jsdom`, used by the WhatsApp Web bridge's sidebar-script tests in [`whatsapp-web-test-bridge/`](whatsapp-web-test-bridge/).
 
@@ -84,7 +84,7 @@ cp .env.example .env
 Optional LLM adapter modes:
 
 - `WA_LLM_ADAPTER=claude-api` with `ANTHROPIC_API_KEY` or `CLAUDE_API_KEY`.
-- `WA_LLM_ADAPTER=claude` for local OAuth-based Claude smoke testing.
+- `WA_LLM_ADAPTER=claude` for local OAuth-based Claude smoke testing. The adapter accepts either a `CLAUDE_CODE_OAUTH_TOKEN` env var (from `claude setup-token`, requires Claude Pro / Max / Enterprise) or a Hermes credential-pool file at `~/.hermes/auth.json` (override with `CLAUDE_OAUTH_AUTH_PATH`). The env-var path is direct to `api.anthropic.com`; do not set `ANTHROPIC_BASE_URL` for that mode.
 - `CODEX_LLM_AUTH_MODE=oauth` with a local Codex CLI session for Codex adapter smoke testing.
 
 Start the local webhook server:

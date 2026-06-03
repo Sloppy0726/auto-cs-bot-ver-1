@@ -1772,4 +1772,130 @@ End of session addendum.
 
 ---
 
+## 25. Session Addendum — 2026-06-03 (live-smoke of the OSS adapters)
+
+Picks up §24.6 item 3. Goal: verify that the two new LLM adapters added in
+`bb590a2` actually round-trip against real creds, not just pass unit tests.
+
+### 25.1 Results
+
+| Adapter | Smoke script | Outcome |
+|---|---|---|
+| Codex CLI | `AI draft engine ver 1.0/scripts/runCodexLlmSmoke.js` | ✅ **Live round-trip verified.** See §25.2. |
+| Claude OAuth (Hermes) | `AI draft engine ver 1.0/scripts/runClaudeOAuthSmoke.js` | ❌ **Blocked** — needs a Hermes-format `~/.hermes/auth.json`. See §25.3. |
+
+### 25.2 Codex CLI smoke (successful)
+
+Default prompt `"facial幾錢？"` against `beauty_demo` hit `auto_send` (KB-grounded
+reply, no LLM call) and tripped the script's `"did not enter the LLM path"`
+guard. Re-ran with a complaint prompt that forces the staff-review path:
+
+```bash
+LLM_SMOKE_TEXT="我上次做完facial之後皮膚紅咗成個禮拜，想problem要點處理？" \
+  node "AI draft engine ver 1.0/scripts/runCodexLlmSmoke.js"
+```
+
+Result:
+
+```json
+{
+  "businessId": "beauty_demo",
+  "inputText": "我上次做完facial之後皮膚紅咗成個禮拜，想problem要點處理？",
+  "finalStatus": "staff_review",
+  "action": "staff_review",
+  "intent": "aftercare",
+  "llmUsed": true,
+  "model": "gpt-5.5",
+  "safety": "revise",
+  "safeToSend": false,
+  "tokenUsage": {
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "totalTokens": 9643,
+    "source": "codex_cli"
+  },
+  "draftText": "多謝你告知我哋情況。想先了解多一點：紅的範圍、程度，以及有沒有痕癢、刺痛或其他不適？我哋會交由店內同事跟進並給你合適安排。",
+  "staffNote": "Draft candidate for staff review only."
+}
+```
+
+Notes:
+
+- Codex CLI returns only `totalTokens`, not separate input/output. The
+  `normalizeTokenUsage` change in §24.2 (`bb590a2`) is what preserves that
+  field; verified live here.
+- Safety checker correctly flagged the medical-aftercare draft as `revise`
+  (`safeToSend: false`), routing to staff. Draft text itself is appropriately
+  cautious Traditional Chinese.
+- Pre-req for anyone repeating this: Codex.app installed at
+  `/Applications/Codex.app/` (binary at `Contents/Resources/codex`) and
+  `~/.codex/auth.json` populated by a prior `codex login`. The smoke script
+  spawns the binary directly, no PATH lookup.
+
+### 25.3 Claude OAuth smoke — env-var fallback implemented
+
+The adapter as originally shipped only read a **Hermes credential-pool file**
+at `~/.hermes/auth.json` — an internal Anthropic format that doesn't match
+anything a fresh-clone user could produce. This blocked the live smoke on a
+machine without that file.
+
+**Fix landed in this session** ([claudeOAuthAdapter.js](AI draft engine ver 1.0/src/claudeOAuthAdapter.js)):
+the adapter now supports a `CLAUDE_CODE_OAUTH_TOKEN` env-var fallback that
+pairs with `claude setup-token` (the standard Claude Pro/Max subscription
+flow). New `resolveCredential` helper with explicit precedence:
+
+1. Caller-supplied `config.authPath` or `config.staticToken` (used by tests and internal callers).
+2. `CLAUDE_CODE_OAUTH_TOKEN` env var → direct bearer auth to `api.anthropic.com` (or `ANTHROPIC_BASE_URL` if set).
+3. `CLAUDE_OAUTH_AUTH_PATH` env var → Hermes credential-pool file (refresh-capable).
+4. Default `~/.hermes/auth.json` → Hermes path.
+5. Otherwise throw a message naming both modes and the resolved path.
+
+Error surfacing also improved: failed requests now include the HTTP status
+and response body (first 240 chars), so future debugging doesn't need a
+manual curl.
+
+**Live smoke against the env-var fallback** (with `CLAUDE_CODE_OAUTH_TOKEN`
+exported from `whatsapp-web-test-bridge/.env`, no `ANTHROPIC_BASE_URL`):
+
+```json
+{
+  "businessId": "beauty_demo",
+  "inputText": "我上次做完facial之後皮膚紅咗成個禮拜，想problem要點處理？",
+  "finalStatus": "staff_review",
+  "action": "staff_review",
+  "intent": "aftercare",
+  "llmUsed": true,
+  "model": "claude-opus-4-6",
+  "safety": "revise",
+  "safeToSend": false,
+  "tokenUsage": { "inputTokens": 920, "outputTokens": 415, "source": "claude_oauth" }
+}
+```
+
+Two drafts came back in clean Traditional Chinese, both routed to staff
+review (correct for a medical-aftercare topic).
+
+**Gotcha worth knowing about**: the proxy at `ANTHROPIC_BASE_URL` (in the
+bridge `.env`) rejects `CLAUDE_CODE_OAUTH_TOKEN` with `401 INVALID_API_KEY`
+— it expects an `ANTHROPIC_AUTH_TOKEN` instead. The OAuth bearer path goes
+direct to `api.anthropic.com`. The README now calls this out at
+[README.md:84](README.md:84).
+
+**Tests:** `claudeOAuthAdapter` runner went from 17 → 28 cases. New cases
+cover env-var bearer mode, the precedence-config-wins rule, `ANTHROPIC_BASE_URL`
+override in env mode, and the helpful "no creds available" error.
+
+### 25.4 What's still open
+
+- **Both adapters are now OSS-ready.** Codex needs Codex.app + a logged-in
+  CLI; Claude OAuth needs either `claude setup-token` or the internal
+  Hermes file.
+- §24.6 items 3 (live-smoke) and item that read "decide adapter policy" are
+  now closed. Remaining §24.6 items: 2 (module table — done), 4 (HANDOFF
+  rebranding policy), 5 (§22.5 wait-and-see).
+
+End of session addendum.
+
+---
+
 End of handoff.
