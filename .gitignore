@@ -3,3 +3,12 @@ node_modules/
 *.log
 ~$*.docx
 .local/
+.env
+.env.local
+.env.*.local
+deliverables/
+*.mp4
+*.webm
+*.mov
+*.ogg
+*.mp3

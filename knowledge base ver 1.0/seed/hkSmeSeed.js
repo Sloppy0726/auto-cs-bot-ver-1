@@ -1,6 +1,6 @@
 "use strict";
 
-// Sample approved knowledge for four common HK SME archetypes.
+// Sample approved knowledge for four common locale SME archetypes.
 // Each entry must be reviewed by the business owner before going live.
 // IDs are stable so AI replies can cite them ("from kb: beauty_pricing_facial").
 

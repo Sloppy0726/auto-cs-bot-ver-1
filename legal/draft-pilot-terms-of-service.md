@@ -2,24 +2,24 @@
 
 Last updated: 2026-05-12
 
-Draft status: These Pilot Terms are a working draft for the Hong Kong AI Customer Support SaaS. They are not legal advice, not final customer terms, and should not be used with customers until placeholders are replaced and legal review is complete.
+Draft status: These Pilot Terms are a working draft for the Traditional Chinese AI Customer Support Safety Framework. They are not legal advice, not final customer terms, and should not be used with customers until placeholders are replaced and legal review is complete.
 
 ## 1. Parties
 
 These terms are between `[Company Legal Name]` (`Provider`, `we`, `us`) and the business customer that signs up for or uses the service (`Customer`, `you`).
 
-The service is intended for business use by Hong Kong small and medium-sized enterprises. It is not intended for personal, household, or consumer use.
+The service is intended for business use by the target locale small and medium-sized enterprises. It is not intended for personal, household, or consumer use.
 
 ## 2. Service
 
-The service provides a Cantonese AI receptionist for routine customer support enquiries. It may support channels such as WhatsApp, Instagram, Facebook Messenger, website chat, Google Drive promotion sync, approved knowledge, staff review, and AI-generated draft replies.
+The service provides a Traditional Chinese AI receptionist for routine customer support enquiries. It may support channels such as WhatsApp, Instagram, Facebook Messenger, website chat, Google Drive promotion sync, approved knowledge, staff review, and AI-generated draft replies.
 
 The service is designed to:
 
 - Answer routine enquiries using approved business information.
 - Redact or reduce unnecessary personal data before AI processing where possible.
 - Route risky, sensitive, unclear, or policy-sensitive cases to staff review.
-- Support Cantonese, Traditional Chinese, English, and mixed-language messages.
+- Support Traditional Chinese, Traditional Chinese, English, and mixed-language messages.
 
 The service may be provided as a pilot, beta, trial, paid subscription, or managed setup depending on the order form or written agreement.
 
@@ -156,7 +156,7 @@ Either party may terminate according to the order form or written agreement. On 
 
 ## 17. Governing Law and Disputes
 
-These terms are intended to be governed by the laws of Hong Kong, unless the order form or written agreement states otherwise.
+These terms are intended to be governed by the laws of the target locale, unless the order form or written agreement states otherwise.
 
 The parties should first try to resolve disputes in good faith. Any formal dispute process should be confirmed by legal counsel before launch.
 

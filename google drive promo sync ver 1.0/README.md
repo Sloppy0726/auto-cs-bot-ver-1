@@ -2,7 +2,7 @@
 
 Daily promotion sync for time-bound offers stored in a Google Drive folder.
 
-This module is designed for the 24/7 agent use case: once per Hong Kong day, read approved offer docs from Google Drive, normalize them into active promotion facts, and let the reply pipeline consider those facts before drafting.
+This module is designed for the 24/7 agent use case: once per UTC+8 locale day, read approved offer docs from Google Drive, normalize them into active promotion facts, and let the reply pipeline consider those facts before drafting.
 
 No real Google Drive API call is made in this module. It uses a dependency-injected `driveClient`, so tests stay offline and production can plug in Google Drive later.
 
@@ -11,7 +11,7 @@ No real Google Drive API call is made in this module. It uses a dependency-injec
 All promotion start / expiry checks use:
 
 ```text
-Asia/Hong_Kong
+Asia/Taipei
 UTC+8
 ```
 
@@ -63,7 +63,7 @@ const promos = store.lookup({
 ```js
 {
   businessId: "beauty_demo",
-  timezone: "Asia/Hong_Kong",
+  timezone: "Asia/Taipei",
   checkedDateHk: "2026-05-09",
   activePromotions: [
     {
@@ -94,4 +94,4 @@ node "google drive promo sync ver 1.0/scripts/writeSideBySideResults.js"
 - Keep Drive approval explicit: every synced promo block must say `Approved: true` (or an equivalent approved value) before it can enter the promotion store.
 - Run `sync.runDue()` from a worker / cron every day.
 - Persist the store in a database instead of memory.
-- Keep every date in Hong Kong time when checking `StartsOn` and `ExpiresOn`.
+- Keep every date in UTC+8 locale time when checking `StartsOn` and `ExpiresOn`.

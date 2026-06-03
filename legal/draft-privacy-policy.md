@@ -2,11 +2,11 @@
 
 Last updated: 2026-05-12
 
-Draft status: This Privacy Policy is a working draft for the Hong Kong AI Customer Support SaaS. It is not legal advice, not final customer-facing policy text, and should not be published until placeholders are replaced and legal review is complete.
+Draft status: This Privacy Policy is a working draft for the Traditional Chinese AI Customer Support Safety Framework. It is not legal advice, not final customer-facing policy text, and should not be published until placeholders are replaced and legal review is complete.
 
 ## 1. Who We Are
 
-`[Company Legal Name]` provides a Cantonese AI receptionist for Hong Kong SMEs.
+`[Company Legal Name]` provides a Traditional Chinese AI receptionist for SMEs.
 
 Contact: `[privacy contact email]`
 
@@ -98,9 +98,9 @@ We may retain data longer where required by law, dispute, security investigation
 
 ## 9. Data Location and Cross-Border Processing
 
-The service may process or store data in Hong Kong or other regions depending on production hosting and subprocessors.
+The service may process or store data in the target locale or other regions depending on production hosting and subprocessors.
 
-Before launch, customers should be told the hosting region, AI provider region if available, and whether data may be transferred outside Hong Kong.
+Before launch, customers should be told the hosting region, AI provider region if available, and whether data may be transferred outside the target locale.
 
 ## 10. Security
 

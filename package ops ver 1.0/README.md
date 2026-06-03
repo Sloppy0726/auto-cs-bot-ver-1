@@ -1,12 +1,12 @@
 # Package Ops ver 1.0
 
-Read-only prepaid package entitlement lookup for the Hong Kong AI Customer Support SaaS.
+Read-only prepaid package entitlement lookup for the Traditional Chinese AI Customer Support Safety Framework.
 
 This module is the first vertical wedge for beauty and medical-beauty shops: when a customer asks on WhatsApp or IG how many prepaid sessions remain or when a package expires, the system can answer from verified package facts instead of letting staff guess.
 
 ## Why this matters
 
-Generic chatbots answer FAQs. Package Ops handles a more expensive HK service-business problem: prepaid package disputes. Beauty, fitness, and education businesses often need to track remaining sessions, expiry dates, usage history, refund/extension requests, and what staff are allowed to promise.
+Generic chatbots answer FAQs. Package Ops handles a more expensive locale service-business problem: prepaid package disputes. Beauty, fitness, and education businesses often need to track remaining sessions, expiry dates, usage history, refund/extension requests, and what staff are allowed to promise.
 
 ## Main API
 

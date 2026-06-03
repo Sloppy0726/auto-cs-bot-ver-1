@@ -54,18 +54,26 @@ function buildUsageRecord(turn = {}, deps = {}) {
     estimated,
     actual,
     totalEstimatedTokens: estimated.inputTokens + estimated.outputTokens,
-    totalActualTokens: actual ? actual.inputTokens + actual.outputTokens : null
+    totalActualTokens: actual ? actual.totalTokens ?? actual.inputTokens + actual.outputTokens : null
   };
 }
 
 function normalizeActualUsage(usage) {
   if (!usage) return null;
-  const inputTokens = Number(usage.inputTokens ?? usage.input_tokens ?? usage.prompt_tokens ?? usage.promptTokens ?? 0);
-  const outputTokens = Number(usage.outputTokens ?? usage.output_tokens ?? usage.completion_tokens ?? usage.completionTokens ?? 0);
-  if (!Number.isFinite(inputTokens) && !Number.isFinite(outputTokens)) return null;
+  const inputRaw = usage.inputTokens ?? usage.input_tokens ?? usage.prompt_tokens ?? usage.promptTokens;
+  const outputRaw = usage.outputTokens ?? usage.output_tokens ?? usage.completion_tokens ?? usage.completionTokens;
+  const totalRaw = usage.totalTokens ?? usage.total_tokens;
+  const inputTokens = Number(inputRaw);
+  const outputTokens = Number(outputRaw);
+  const totalTokens = Number(totalRaw);
+  const hasInput = inputRaw != null && Number.isFinite(inputTokens);
+  const hasOutput = outputRaw != null && Number.isFinite(outputTokens);
+  const hasTotal = totalRaw != null && Number.isFinite(totalTokens);
+  if (!hasInput && !hasOutput && !hasTotal) return null;
   return {
-    inputTokens: Number.isFinite(inputTokens) ? inputTokens : 0,
-    outputTokens: Number.isFinite(outputTokens) ? outputTokens : 0,
+    inputTokens: hasInput ? inputTokens : 0,
+    outputTokens: hasOutput ? outputTokens : 0,
+    ...(hasTotal ? { totalTokens } : {}),
     source: usage.source || "provider"
   };
 }

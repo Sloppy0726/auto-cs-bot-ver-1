@@ -2,7 +2,7 @@
 
 const assert = require("node:assert/strict");
 const { generateDraft, _internal } = require("../src/draftEngine");
-const { chooseModel, DEFAULT_MODELS } = require("../src/anthropicAdapter");
+const { createAnthropicAdapter, chooseModel, DEFAULT_MODELS } = require("../src/anthropicAdapter");
 const { routeMessage } = require("../../privacy gateway ver 1.0/src/privacyGateway");
 const { classifyIntent } = require("../../intent classifier ver 1.0/src/intentClassifier");
 const { createKnowledgeBase } = require("../../knowledge base ver 1.0/src/knowledgeBase");
@@ -81,6 +81,11 @@ async function run() {
     llmAdapter: async () => ({ text: "草稿：請同事覆核價錢。", usage: { input_tokens: 42, output_tokens: 9 } })
   });
   assert.deepEqual(usageResult.tokenUsage, { inputTokens: 42, outputTokens: 9, source: "provider" }, "draft should preserve provider token usage");
+  assert.deepEqual(
+    _internal.normalizeTokenUsage({ totalTokens: 1234, source: "codex_cli" }),
+    { inputTokens: 0, outputTokens: 0, totalTokens: 1234, source: "codex_cli" },
+    "draft should preserve Codex CLI total-only token usage"
+  );
 
   const promoCalls = [];
   await generateDraft({
@@ -186,7 +191,38 @@ async function run() {
     "handoff/complaint should choose complex model"
   );
 
-  console.log(`draftEngine: ${standardCases.length + 14} tests passed`);
+  const originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
+  const originalClaudeKey = process.env.CLAUDE_API_KEY;
+  try {
+    delete process.env.ANTHROPIC_API_KEY;
+    process.env.CLAUDE_API_KEY = "claude-key-test";
+    let fetchCall = null;
+    const apiAdapter = createAnthropicAdapter({
+      fetch: async (url, options) => {
+        fetchCall = { url, options, body: JSON.parse(options.body) };
+        return {
+          ok: true,
+          json: async () => ({ content: [{ type: "text", text: "草稿：API key draft。" }] })
+        };
+      }
+    });
+    const apiDraft = await apiAdapter("full prompt", {
+      systemPrompt: "system",
+      userPrompt: "user",
+      modelRoute: { model: "claude-haiku-4-5-20251001", maxTokens: 11 }
+    });
+    assert.equal(fetchCall.options.headers["x-api-key"], "claude-key-test", "Claude API key alias should be accepted");
+    assert.equal(fetchCall.body.model, "claude-haiku-4-5-20251001", "model route should reach Anthropic API payload");
+    assert.equal(fetchCall.body.max_tokens, 11, "max token route should reach Anthropic API payload");
+    assert.equal(apiDraft.text, "草稿：API key draft。", "Anthropic adapter should extract text");
+  } finally {
+    if (originalAnthropicKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = originalAnthropicKey;
+    if (originalClaudeKey === undefined) delete process.env.CLAUDE_API_KEY;
+    else process.env.CLAUDE_API_KEY = originalClaudeKey;
+  }
+
+  console.log(`draftEngine: ${standardCases.length + 19} tests passed`);
 }
 
 run().catch((error) => {

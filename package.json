@@ -1,0 +1,26 @@
+{
+  "name": "chinese-support-guardrails",
+  "version": "0.1.0",
+  "description": "Privacy-first Traditional Chinese/English AI customer-support safety framework for SMEs.",
+  "license": "MIT",
+  "type": "commonjs",
+  "private": false,
+  "scripts": {
+    "test": "node scripts/run-tests.js",
+    "test:verbose": "node scripts/run-tests.js --verbose"
+  },
+  "keywords": [
+    "traditional-chinese",
+    "zh-tw",
+    "ai-safety",
+    "customer-support",
+    "privacy",
+    "llm",
+    "human-in-the-loop",
+    "sme",
+    "nodejs"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}

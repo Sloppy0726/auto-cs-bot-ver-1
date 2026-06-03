@@ -1,6 +1,6 @@
 "use strict";
 
-// HK SME archetype defaults. The boss can override any field per businessId.
+// locale SME archetype defaults. The boss can override any field per businessId.
 // Conservative by default: the owner opts INTO auto_send for each intent,
 // never the other way around.
 

@@ -1,4 +1,4 @@
-# HANDOFF — Hong Kong AI Customer Support SaaS
+# HANDOFF — Traditional Chinese AI Customer Support Safety Framework
 
 **For the next agent (Codex / Claude / human reviewer).** Read this top-to-bottom before touching code. Self-contained: assume you have no memory of the previous session.
 
@@ -20,7 +20,7 @@ git status   # will show the two new folders as untracked
 
 ## 1. Product positioning (don't lose this)
 
-Privacy-first **Cantonese AI receptionist** for HK SMEs (beauty / clinic / restaurant / IG shop / education). Differentiated from SleekFlow / Omnichat / Gorgias / Intercom Fin / Tidio by:
+Privacy-first **Traditional Chinese AI receptionist** for locale SMEs (beauty / clinic / restaurant / IG shop / education). Differentiated from SleekFlow / Omnichat / Gorgias / Intercom Fin / Tidio by:
 
 1. Privacy gateway runs **before** any LLM call — raw PII never reaches the model.
 2. Policy lives in **typed JS rules**, not in the prompt — LLM can't override it.
@@ -35,7 +35,7 @@ Privacy-first **Cantonese AI receptionist** for HK SMEs (beauty / clinic / resta
 customer message
    │
    ▼
-[privacy filter v1.0]      ✅ existing  — regex PII redaction, Luhn-checked CC, HKID, HK phone, etc.
+[privacy filter v1.0]      ✅ existing  — regex PII redaction, Luhn-checked CC, HKID, locale phone, etc.
    │
    ▼
 [privacy gateway v1.0]     ✅ existing  — emits send_to_llm | review_before_llm | block_and_handoff
@@ -50,7 +50,7 @@ customer message
 [business rules v1.0]      ✅ NEW (this session)  — 6-tier policy gate + capability contract
    │
    ▼
-[AI draft engine v1.0]     ❌ NEXT — consumes the rules decision, produces Cantonese reply / handoff summary
+[AI draft engine v1.0]     ❌ NEXT — consumes the rules decision, produces Traditional Chinese reply / handoff summary
    │
    ▼
 [safety checker v1.0]      ❌ pending — re-validates draft against forbiddenCapabilities
@@ -102,7 +102,7 @@ node "business rules ver 1.0/scripts/writeSideBySideResults.js"
 ### Knowledge Base v1.0
 
 - `knowledge base ver 1.0/src/knowledgeBase.js` — `createKnowledgeBase({entries})` → `{lookup, listEntries, has}`. Drops unapproved entries at index time. Intent boost (0.6 if intent matches) + keyword scoring (`hits * 0.4`, capped 0.6). Substring sweep against lowercased original text for CJK keywords like 現貨/順豐. Returns `{matches, bestMatch, grounding, gap, handoff, backendBound, suggestedClarification, reasons}`.
-- `knowledge base ver 1.0/seed/hkSmeSeed.js` — 10 approved entries across `beauty_demo`, `restaurant_demo`, `igshop_demo`, `edu_demo`. Each entry has zh-HK / en / mixed answers and tone metadata.
+- `knowledge base ver 1.0/seed/hkSmeSeed.js` — 10 approved entries across `beauty_demo`, `restaurant_demo`, `igshop_demo`, `edu_demo`. Each entry has zh-locale / en / mixed answers and tone metadata.
 - `knowledge base ver 1.0/test/{knowledgeBase.cases.js,knowledgeBase.test.js}` — 10 standard cases + 2 invariant checks. Covers all brief examples.
 - `knowledge base ver 1.0/scripts/writeSideBySideResults.js` — pipeline-wide markdown report writer.
 - `knowledge base ver 1.0/README.md` — full API spec + integration diagram.
@@ -154,7 +154,7 @@ These are not negotiable — every module follows this pattern:
 - Tests use `node:assert/strict`, never a framework.
 - `test/<name>.cases.js` holds case data, `test/<name>.test.js` holds the runner.
 - `scripts/writeSideBySideResults.js` writes a markdown table to the module folder root.
-- Per-module `README.md` with: positioning, folder layout, API shape, integration, HK-specific guards, run commands, roadmap.
+- Per-module `README.md` with: positioning, folder layout, API shape, integration, locale-specific guards, run commands, roadmap.
 - Comments: minimal. Only when the *why* is non-obvious.
 
 ---
@@ -162,8 +162,8 @@ These are not negotiable — every module follows this pattern:
 ## 6. Known quirks (NOT bugs — read before "fixing")
 
 1. **Beauty hours → `staff_review` not `auto_send`.** The answer contains "11:00" and `beauty_clinic` has `askStaffBeforePromise: true`. By design — clinics shouldn't auto-quote anything with digits. Override per business if you really want it.
-2. **IG shop 現貨/順豐 → `clarify` (not `auto_send`).** Intent classifier returns `general` with confidence 0.42 — it has no Cantonese keywords for stock/shipping. The right fix is to *expand the intent classifier's `service_info` regex* with HK retail terms (現貨, 順豐, 包郵, 運費, 有冇貨). Don't fix it in the rules engine.
-3. **Cantonese tokenisation is naive.** KB substring-matches multi-char keywords against lowercased original text. Good enough for v1. Replace with a proper tokenizer (or embeddings) only when keyword recall actually fails in practice.
+2. **IG shop 現貨/順豐 → `clarify` (not `auto_send`).** Intent classifier returns `general` with confidence 0.42 — it has no Traditional Chinese keywords for stock/shipping. The right fix is to *expand the intent classifier's `service_info` regex* with locale retail terms (現貨, 順豐, 包郵, 運費, 有冇貨). Don't fix it in the rules engine.
+3. **Traditional Chinese tokenisation is naive.** KB substring-matches multi-char keywords against lowercased original text. Good enough for v1. Replace with a proper tokenizer (or embeddings) only when keyword recall actually fails in practice.
 4. **`general` intent does NOT trigger `clarify` on KB gap** — by design (tier 3 only fires when intent is non-general). Otherwise greetings would always clarify.
 5. **The angry-tone pattern in `businessRules.js` (`/搞錯|嬲|...|refund|complaint/i`) overlaps with the intent classifier's `complaint` regex.** This is intentional defence in depth — even if the classifier misfires, the rule catches it.
 
@@ -177,9 +177,9 @@ This is the next thing to build. Spec:
 - **Main file:** `src/draftEngine.js`, exports `generateDraft({decision, knowledge, intent, gateway}, options)` returning `{text, action, citations, tone, llmUsed, reasons}`.
 - **Five branches based on `decision.action`:**
   - `auto_send` → return `knowledge.bestMatch.answer` verbatim (no LLM call) plus optional tone-polish stub. Cite `grounding`.
-  - `staff_review` → call LLM with a sandwich prompt: system message containing `allowedCapabilities` + `forbiddenCapabilities` + `bestMatch.answer` (as the only allowed source of facts) + tone profile. Generate 1–2 Cantonese drafts.
+  - `staff_review` → call LLM with a sandwich prompt: system message containing `allowedCapabilities` + `forbiddenCapabilities` + `bestMatch.answer` (as the only allowed source of facts) + tone profile. Generate 1–2 Traditional Chinese drafts.
   - `clarify` → return `decision.clarificationText` verbatim (no LLM).
-  - `handoff` → produce a Cantonese **staff-facing** summary (NOT customer-facing): intent, customer goal, escalation reason, what the customer is asking for, suggested next step. Can use LLM with a strict system prompt.
+  - `handoff` → produce a Traditional Chinese **staff-facing** summary (NOT customer-facing): intent, customer goal, escalation reason, what the customer is asking for, suggested next step. Can use LLM with a strict system prompt.
   - `block` → no LLM. Return `null` text plus a quarantine note for staff.
 - **LLM adapter:** dependency-injected. Default is a stub `async (prompt) => ({ text: "[stub] " + prompt.slice(0,80) })` so tests stay offline. Real adapter goes in `src/anthropicAdapter.js` and reads `ANTHROPIC_API_KEY` from env. Use `claude-haiku-4-5-20251001` for cost (cheap intents) and `claude-sonnet-4-6` for complex intents — that's the seed of the model router.
 - **Prompt caching:** when you wire the real adapter, set `cache_control` on the system message (it'll repeat across thousands of messages per tenant). Saves 90%+ on input tokens. See https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching.
@@ -215,9 +215,9 @@ This is the next thing to build. Spec:
 
 ## 10. Questions for the boss / next reviewer
 
-1. **API provider for the Draft Engine.** Anthropic recommended (Cantonese fluency + prompt caching is best). Alternative is GPT-4 / Gemini. Need a key.
+1. **API provider for the Draft Engine.** Anthropic recommended (Traditional Chinese fluency + prompt caching is best). Alternative is GPT-4 / Gemini. Need a key.
 2. **Multi-tenant storage.** Right now `archetypes.js` has hardcoded `DEMO_BUSINESS_CONFIGS`. Production will need a tenants table — Postgres? SQLite for v1? File-based JSON for the very first deploy?
-3. **Default tone fallbacks.** If the KB entry has no tone field, we default to `polite_professional`. The boss may want `friendly_local` instead for HK market feel — easy 1-line change in `businessRules.js → deriveCapabilities`.
+3. **Default tone fallbacks.** If the KB entry has no tone field, we default to `polite_professional`. The boss may want `friendly_local` instead for locale market feel — easy 1-line change in `businessRules.js → deriveCapabilities`.
 4. **"Ask staff before promise" trip is currently triggered by ANY digit in the answer.** That correctly catches "$680" and "11:00–21:00", but also catches "P3" or "5G". Consider tightening to `/(\$|HK\$|%|\d{2,})/` if false-positive rate matters.
 5. **Push to remote?** Local commits not yet made. Suggest one commit per module with messages `feat: knowledge base v1.0` and `feat: business rules v1.0`.
 
@@ -251,7 +251,7 @@ Built `AI draft engine ver 1.0/` as module #6 in the pipeline.
     - `auto_send` returns the approved KB answer verbatim and never calls an LLM.
     - `staff_review` calls an injected LLM adapter with a sandwich prompt containing allowed capabilities, forbidden capabilities, the approved KB answer as the only factual source, tone profile, and a final self-check.
     - `clarify` returns `decision.clarificationText` verbatim and never calls an LLM.
-    - `handoff` calls the injected LLM adapter with a strict staff-only Cantonese summary prompt.
+    - `handoff` calls the injected LLM adapter with a strict staff-only Traditional Chinese summary prompt.
     - `block` returns `text: null` plus a quarantine note and never calls an LLM.
   - Adds a lightweight capability-surface guard that withholds generated text if it appears to violate forbidden capabilities like `confirm_booking`, `decide_refund`, `give_medical_advice`, `promise_treatment_result`, `confirm_shipment`, `confirm_payment_received`, or `leak_pii`.
 - Added `AI draft engine ver 1.0/src/anthropicAdapter.js`.
@@ -291,7 +291,7 @@ node "AI draft engine ver 1.0/scripts/writeSideBySideResults.js"
 
 ### Known quirks after Session 2
 
-1. The default LLM adapter is intentionally an offline stub. It is not a quality test for Cantonese copy; it exists so tests stay deterministic and free.
+1. The default LLM adapter is intentionally an offline stub. It is not a quality test for Traditional Chinese copy; it exists so tests stay deterministic and free.
 2. The capability-surface guard is deliberately conservative but not a full safety checker. It catches obvious forbidden language before the next module, but `Safety Checker v1.0` should still re-validate every generated draft.
 3. `clarify` returns `decision.clarificationText` exactly. If upstream rules create a `clarify` decision without clarification text, this module returns `null` rather than inventing a question.
 4. The report writer uses a deterministic fake adapter for staff-review/handoff rows. Real model quality should be reviewed only after `ANTHROPIC_API_KEY` is intentionally wired for a manual run.
@@ -423,9 +423,9 @@ node "end-to-end pipeline ver 1.0/scripts/writeSideBySideResults.js"
 
 ---
 
-## Session 4 notes — Google Drive promotion sync + Hong Kong time expiry
+## Session 4 notes — Google Drive promotion sync + UTC+8 locale time expiry
 
-User asked for a 24/7-style agent behavior: every day, read a Google Drive folder containing current offers / Instagram promotions, understand expiry dates, and use those facts before answering. All dates must follow Hong Kong time, UTC+8, not server locale or another region.
+User asked for a 24/7-style agent behavior: every day, read a Google Drive folder containing current offers / Instagram promotions, understand expiry dates, and use those facts before answering. All dates must follow UTC+8 locale time, UTC+8, not server locale or another region.
 
 ### What changed
 
@@ -433,7 +433,7 @@ User asked for a 24/7-style agent behavior: every day, read a Google Drive folde
   - `src/hkTime.js` provides HK-time helpers:
     - `hkDateKey()`
     - `isWithinHkDateRange()`
-    - `nextDailyRunAtHongKong()`
+    - `nextDailyRunAtTaipei()`
   - `src/promoSync.js` provides:
     - `createPromotionStore()`
     - `createPromoSync({ driveClient, store, folderId, businessId, syncTimeHk })`
@@ -445,10 +445,10 @@ User asked for a 24/7-style agent behavior: every day, read a Google Drive folde
   - Tests use a mock `driveClient`; no real Google Drive network/API call yet.
 - Updated `AI draft engine ver 1.0`.
   - Staff-review and handoff prompts now include active time-bound promotions when the pipeline passes `promotions`.
-  - Promotion context includes title, summary, HK expiry date, and staff instruction.
+  - Promotion context includes title, summary, locale expiry date, and staff instruction.
 - Updated `end-to-end pipeline ver 1.0`.
   - Pipeline creates a promotion store by default using promo seed data.
-  - Each message now looks up active promotions using `Asia/Hong_Kong` / UTC+8 before draft generation.
+  - Each message now looks up active promotions using `Asia/Taipei` / UTC+8 before draft generation.
   - Pipeline result now includes `promotions`.
 - Updated `staff inbox ver 1.0`.
   - Staff items now keep `backendFacts` and `promotions` so staff can see which offer context influenced the draft.
@@ -496,7 +496,7 @@ Total after Session 4: **889 tests passing**.
 ### Known limitations after Session 4
 
 1. `google drive promo sync ver 1.0` has a dependency-injected `driveClient` and offline tests. Production still needs a real Google Drive connector/client.
-2. Daily sync scheduling is expressed in code via `runDue()` / `nextDailyRunAtHongKong()`. Production still needs a worker/cron runner to call it daily.
+2. Daily sync scheduling is expressed in code via `runDue()` / `nextDailyRunAtTaipei()`. Production still needs a worker/cron runner to call it daily.
 3. Promotion store is in memory by default. Production should persist synced promotions per tenant.
 4. The pipeline reads active promotions before drafting, but conservative business rules still prevent automatic sending for beauty pricing/treatment claims. This is intentional.
 
@@ -522,4 +522,4 @@ These are product and pilot drafts, not legal advice. Before using them with pay
 - Whether the provider is a processor, data user, or both for each data flow.
 - Production hosting region and subprocessor list.
 - Final retention/deletion periods.
-- Payment, refund, support, liability, governing law, and dispute terms with Hong Kong counsel.
+- Payment, refund, support, liability, governing law, and dispute terms with the target locale counsel.

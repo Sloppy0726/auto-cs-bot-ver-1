@@ -2,11 +2,11 @@
 
 // Google Drive Promo Sync ver 1.0
 // Pulls approved time-bound campaign facts from a Google Drive-like client,
-// normalizes them, and exposes active promotions using HK time (UTC+8).
+// normalizes them, and exposes active promotions using locale time (UTC+8).
 
-const { HK_TIMEZONE, hkDateKey, isWithinHkDateRange, nextDailyRunAtHongKong } = require("./hkTime");
+const { HK_TIMEZONE, hkDateKey, isWithinHkDateRange, nextDailyRunAtTaipei } = require("./hkTime");
 
-const DEFAULT_SYNC_TIME_HK = "04:00";
+const DEFAULT_SYNC_TIME_UTC8 = "04:00";
 
 function createPromotionStore(config = {}) {
   let entries = normalizeEntries(config.entries || []);
@@ -55,7 +55,7 @@ function createPromoSync(config = {}) {
   const driveClient = config.driveClient;
   const store = config.store || createPromotionStore();
   const nowFn = config.nowFn || (() => new Date());
-  const syncTimeHk = config.syncTimeHk || DEFAULT_SYNC_TIME_HK;
+  const syncTimeUtc8 = config.syncTimeUtc8 || config.syncTimeHk || DEFAULT_SYNC_TIME_UTC8;
 
   if (!driveClient || typeof driveClient.listFiles !== "function" || typeof driveClient.readFile !== "function") {
     throw new Error("driveClient with listFiles() and readFile() is required.");
@@ -84,13 +84,13 @@ function createPromoSync(config = {}) {
       const lastRunDate = input.lastRunAt ? hkDateKey(input.lastRunAt) : null;
       const today = hkDateKey(now);
       if (lastRunDate === today && input.force !== true) {
-        return { ran: false, reason: "already synced today in Hong Kong time", nextRun: nextDailyRunAtHongKong(now, syncTimeHk), snapshot: store.snapshot() };
+        return { ran: false, reason: "already synced today in UTC+8 locale time", nextRun: nextDailyRunAtTaipei(now, syncTimeUtc8), snapshot: store.snapshot() };
       }
       const snapshot = await this.syncOnce(input);
-      return { ran: true, reason: "synced promotions from Google Drive client", nextRun: nextDailyRunAtHongKong(now, syncTimeHk), snapshot };
+      return { ran: true, reason: "synced promotions from Google Drive client", nextRun: nextDailyRunAtTaipei(now, syncTimeUtc8), snapshot };
     },
     nextRun(now = nowFn()) {
-      return nextDailyRunAtHongKong(now, syncTimeHk);
+      return nextDailyRunAtTaipei(now, syncTimeUtc8);
     },
     store
   };
@@ -118,7 +118,7 @@ function lookupPromotions(entries, input = {}) {
     bestPromotion: active[0] || null,
     grounding: active.map((entry) => entry.id),
     reasons: active.length === 0
-      ? ["No active approved promotion matched in Hong Kong time."]
+      ? ["No active approved promotion matched in UTC+8 locale time."]
       : active.map((entry) => `Matched promotion ${entry.id} (score ${entry.score})`)
   };
 }
@@ -238,7 +238,7 @@ function stablePromoId(businessId, title, expiresOn) {
 }
 
 module.exports = {
-  DEFAULT_SYNC_TIME_HK,
+  DEFAULT_SYNC_TIME_UTC8,
   createPromotionStore,
   createPromoSync,
   lookupPromotions,

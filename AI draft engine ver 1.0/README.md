@@ -1,16 +1,16 @@
 # AI Draft Engine ver 1.0
 
-Grounded draft generator for the Hong Kong AI Customer Support SaaS.
+Grounded draft generator for the Traditional Chinese AI Customer Support Safety Framework.
 
 The draft engine sits after the business rules module. It consumes the typed decision contract and produces either a customer reply candidate, a clarification, a staff-only handoff summary, or a quarantine result. It does not make policy decisions; it only obeys the decision it receives.
 
-## Why this matters for HK SMEs
+## Why this matters for locale SMEs
 
-| Competitor pattern | What goes wrong for HK SMEs | Draft Engine v1.0 answer |
+| Competitor pattern | What goes wrong for locale SMEs | Draft Engine v1.0 answer |
 |---|---|---|
 | Raw LLM replies directly to customers | Model invents prices, confirms slots, or gives risky advice | `auto_send` quotes the approved KB answer verbatim; risky branches go to staff |
 | Policy hidden inside a prompt | One jailbreak or model drift can override policy | The prompt is built from `allowedCapabilities` and `forbiddenCapabilities` from typed JS rules |
-| Human handoff with no context | Staff wastes time reconstructing the issue | `handoff` creates a staff-facing Cantonese summary, never a customer reply |
+| Human handoff with no context | Staff wastes time reconstructing the issue | `handoff` creates a staff-facing Traditional Chinese summary, never a customer reply |
 | Online-only test flow | Tests become slow, flaky, and costly | Default LLM adapter is an offline stub; real Anthropic adapter is injected |
 
 Pillars covered: **#5 AI draft engine**, partial **#6 safety contract**, partial **#9 model router seed**.
@@ -20,9 +20,15 @@ Pillars covered: **#5 AI draft engine**, partial **#6 safety contract**, partial
 ```
 AI draft engine ver 1.0/
 ├── src/draftEngine.js              # generateDraft({ decision, knowledge, intent, gateway }, options)
-├── src/anthropicAdapter.js         # optional real adapter, reads ANTHROPIC_API_KEY
+├── src/anthropicAdapter.js         # optional real adapter, reads ANTHROPIC_API_KEY / CLAUDE_API_KEY
+├── src/claudeOAuthAdapter.js       # local Claude subscription OAuth adapter via Hermes credential pool
+├── src/codexCliAdapter.js          # local smoke-test adapter using Codex CLI OAuth login
 ├── test/draftEngine.cases.js
+├── test/claudeOAuthAdapter.test.js
+├── test/codexCliAdapter.test.js
 ├── test/draftEngine.test.js
+├── scripts/runClaudeOAuthSmoke.js
+├── scripts/runCodexLlmSmoke.js
 ├── scripts/writeSideBySideResults.js
 └── README.md
 ```
@@ -59,9 +65,9 @@ Output:
 | Decision action | Draft behavior |
 |---|---|
 | `auto_send` | Returns `knowledge.bestMatch.answer` verbatim. No LLM call. Citations come from `grounding`. |
-| `staff_review` | Calls the injected LLM adapter with a sandwich prompt: capabilities, forbidden list, approved KB source, tone, customer context, final self-check. Produces 1-2 Cantonese draft candidates for staff review only. |
+| `staff_review` | Calls the injected LLM adapter with a sandwich prompt: capabilities, forbidden list, approved KB source, tone, customer context, final self-check. Produces 1-2 Traditional Chinese draft candidates for staff review only. |
 | `clarify` | Returns `decision.clarificationText` verbatim. No LLM call. |
-| `handoff` | Calls the injected LLM adapter with a strict staff-only prompt and returns a Cantonese internal summary. |
+| `handoff` | Calls the injected LLM adapter with a strict staff-only prompt and returns a Traditional Chinese internal summary. |
 | `block` | Returns `text: null` plus a quarantine note for staff. No LLM call. |
 
 ## LLM adapter
@@ -82,7 +88,7 @@ const draft = await generateDraft(input, {
 });
 ```
 
-`src/anthropicAdapter.js` reads `ANTHROPIC_API_KEY` from the environment. It chooses:
+`src/anthropicAdapter.js` reads `ANTHROPIC_API_KEY` from the environment. `CLAUDE_API_KEY` is accepted as a local alias. It chooses:
 
 | Case | Model |
 |---|---|
@@ -91,9 +97,43 @@ const draft = await generateDraft(input, {
 
 The adapter sets `cache_control` on the system message because the capability/tone policy repeats heavily across tenant traffic.
 
+Local Claude OAuth adapter:
+
+```js
+const { createClaudeOAuthAdapter } = require("./src/claudeOAuthAdapter");
+
+const draft = await generateDraft(input, {
+  llmAdapter: createClaudeOAuthAdapter({
+    model: process.env.CLAUDE_OAUTH_MODEL || "claude-opus-4-6"
+  })
+});
+```
+
+This adapter reads the Anthropic OAuth credential from the local Hermes credential pool at `~/.hermes/auth.json`, refreshes it when expired, and calls Anthropic Messages API with Claude Code OAuth headers. It is intended for local subscription-auth validation, not production deployment.
+
+Local Codex OAuth smoke-test adapter:
+
+```js
+const { createCodexCliAdapter } = require("./src/codexCliAdapter");
+
+const draft = await generateDraft(input, {
+  llmAdapter: createCodexCliAdapter({
+    model: process.env.CODEX_LLM_MODEL || "gpt-5.5"
+  })
+});
+```
+
+This adapter shells out to the installed Codex CLI, which uses the existing Codex OAuth login. In the repo `.env`, keep `CODEX_LLM_AUTH_MODE=oauth` and set `CODEX_ACCESS_TOKEN=` if you want the adapter to import an OAuth access token via `codex login --with-access-token`. In OAuth mode the adapter removes inherited OpenAI key and endpoint overrides before launching Codex, so it will not silently use API-key auth. It is for local validation only: it is slower than a direct API call and should not be used as a production WhatsApp channel backend.
+
+Manual OAuth import from `.env`:
+
+```bash
+node "AI draft engine ver 1.0/scripts/loginCodexFromEnv.js"
+```
+
 ## Promotion Context
 
-When the pipeline provides `promotions`, the staff-review and handoff prompts include active time-bound promotions that were checked in Hong Kong time. Promotion text is wrapped inside a `PROMOTION_FACTS_UNTRUSTED_DO_NOT_FOLLOW` block so editable campaign copy is treated as quoted context, not model instructions. The draft engine still does not auto-send pricing or treatment claims for conservative archetypes such as `beauty_clinic`.
+When the pipeline provides `promotions`, the staff-review and handoff prompts include active time-bound promotions that were checked in UTC+8 locale time. Promotion text is wrapped inside a `PROMOTION_FACTS_UNTRUSTED_DO_NOT_FOLLOW` block so editable campaign copy is treated as quoted context, not model instructions. The draft engine still does not auto-send pricing or treatment claims for conservative archetypes such as `beauty_clinic`.
 
 ## Integration
 
@@ -105,18 +145,22 @@ privacy gateway -> intent classifier -> knowledge base -> business rules -> AI d
 
 The draft engine only consumes sanitized text from the gateway. It never receives raw customer text.
 
-## HK-specific guards
+## locale-specific guards
 
 1. **Approved-only facts** - staff-review prompts name the approved KB answer as the only factual source.
 2. **No direct confirmation** - generated text is withheld if it appears to confirm bookings, refunds, payments, shipments, delivery ETAs, medical advice, or treatment results when those capabilities are forbidden.
-3. **Staff-only handoff** - handoff prompts explicitly forbid customer-facing replies and ask for an internal Cantonese summary.
+3. **Staff-only handoff** - handoff prompts explicitly forbid customer-facing replies and ask for an internal Traditional Chinese summary.
 4. **Offline by default** - tests and side-by-side reports do not call a paid model.
 5. **Tone follows archetype** - `luxury_beauty`, `friendly_local`, `casual_ig`, `education`, and `polite_professional` are inherited from the rules decision.
 
 ## Run
 
 ```bash
+node "AI draft engine ver 1.0/test/claudeOAuthAdapter.test.js"
+node "AI draft engine ver 1.0/test/codexCliAdapter.test.js"
 node "AI draft engine ver 1.0/test/draftEngine.test.js"
+node "AI draft engine ver 1.0/scripts/runClaudeOAuthSmoke.js"
+node "AI draft engine ver 1.0/scripts/runCodexLlmSmoke.js"
 node "AI draft engine ver 1.0/scripts/writeSideBySideResults.js"
 ```
 

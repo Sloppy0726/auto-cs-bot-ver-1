@@ -17,20 +17,20 @@ Failed: 0
 | 4 | PASS | clarify exact booking question passes | pass / safe=true |
 | 5 | PASS | handoff staff summary is revise not send | revise / safe=false |
 | 6 | PASS | privacy block with no text blocks safely | block / safe=false |
-| 7 | PASS | forbidden capability confirm_booking blocks Cantonese surface | block / safe=false |
-| 8 | PASS | forbidden capability promise_slot_availability blocks Cantonese surface | block / safe=false |
-| 9 | PASS | forbidden capability confirm_new_slot blocks Cantonese surface | block / safe=false |
-| 10 | PASS | forbidden capability confirm_shipment blocks Cantonese surface | block / safe=false |
-| 11 | PASS | forbidden capability state_delivery_eta blocks Cantonese surface | block / safe=false |
-| 12 | PASS | forbidden capability confirm_payment_received blocks Cantonese surface | block / safe=false |
-| 13 | PASS | forbidden capability decide_refund blocks Cantonese surface | block / safe=false |
-| 14 | PASS | forbidden capability approve_chargeback blocks Cantonese surface | block / safe=false |
-| 15 | PASS | forbidden capability give_medical_advice blocks Cantonese surface | block / safe=false |
-| 16 | PASS | forbidden capability promise_treatment_result blocks Cantonese surface | block / safe=false |
-| 17 | PASS | forbidden capability diagnose blocks Cantonese surface | block / safe=false |
-| 18 | PASS | forbidden capability give_legal_advice blocks Cantonese surface | block / safe=false |
-| 19 | PASS | forbidden capability give_financial_advice blocks Cantonese surface | block / safe=false |
-| 20 | PASS | forbidden capability leak_pii blocks Cantonese surface | block / safe=false |
+| 7 | PASS | forbidden capability confirm_booking blocks Traditional Chinese surface | block / safe=false |
+| 8 | PASS | forbidden capability promise_slot_availability blocks Traditional Chinese surface | block / safe=false |
+| 9 | PASS | forbidden capability confirm_new_slot blocks Traditional Chinese surface | block / safe=false |
+| 10 | PASS | forbidden capability confirm_shipment blocks Traditional Chinese surface | block / safe=false |
+| 11 | PASS | forbidden capability state_delivery_eta blocks Traditional Chinese surface | block / safe=false |
+| 12 | PASS | forbidden capability confirm_payment_received blocks Traditional Chinese surface | block / safe=false |
+| 13 | PASS | forbidden capability decide_refund blocks Traditional Chinese surface | block / safe=false |
+| 14 | PASS | forbidden capability approve_chargeback blocks Traditional Chinese surface | block / safe=false |
+| 15 | PASS | forbidden capability give_medical_advice blocks Traditional Chinese surface | block / safe=false |
+| 16 | PASS | forbidden capability promise_treatment_result blocks Traditional Chinese surface | block / safe=false |
+| 17 | PASS | forbidden capability diagnose blocks Traditional Chinese surface | block / safe=false |
+| 18 | PASS | forbidden capability give_legal_advice blocks Traditional Chinese surface | block / safe=false |
+| 19 | PASS | forbidden capability give_financial_advice blocks Traditional Chinese surface | block / safe=false |
+| 20 | PASS | forbidden capability leak_pii blocks Traditional Chinese surface | block / safe=false |
 | 21 | PASS | placeholder leakage blocks customer-visible text: 草稿 [stub] 請覆核 | block / safe=false |
 | 22 | PASS | placeholder leakage blocks customer-visible text: 你好 {{customer_name | block / safe=false |
 | 23 | PASS | placeholder leakage blocks customer-visible text: TODO 補資料 | block / safe=false |
@@ -460,7 +460,7 @@ Actual:
 }
 ```
 
-### 007 PASS - forbidden capability confirm_booking blocks Cantonese surface
+### 007 PASS - forbidden capability confirm_booking blocks Traditional Chinese surface
 
 Context:
 ```json
@@ -523,7 +523,7 @@ Actual:
 }
 ```
 
-### 008 PASS - forbidden capability promise_slot_availability blocks Cantonese surface
+### 008 PASS - forbidden capability promise_slot_availability blocks Traditional Chinese surface
 
 Context:
 ```json
@@ -586,7 +586,7 @@ Actual:
 }
 ```
 
-### 009 PASS - forbidden capability confirm_new_slot blocks Cantonese surface
+### 009 PASS - forbidden capability confirm_new_slot blocks Traditional Chinese surface
 
 Context:
 ```json
@@ -649,7 +649,7 @@ Actual:
 }
 ```
 
-### 010 PASS - forbidden capability confirm_shipment blocks Cantonese surface
+### 010 PASS - forbidden capability confirm_shipment blocks Traditional Chinese surface
 
 Context:
 ```json
@@ -712,7 +712,7 @@ Actual:
 }
 ```
 
-### 011 PASS - forbidden capability state_delivery_eta blocks Cantonese surface
+### 011 PASS - forbidden capability state_delivery_eta blocks Traditional Chinese surface
 
 Context:
 ```json
@@ -775,7 +775,7 @@ Actual:
 }
 ```
 
-### 012 PASS - forbidden capability confirm_payment_received blocks Cantonese surface
+### 012 PASS - forbidden capability confirm_payment_received blocks Traditional Chinese surface
 
 Context:
 ```json
@@ -838,7 +838,7 @@ Actual:
 }
 ```
 
-### 013 PASS - forbidden capability decide_refund blocks Cantonese surface
+### 013 PASS - forbidden capability decide_refund blocks Traditional Chinese surface
 
 Context:
 ```json
@@ -901,7 +901,7 @@ Actual:
 }
 ```
 
-### 014 PASS - forbidden capability approve_chargeback blocks Cantonese surface
+### 014 PASS - forbidden capability approve_chargeback blocks Traditional Chinese surface
 
 Context:
 ```json
@@ -964,7 +964,7 @@ Actual:
 }
 ```
 
-### 015 PASS - forbidden capability give_medical_advice blocks Cantonese surface
+### 015 PASS - forbidden capability give_medical_advice blocks Traditional Chinese surface
 
 Context:
 ```json
@@ -1027,7 +1027,7 @@ Actual:
 }
 ```
 
-### 016 PASS - forbidden capability promise_treatment_result blocks Cantonese surface
+### 016 PASS - forbidden capability promise_treatment_result blocks Traditional Chinese surface
 
 Context:
 ```json
@@ -1090,7 +1090,7 @@ Actual:
 }
 ```
 
-### 017 PASS - forbidden capability diagnose blocks Cantonese surface
+### 017 PASS - forbidden capability diagnose blocks Traditional Chinese surface
 
 Context:
 ```json
@@ -1153,7 +1153,7 @@ Actual:
 }
 ```
 
-### 018 PASS - forbidden capability give_legal_advice blocks Cantonese surface
+### 018 PASS - forbidden capability give_legal_advice blocks Traditional Chinese surface
 
 Context:
 ```json
@@ -1216,7 +1216,7 @@ Actual:
 }
 ```
 
-### 019 PASS - forbidden capability give_financial_advice blocks Cantonese surface
+### 019 PASS - forbidden capability give_financial_advice blocks Traditional Chinese surface
 
 Context:
 ```json
@@ -1279,7 +1279,7 @@ Actual:
 }
 ```
 
-### 020 PASS - forbidden capability leak_pii blocks Cantonese surface
+### 020 PASS - forbidden capability leak_pii blocks Traditional Chinese surface
 
 Context:
 ```json

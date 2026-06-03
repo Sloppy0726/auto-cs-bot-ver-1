@@ -49,7 +49,7 @@ async function run() {
     intent: { primaryIntent: "booking" },
     now: new Date("2026-06-02T16:30:00.000Z")
   });
-  assert.equal(tonightQuery.date, "2026-06-03", "tonight should resolve using Hong Kong date from injected clock");
+  assert.equal(tonightQuery.date, "2026-06-03", "tonight should resolve using UTC+8 locale date from injected clock");
   assert.ok(adapterCalls.some((context) => context.modelRoute?.model), "draft adapter context should include modelRoute");
 
   assert.ok(pipeline.inbox.list().length >= 2, "staff inbox should collect held items");

@@ -1,6 +1,6 @@
 # Model Router ver 1.0
 
-Deterministic model selection for the Hong Kong AI Customer Support SaaS. It does not call model APIs; it only returns the provider/model choice and reasons.
+Deterministic model selection for the Traditional Chinese AI Customer Support Safety Framework. It does not call model APIs; it only returns the provider/model choice and reasons.
 
 ## Main API
 

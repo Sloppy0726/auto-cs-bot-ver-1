@@ -189,7 +189,7 @@ Actual:
   "textPreview": "草稿一：按已核准資料回覆，並由同事覆核後再發出。",
   "reasons": [
     "config.reviewIntents includes pricing",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -505,7 +505,7 @@ Actual:
   "textPreview": "草稿一：按已核准資料回覆，並由同事覆核後再發出。",
   "reasons": [
     "config.reviewIntents includes pricing",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -544,7 +544,7 @@ Actual:
   "textPreview": "草稿一：按已核准資料回覆，並由同事覆核後再發出。",
   "reasons": [
     "config.reviewIntents includes pricing",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -583,7 +583,7 @@ Actual:
   "textPreview": "草稿一：按已核准資料回覆，並由同事覆核後再發出。",
   "reasons": [
     "config.reviewIntents includes pricing",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -622,7 +622,7 @@ Actual:
   "textPreview": "草稿一：按已核准資料回覆，並由同事覆核後再發出。",
   "reasons": [
     "config.reviewIntents includes pricing",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -663,7 +663,7 @@ Actual:
   "reasons": [
     "knowledge.backendBound=true",
     "policyRef=deposit_required",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -704,7 +704,7 @@ Actual:
   "reasons": [
     "knowledge.backendBound=true",
     "policyRef=deposit_required",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -745,7 +745,7 @@ Actual:
   "reasons": [
     "knowledge.backendBound=true",
     "policyRef=deposit_required",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -786,7 +786,7 @@ Actual:
   "reasons": [
     "knowledge.backendBound=true",
     "policyRef=deposit_required",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -1409,7 +1409,7 @@ Actual:
   "textPreview": "草稿一：按已核准資料回覆，並由同事覆核後再發出。",
   "reasons": [
     "config.reviewIntents includes pricing",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -1448,7 +1448,7 @@ Actual:
   "textPreview": "草稿一：按已核准資料回覆，並由同事覆核後再發出。",
   "reasons": [
     "config.reviewIntents includes pricing",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -1487,7 +1487,7 @@ Actual:
   "textPreview": "草稿一：按已核准資料回覆，並由同事覆核後再發出。",
   "reasons": [
     "config.reviewIntents includes pricing",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -1526,7 +1526,7 @@ Actual:
   "textPreview": "草稿一：按已核准資料回覆，並由同事覆核後再發出。",
   "reasons": [
     "config.reviewIntents includes pricing",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -1567,7 +1567,7 @@ Actual:
   "reasons": [
     "knowledge.backendBound=true",
     "policyRef=deposit_required",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -1608,7 +1608,7 @@ Actual:
   "reasons": [
     "knowledge.backendBound=true",
     "policyRef=deposit_required",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -1649,7 +1649,7 @@ Actual:
   "reasons": [
     "knowledge.backendBound=true",
     "policyRef=deposit_required",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -1690,7 +1690,7 @@ Actual:
   "reasons": [
     "knowledge.backendBound=true",
     "policyRef=deposit_required",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -2313,7 +2313,7 @@ Actual:
   "textPreview": "草稿一：按已核准資料回覆，並由同事覆核後再發出。",
   "reasons": [
     "config.reviewIntents includes pricing",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -2352,7 +2352,7 @@ Actual:
   "textPreview": "草稿一：按已核准資料回覆，並由同事覆核後再發出。",
   "reasons": [
     "config.reviewIntents includes pricing",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -2391,7 +2391,7 @@ Actual:
   "textPreview": "草稿一：按已核准資料回覆，並由同事覆核後再發出。",
   "reasons": [
     "config.reviewIntents includes pricing",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -2430,7 +2430,7 @@ Actual:
   "textPreview": "草稿一：按已核准資料回覆，並由同事覆核後再發出。",
   "reasons": [
     "config.reviewIntents includes pricing",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -2471,7 +2471,7 @@ Actual:
   "reasons": [
     "knowledge.backendBound=true",
     "policyRef=deposit_required",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -2512,7 +2512,7 @@ Actual:
   "reasons": [
     "knowledge.backendBound=true",
     "policyRef=deposit_required",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -2553,7 +2553,7 @@ Actual:
   "reasons": [
     "knowledge.backendBound=true",
     "policyRef=deposit_required",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -2594,7 +2594,7 @@ Actual:
   "reasons": [
     "knowledge.backendBound=true",
     "policyRef=deposit_required",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -3217,7 +3217,7 @@ Actual:
   "textPreview": "草稿一：按已核准資料回覆，並由同事覆核後再發出。",
   "reasons": [
     "config.reviewIntents includes pricing",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -3256,7 +3256,7 @@ Actual:
   "textPreview": "草稿一：按已核准資料回覆，並由同事覆核後再發出。",
   "reasons": [
     "config.reviewIntents includes pricing",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -3295,7 +3295,7 @@ Actual:
   "textPreview": "草稿一：按已核准資料回覆，並由同事覆核後再發出。",
   "reasons": [
     "config.reviewIntents includes pricing",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -3334,7 +3334,7 @@ Actual:
   "textPreview": "草稿一：按已核准資料回覆，並由同事覆核後再發出。",
   "reasons": [
     "config.reviewIntents includes pricing",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -3375,7 +3375,7 @@ Actual:
   "reasons": [
     "knowledge.backendBound=true",
     "policyRef=deposit_required",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -3416,7 +3416,7 @@ Actual:
   "reasons": [
     "knowledge.backendBound=true",
     "policyRef=deposit_required",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -3457,7 +3457,7 @@ Actual:
   "reasons": [
     "knowledge.backendBound=true",
     "policyRef=deposit_required",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```
@@ -3498,7 +3498,7 @@ Actual:
   "reasons": [
     "knowledge.backendBound=true",
     "policyRef=deposit_required",
-    "staff_review: generated 1-2 Cantonese draft candidates"
+    "staff_review: generated 1-2 Traditional Chinese draft candidates"
   ]
 }
 ```

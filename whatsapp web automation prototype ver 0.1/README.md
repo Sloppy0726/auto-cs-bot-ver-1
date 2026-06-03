@@ -44,6 +44,14 @@ Useful env vars:
 | `WA_SCAN_UNREAD_ONLY` | `0` | Set `1` to process only chats that WhatsApp Web marks unread. |
 | `WA_VERBOSE_SCAN` | `0` | Set `1` to print scan heartbeat/debug lines. |
 | `WA_SEND_HELD_NOTICE` | `0` | Set `1` to send a generic staff-follow-up message for held replies. |
+| `WA_LLM_ADAPTER` | `local-stub` | Set `claude-api` to use a Claude API key for staff-review/handoff LLM drafts. Set `claude` for local Claude OAuth via Hermes credentials. `codex` remains available for Codex CLI tests. |
+| `ANTHROPIC_API_KEY` | empty | Claude API key used when `WA_LLM_ADAPTER=claude-api`. `CLAUDE_API_KEY` is also accepted as a local alias. |
+| `CLAUDE_API_MODEL` | route-selected | Optional fixed Claude model when `WA_LLM_ADAPTER=claude-api`; otherwise the model router can choose. |
+| `CLAUDE_API_MAX_TOKENS` | route/default | Optional output cap for one Claude API-key draft. |
+| `CLAUDE_OAUTH_MODEL` | `claude-opus-4-6` | Model passed to Anthropic Messages API when `WA_LLM_ADAPTER=claude`. |
+| `CLAUDE_OAUTH_MAX_TOKENS` | `700` | Output cap for one Claude OAuth draft. |
+| `CODEX_LLM_MODEL` | `gpt-5.4-mini` | Model passed to Codex CLI when `WA_LLM_ADAPTER=codex`. |
+| `CODEX_LLM_TIMEOUT_MS` | `90000` | Timeout for one Codex CLI model call. |
 | `WA_POLL_MS` | `3000` | Poll interval. |
 | `WA_PROFILE_DIR` | `.local/whatsapp-web-profile` | Browser profile for the WhatsApp Web login session. |
 | `TOKEN_USAGE_LOG` | `.local/token-usage.jsonl` | Per-chat estimated token usage log. |
@@ -52,7 +60,7 @@ Useful env vars:
 
 ```bash
 WA_TEST_CHAT="卜仔,May Test,Jack Test" \
-WA_BUSINESS_ID="solara_bazi" \
+WA_BUSINESS_ID="beauty_demo" \
 WA_SCAN_CHATS=1 \
 WA_SEND=1 \
 node "whatsapp web automation prototype ver 0.1/scripts/runWhatsAppWebPilot.js"
@@ -60,17 +68,41 @@ node "whatsapp web automation prototype ver 0.1/scripts/runWhatsAppWebPilot.js"
 
 Scan mode searches and opens each chat title in `WA_TEST_CHAT`. Keep the names exact. If `WA_ALLOW_ANY_CHAT=1` is explicitly set, it falls back to scanning visible chats near the top of the WhatsApp Web chat list.
 
+## Claude API-Key LLM Smoke Demo
+
+```bash
+WA_TEST_CHAT="卜仔" \
+WA_BUSINESS_ID="beauty_demo" \
+WA_SCAN_CHATS=1 \
+WA_LLM_ADAPTER=claude-api \
+ANTHROPIC_API_KEY="sk-ant-..." \
+WA_SEND=1 \
+node "whatsapp web automation prototype ver 0.1/scripts/runWhatsAppWebPilot.js"
+```
+
+This uses the Claude API key path and leaves the rest of the WhatsApp pilot flow unchanged.
+
+## Claude OAuth LLM Smoke Demo
+
+```bash
+WA_TEST_CHAT="卜仔" \
+WA_BUSINESS_ID="beauty_demo" \
+WA_SCAN_CHATS=1 \
+WA_LLM_ADAPTER=claude \
+CLAUDE_OAUTH_MODEL="claude-opus-4-6" \
+WA_SEND=1 \
+node "whatsapp web automation prototype ver 0.1/scripts/runWhatsAppWebPilot.js"
+```
+
+This uses the local Hermes Anthropic OAuth credential pool instead of an Anthropic API key. It is useful for validating that staff-review / handoff prompts can reach a real Claude model through subscription auth. It is still a local demo path, not a production WhatsApp setup.
+
 ## Good Test Messages
 
 For `beauty_demo`:
 
 - `你哋幾點開門？`
-
-For `solara_bazi`:
-
-- `詳細批同流年幾錢？`
-- `批八字需要咩資料？`
-- `你哋係咪24小時？`
+- `facial幾錢？`
+- `想book今晚個facial有冇位`
 
 For `restaurant_demo`:
 

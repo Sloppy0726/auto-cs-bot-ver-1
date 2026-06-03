@@ -8,7 +8,7 @@ const seed = require("../seed/hkSmeSeed");
 
 const seedCases = [
   {
-    name: "beauty: facial pricing in Cantonese",
+    name: "beauty: facial pricing in Traditional Chinese",
     businessId: "beauty_demo",
     input: "做完會唔會即刻見效？幾錢？有冇副作用？",
     expectBestMatchId: "beauty_pricing_facial",

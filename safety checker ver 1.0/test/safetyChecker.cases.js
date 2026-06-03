@@ -36,7 +36,7 @@ const forbiddenSurfaces = [
 ];
 
 for (const [capability, text] of forbiddenSurfaces) {
-  standardCases.push(forbidden(`forbidden capability ${capability} blocks Cantonese surface`, text, capability));
+  standardCases.push(forbidden(`forbidden capability ${capability} blocks Traditional Chinese surface`, text, capability));
 }
 
 const placeholderTexts = [

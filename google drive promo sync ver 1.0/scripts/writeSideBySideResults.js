@@ -40,7 +40,7 @@ const rows = standardCases.map((c) => {
 const out = path.join(__dirname, "..", "google-drive-promo-sync-side-by-side-results.md");
 writeReadableReport(out, {
   title: "Google Drive Promo Sync ver 1.0 - Readable Side-by-side Results",
-  description: "Each case compares promotion lookup expectations with active offers after Hong Kong time expiry checks.",
+  description: "Each case compares promotion lookup expectations with active offers after UTC+8 locale time expiry checks.",
   rows
 });
 console.log(`Wrote ${rows.length} readable rows to ${out}`);
