@@ -60,7 +60,7 @@ function createDraftAdapter({ client, model, onUsage }) {
 function createIntentAnalyzer({ client, model, onUsage }) {
   return async function claudeIntentAnalyzer(input = {}) {
     const callerSystem = [
-      "You are an intent and confidence analyzer for a Hong Kong SME customer-support bot.",
+      "You are an intent and confidence analyzer for an SME customer-support bot.",
       "The privacy gateway has already filtered the text. Do not answer the customer.",
       "Return JSON only, no markdown fences, no commentary. Choose primaryIntent from this exact list: " + VALID_INTENTS.join(", ") + ".",
       "Use confidence from 0.10 to 0.99. Be conservative when the customer is vague.",

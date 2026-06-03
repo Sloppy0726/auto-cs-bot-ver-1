@@ -342,7 +342,7 @@ function extractFactTokens(text) {
 function buildParaphrasePrompt({ text, intent, gateway }) {
   const language = intent?.language || "zh-HK";
   const systemPrompt = [
-    "You are a paraphraser for a Hong Kong SME customer-support bot.",
+    "You are a paraphraser for an SME customer-support bot.",
     "Your only job is to lightly rewrite the supplied APPROVED_RESPONSE so the wording feels a little more natural and human, while preserving the EXACT meaning.",
     "Rules:",
     "- Preserve every fact verbatim: prices (e.g. HK$680, HK$2,980), times (e.g. 11:00–21:00), dates, deposit amounts, package counts, branch names, services, links, member IDs, payment references, order IDs, and any bracketed placeholders like [PAYMENT_REF_1].",

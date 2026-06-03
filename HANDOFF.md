@@ -1908,4 +1908,47 @@ End of session addendum.
 
 ---
 
+## 26. Session Addendum — 2026-06-04 (OSS rebrand follow-up: live prompts)
+
+Cleans up three live LLM system prompts that the §24 OSS rebrand
+(`bb590a2`) missed. These reach real Claude/OpenAI calls in production, so
+the customer-facing "Hong Kong SME" framing was leaking into prompts that
+the README claims are positioned around "Traditional Chinese / English SMEs".
+
+### 26.1 What changed
+
+| File | Line | Was | Now |
+|---|---|---|---|
+| [AI draft engine ver 1.0/src/draftEngine.js](AI draft engine ver 1.0/src/draftEngine.js) | 345 | `"You are a paraphraser for a Hong Kong SME customer-support bot."` | `"You are a paraphraser for an SME customer-support bot."` |
+| [end-to-end pipeline ver 1.0/src/claudeAdapter.js](end-to-end pipeline ver 1.0/src/claudeAdapter.js) | 63 | `"You are an intent and confidence analyzer for a Hong Kong SME customer-support bot."` | `"…for an SME customer-support bot."` |
+| [end-to-end pipeline ver 1.0/src/openaiAdapter.js](end-to-end pipeline ver 1.0/src/openaiAdapter.js) | 91 | (same) | (same) |
+
+Pattern matches `bb590a2`'s `TONE_PROFILES` rewrite — drop "Hong Kong"
+entirely rather than substituting "Traditional Chinese". The README uses
+"for SMEs" without a regional qualifier, so this aligns.
+
+### 26.2 What was deliberately NOT changed
+
+- `whatsapp-web-test-bridge/src/staffReplyClassifier.js:11,26` — comments
+  `// Cantonese / Chinese` label regex blocks containing genuinely
+  Cantonese-specific phrases (`嗰日`, `唔好意思`, `已book`, `冇位`). A Mandarin
+  Traditional-Chinese speaker would write `不好意思`, not `唔好意思`. The label is
+  descriptively accurate; relabeling would actually be less precise.
+- `end-to-end pipeline ver 1.0/test/pipeline.test.js:54` — assertion message
+  `"tonight should resolve using Hong Kong date from injected clock"`. The
+  test verifies HKT-timezone behavior (the live tenant's timezone). The
+  phrasing is accurate, not stale positioning.
+
+### 26.3 Verification
+
+- No test asserts against the literal prompt strings — confirmed via
+  `grep -rn "Hong Kong SME\|paraphraser for" --include="*.test.js"`.
+- Full suite still green: 3,088 tests across 43 runners.
+- Live behavior unchanged: the prompts now drop one qualifier; rules,
+  citations, and outputs are unaffected.
+
+End of session addendum.
+
+---
+
 End of handoff.
