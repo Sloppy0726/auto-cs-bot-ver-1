@@ -1,8 +1,17 @@
 # Handoff - Hong Kong AI Customer Support SaaS
 
-Last verified: 2026-06-01 HKT (doc sync against repo; see §18, §19 for per-resource model design, and §20 for Phases 2–6 landing).
+Last verified: 2026-06-03 HKT (per-resource model done through §23; OSS readiness package logged in §24; live-smoke of both LLM adapters logged in §25).
 
 This is the project map for the next session. Read this before editing code.
+
+> **Tone note for readers landing here from the OSS docs.** The
+> customer-facing positioning was rebranded to "Privacy-first Traditional
+> Chinese / English AI customer-support safety framework" in §24 (OSS PR #3).
+> This internal handoff log intentionally keeps the original "Hong Kong /
+> Cantonese" framing because the project history, decisions, and live tenant
+> (`prince-snooker` / 王子桌球) are HK-specific and the framing is load-bearing
+> context. For public positioning, see [README.md](README.md). For internal
+> session history, this file.
 
 ---
 
@@ -1890,9 +1899,10 @@ override in env mode, and the helpful "no creds available" error.
 - **Both adapters are now OSS-ready.** Codex needs Codex.app + a logged-in
   CLI; Claude OAuth needs either `claude setup-token` or the internal
   Hermes file.
-- §24.6 items 3 (live-smoke) and item that read "decide adapter policy" are
-  now closed. Remaining §24.6 items: 2 (module table — done), 4 (HANDOFF
-  rebranding policy), 5 (§22.5 wait-and-see).
+- §24.6 status after this session: items 1, 2, 3, and 4 are done (1 + 2 in
+  commit `1bcc8f9`, 3 in commit `59c5ff9`, 4 via the tone note at the top of
+  this file). Only §22.5 wait-and-see items remain — no signal yet, do not
+  pull unless usability data shows up.
 
 End of session addendum.
 
