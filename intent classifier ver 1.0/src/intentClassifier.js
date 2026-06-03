@@ -10,6 +10,7 @@ const VALID_INTENTS = new Set([
   "membership",
   "payment",
   "order_status",
+  "package_status",
   "complaint",
   "sensitive_health",
   "child_data",
@@ -20,6 +21,18 @@ const VALID_INTENTS = new Set([
 const DEFAULT_CONFIDENCE_THRESHOLD = 0.68;
 
 const intentRules = [
+  {
+    intent: "complaint",
+    confidence: 0.94,
+    reason: "Matched complaint keyword",
+    pattern: /投訴|退款|退錢|唔滿意|嬲|chargeback|refund|complaint|angry|not happy|bad service|no reply|didn.?t reply|overcharged|payment not found|paid but you said|paid but.*not found|你之前話可以|之前話得|(?:package|套票).*(?:延期|extend|transfer|轉讓)|(?:延期|extend|transfer|轉讓).*(?:package|套票)/i
+  },
+  {
+    intent: "package_status",
+    confidence: 0.93,
+    reason: "Matched package status keyword",
+    pattern: /(?:package|套票).*(?:仲有幾多次|剩幾多次|剩餘|幾時到期|到期|balance|remaining sessions?|sessions?.*remaining|sessions? remaining|expiry|expire)|(?:仲有幾多次|剩幾多次|剩餘|幾時到期|到期|balance|remaining sessions?|sessions?.*remaining|sessions? remaining|expiry|expire).*(?:package|套票)/i
+  },
   {
     intent: "pricing",
     confidence: 0.9,
@@ -45,6 +58,12 @@ const intentRules = [
     pattern: /地址|邊度|位置|分店|旺角|銅鑼灣|尖沙咀|幾點開|幾點收|營業|開門|收工|邊間公司|邊間店|店名|公司名|間舖|間鋪|舖名|鋪名|叫咩|brand|business name|shop name|store name|hours|location|address|branch|open|close|closing|opening|directions|nearest mtr|where are you|地鐵|港鐵|出口|mtr/i
   },
   {
+    intent: "service_info",
+    confidence: 0.89,
+    reason: "Matched delivery or reading format keyword",
+    pattern: /(?:付款後|俾錢後|畀錢後).*(?:幾時有|幾耐|交付|即日|文字|語音|通話)|(?:幾時有|幾耐|交付|即日|文字|語音|通話).*(?:詳細批|流年|大運|八字|付款後|俾錢後|畀錢後)/i
+  },
+  {
     intent: "aftercare",
     confidence: 0.86,
     reason: "Matched aftercare keyword",
@@ -60,7 +79,7 @@ const intentRules = [
     intent: "payment",
     confidence: 0.84,
     reason: "Matched payment keyword",
-    pattern: /PayMe|FPS|轉數快|付款|入數|未收到款|信用卡|credit card|visa|mastercard|cash|bank transfer|deposit|overcharged|charged twice|pay|payment|octopus|八達通/i
+    pattern: /PayMe|FPS|轉數快|Alipay|支付寶|付款|收錢|點收錢|入數|未收到款|信用卡|credit card|visa|mastercard|cash|bank transfer|deposit|overcharged|charged twice|pay|payment|octopus|八達通/i
   },
   {
     intent: "order_status",
@@ -78,7 +97,7 @@ const intentRules = [
     intent: "sensitive_health",
     confidence: 0.95,
     reason: "Matched health-sensitive keyword",
-    pattern: /濕疹|敏感|皮膚病|懷孕|傷口|紅腫|痛|藥|醫生|診斷|病歷|eczema|allergy|pregnant|pregnancy|wound|rash|swelling|side effects?|medical|medicine|medication|prescription|doctor|diagnosis|breastfeeding/i
+    pattern: /濕疹|敏感|皮膚病|健康|病痛|壽命|死亡|生死|懷孕|傷口|紅腫|痛|藥|醫生|診斷|病歷|eczema|allergy|pregnant|pregnancy|wound|rash|swelling|side effects?|medical|medicine|medication|prescription|doctor|diagnosis|breastfeeding/i
   },
   {
     intent: "child_data",
@@ -96,7 +115,7 @@ const intentRules = [
     intent: "service_info",
     confidence: 0.76,
     reason: "Matched service information keyword",
-    pattern: /療程|服務|做咩|包括|需時|效果|推介|推薦|建議|介紹|有冇list|有無list|list|menu|recommend|recommendation|underarm|腋下|laser|facial|HIFU|脫毛|nail|spa|service|treatment/i
+    pattern: /八字|命理|算命|流年|大運|詳細批|問事|問問題|有咩可以問|可以問咩|問咩|出生時間|出生地|唔準確|不準確|分鐘|即日|交付|幾時有|文字|語音|通話|法律|官司|合約|犯法|告人|療程|服務|做咩|包括|需時|效果|推介|推薦|建議|介紹|有冇list|有無list|list|menu|recommend|recommendation|underarm|腋下|laser|facial|HIFU|脫毛|nail|spa|service|treatment|bazi|four pillars|legal|lawsuit|contract/i
   }
 ];
 
@@ -151,6 +170,7 @@ function classifyDeterministically(gatewayOutput) {
   const secondaryIntents = sorted
     .slice(1)
     .map((rule) => rule.intent)
+    .filter((intent) => primary?.intent !== "package_status")
     .filter((intent, index, list) => list.indexOf(intent) === index);
 
   const riskFromGateway = inferRiskLevel(gatewayOutput);
@@ -295,6 +315,7 @@ function summarizeGoal(intent, text) {
     membership: "Customer asks about membership, points, or reward eligibility.",
     payment: "Customer asks about payment methods or payment handling.",
     order_status: "Customer asks about order, delivery, or status.",
+    package_status: "Customer asks about prepaid package sessions, balance, or expiry.",
     complaint: "Customer has a complaint, refund request, or dispute.",
     sensitive_health: "Customer asks a health-sensitive question.",
     child_data: "Customer mentions child-related personal data.",

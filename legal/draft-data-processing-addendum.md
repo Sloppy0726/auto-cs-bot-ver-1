@@ -2,7 +2,7 @@
 
 Last updated: 2026-05-12
 
-Draft status: This Data Processing Addendum (`DPA`) is a working draft for B2B customers of the Hong Kong AI Customer Support SaaS. It is not legal advice, not final contract text, and should not be used with customers until placeholders are replaced and legal review is complete.
+Draft status: This Data Processing Addendum (`DPA`) is a working draft for B2B customers of the Traditional Chinese AI Customer Support Safety Framework. It is not legal advice, not final contract text, and should not be used with customers until placeholders are replaced and legal review is complete.
 
 ## 1. Parties and Role
 
@@ -87,7 +87,7 @@ The Provider should require subprocessors to protect personal data at a level ap
 
 ## 9. Cross-Border Transfers
 
-Personal data may be processed outside Hong Kong depending on hosting, AI providers, messaging platforms, document providers, and other subprocessors.
+Personal data may be processed outside the target locale depending on hosting, AI providers, messaging platforms, document providers, and other subprocessors.
 
 Before production launch, the Provider should disclose the expected processing regions and any applicable safeguards or contractual protections.
 

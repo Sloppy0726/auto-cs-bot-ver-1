@@ -1,6 +1,6 @@
 # Google Drive Promo Sync ver 1.0 - Readable Side-by-side Results
 
-Each case compares promotion lookup expectations with active offers after Hong Kong time expiry checks.
+Each case compares promotion lookup expectations with active offers after UTC+8 locale time expiry checks.
 
 Generated at: 2026-05-09T13:31:08.318Z
 Total rows: 100
@@ -11,60 +11,60 @@ Failed: 0
 
 | # | Status | Case | Key result |
 |---:|---|---|---|
-| 1 | PASS | active small-face promotion matches in HK time | 小顏管理五月體驗優惠 @ 2026-05-09 |
-| 2 | PASS | expired promotion does not match after HK expiry | no match @ 2026-06-01 |
+| 1 | PASS | active small-face promotion matches in locale time | 小顏管理五月體驗優惠 @ 2026-05-09 |
+| 2 | PASS | expired promotion does not match after locale expiry | no match @ 2026-06-01 |
 | 3 | PASS | wrong business does not match beauty promotion | no match @ 2026-05-09 |
 | 4 | PASS | IG shop SF locker promotion matches shipping words | 五月順豐智能櫃免運 @ 2026-05-09 |
-| 5 | PASS | beauty promo before HK May promo start: 小顏項目有冇優惠？ | no match @ 2026-04-30 |
-| 6 | PASS | beauty promo exact HK May start boundary: 小顏項目有冇優惠？ | 小顏管理五月體驗優惠 @ 2026-05-01 |
+| 5 | PASS | beauty promo before locale May promo start: 小顏項目有冇優惠？ | no match @ 2026-04-30 |
+| 6 | PASS | beauty promo exact locale May start boundary: 小顏項目有冇優惠？ | 小顏管理五月體驗優惠 @ 2026-05-01 |
 | 7 | PASS | beauty promo mid campaign: 小顏項目有冇優惠？ | 小顏管理五月體驗優惠 @ 2026-05-15 |
-| 8 | PASS | beauty promo last HK campaign second: 小顏項目有冇優惠？ | 小顏管理五月體驗優惠 @ 2026-05-31 |
-| 9 | PASS | beauty promo after HK campaign expiry: 小顏項目有冇優惠？ | no match @ 2026-06-01 |
-| 10 | PASS | beauty promo before HK May promo start: 面部輪廓收費點計？ | no match @ 2026-04-30 |
-| 11 | PASS | beauty promo exact HK May start boundary: 面部輪廓收費點計？ | 小顏管理五月體驗優惠 @ 2026-05-01 |
+| 8 | PASS | beauty promo last locale campaign second: 小顏項目有冇優惠？ | 小顏管理五月體驗優惠 @ 2026-05-31 |
+| 9 | PASS | beauty promo after locale campaign expiry: 小顏項目有冇優惠？ | no match @ 2026-06-01 |
+| 10 | PASS | beauty promo before locale May promo start: 面部輪廓收費點計？ | no match @ 2026-04-30 |
+| 11 | PASS | beauty promo exact locale May start boundary: 面部輪廓收費點計？ | 小顏管理五月體驗優惠 @ 2026-05-01 |
 | 12 | PASS | beauty promo mid campaign: 面部輪廓收費點計？ | 小顏管理五月體驗優惠 @ 2026-05-15 |
-| 13 | PASS | beauty promo last HK campaign second: 面部輪廓收費點計？ | 小顏管理五月體驗優惠 @ 2026-05-31 |
-| 14 | PASS | beauty promo after HK campaign expiry: 面部輪廓收費點計？ | no match @ 2026-06-01 |
-| 15 | PASS | beauty promo before HK May promo start: 五月小顏管理幾錢？ | no match @ 2026-04-30 |
-| 16 | PASS | beauty promo exact HK May start boundary: 五月小顏管理幾錢？ | 小顏管理五月體驗優惠 @ 2026-05-01 |
+| 13 | PASS | beauty promo last locale campaign second: 面部輪廓收費點計？ | 小顏管理五月體驗優惠 @ 2026-05-31 |
+| 14 | PASS | beauty promo after locale campaign expiry: 面部輪廓收費點計？ | no match @ 2026-06-01 |
+| 15 | PASS | beauty promo before locale May promo start: 五月小顏管理幾錢？ | no match @ 2026-04-30 |
+| 16 | PASS | beauty promo exact locale May start boundary: 五月小顏管理幾錢？ | 小顏管理五月體驗優惠 @ 2026-05-01 |
 | 17 | PASS | beauty promo mid campaign: 五月小顏管理幾錢？ | 小顏管理五月體驗優惠 @ 2026-05-15 |
-| 18 | PASS | beauty promo last HK campaign second: 五月小顏管理幾錢？ | 小顏管理五月體驗優惠 @ 2026-05-31 |
-| 19 | PASS | beauty promo after HK campaign expiry: 五月小顏管理幾錢？ | no match @ 2026-06-01 |
-| 20 | PASS | beauty promo before HK May promo start: 浮腫護理有trial嗎？ | no match @ 2026-04-30 |
-| 21 | PASS | beauty promo exact HK May start boundary: 浮腫護理有trial嗎？ | 小顏管理五月體驗優惠 @ 2026-05-01 |
+| 18 | PASS | beauty promo last locale campaign second: 五月小顏管理幾錢？ | 小顏管理五月體驗優惠 @ 2026-05-31 |
+| 19 | PASS | beauty promo after locale campaign expiry: 五月小顏管理幾錢？ | no match @ 2026-06-01 |
+| 20 | PASS | beauty promo before locale May promo start: 浮腫護理有trial嗎？ | no match @ 2026-04-30 |
+| 21 | PASS | beauty promo exact locale May start boundary: 浮腫護理有trial嗎？ | 小顏管理五月體驗優惠 @ 2026-05-01 |
 | 22 | PASS | beauty promo mid campaign: 浮腫護理有trial嗎？ | 小顏管理五月體驗優惠 @ 2026-05-15 |
-| 23 | PASS | beauty promo last HK campaign second: 浮腫護理有trial嗎？ | 小顏管理五月體驗優惠 @ 2026-05-31 |
-| 24 | PASS | beauty promo after HK campaign expiry: 浮腫護理有trial嗎？ | no match @ 2026-06-01 |
-| 25 | PASS | beauty promo before HK May promo start: 想問小顏優惠詳情 | no match @ 2026-04-30 |
-| 26 | PASS | beauty promo exact HK May start boundary: 想問小顏優惠詳情 | 小顏管理五月體驗優惠 @ 2026-05-01 |
+| 23 | PASS | beauty promo last locale campaign second: 浮腫護理有trial嗎？ | 小顏管理五月體驗優惠 @ 2026-05-31 |
+| 24 | PASS | beauty promo after locale campaign expiry: 浮腫護理有trial嗎？ | no match @ 2026-06-01 |
+| 25 | PASS | beauty promo before locale May promo start: 想問小顏優惠詳情 | no match @ 2026-04-30 |
+| 26 | PASS | beauty promo exact locale May start boundary: 想問小顏優惠詳情 | 小顏管理五月體驗優惠 @ 2026-05-01 |
 | 27 | PASS | beauty promo mid campaign: 想問小顏優惠詳情 | 小顏管理五月體驗優惠 @ 2026-05-15 |
-| 28 | PASS | beauty promo last HK campaign second: 想問小顏優惠詳情 | 小顏管理五月體驗優惠 @ 2026-05-31 |
-| 29 | PASS | beauty promo after HK campaign expiry: 想問小顏優惠詳情 | no match @ 2026-06-01 |
-| 30 | PASS | igshop promo before HK May promo start: 順豐包郵嗎？ | no match @ 2026-04-30 |
-| 31 | PASS | igshop promo exact HK May start boundary: 順豐包郵嗎？ | 五月順豐智能櫃免運 @ 2026-05-01 |
+| 28 | PASS | beauty promo last locale campaign second: 想問小顏優惠詳情 | 小顏管理五月體驗優惠 @ 2026-05-31 |
+| 29 | PASS | beauty promo after locale campaign expiry: 想問小顏優惠詳情 | no match @ 2026-06-01 |
+| 30 | PASS | igshop promo before locale May promo start: 順豐包郵嗎？ | no match @ 2026-04-30 |
+| 31 | PASS | igshop promo exact locale May start boundary: 順豐包郵嗎？ | 五月順豐智能櫃免運 @ 2026-05-01 |
 | 32 | PASS | igshop promo mid campaign: 順豐包郵嗎？ | 五月順豐智能櫃免運 @ 2026-05-15 |
-| 33 | PASS | igshop promo last HK campaign second: 順豐包郵嗎？ | 五月順豐智能櫃免運 @ 2026-05-31 |
-| 34 | PASS | igshop promo after HK campaign expiry: 順豐包郵嗎？ | no match @ 2026-06-01 |
-| 35 | PASS | igshop promo before HK May promo start: 運費點計？ | no match @ 2026-04-30 |
-| 36 | PASS | igshop promo exact HK May start boundary: 運費點計？ | 五月順豐智能櫃免運 @ 2026-05-01 |
+| 33 | PASS | igshop promo last locale campaign second: 順豐包郵嗎？ | 五月順豐智能櫃免運 @ 2026-05-31 |
+| 34 | PASS | igshop promo after locale campaign expiry: 順豐包郵嗎？ | no match @ 2026-06-01 |
+| 35 | PASS | igshop promo before locale May promo start: 運費點計？ | no match @ 2026-04-30 |
+| 36 | PASS | igshop promo exact locale May start boundary: 運費點計？ | 五月順豐智能櫃免運 @ 2026-05-01 |
 | 37 | PASS | igshop promo mid campaign: 運費點計？ | 五月順豐智能櫃免運 @ 2026-05-15 |
-| 38 | PASS | igshop promo last HK campaign second: 運費點計？ | 五月順豐智能櫃免運 @ 2026-05-31 |
-| 39 | PASS | igshop promo after HK campaign expiry: 運費點計？ | no match @ 2026-06-01 |
-| 40 | PASS | igshop promo before HK May promo start: sf locker free shipping? | no match @ 2026-04-30 |
-| 41 | PASS | igshop promo exact HK May start boundary: sf locker free shipping? | 五月順豐智能櫃免運 @ 2026-05-01 |
+| 38 | PASS | igshop promo last locale campaign second: 運費點計？ | 五月順豐智能櫃免運 @ 2026-05-31 |
+| 39 | PASS | igshop promo after locale campaign expiry: 運費點計？ | no match @ 2026-06-01 |
+| 40 | PASS | igshop promo before locale May promo start: sf locker free shipping? | no match @ 2026-04-30 |
+| 41 | PASS | igshop promo exact locale May start boundary: sf locker free shipping? | 五月順豐智能櫃免運 @ 2026-05-01 |
 | 42 | PASS | igshop promo mid campaign: sf locker free shipping? | 五月順豐智能櫃免運 @ 2026-05-15 |
-| 43 | PASS | igshop promo last HK campaign second: sf locker free shipping? | 五月順豐智能櫃免運 @ 2026-05-31 |
-| 44 | PASS | igshop promo after HK campaign expiry: sf locker free shipping? | no match @ 2026-06-01 |
-| 45 | PASS | igshop promo before HK May promo start: 五月免運有冇？ | no match @ 2026-04-30 |
-| 46 | PASS | igshop promo exact HK May start boundary: 五月免運有冇？ | 五月順豐智能櫃免運 @ 2026-05-01 |
+| 43 | PASS | igshop promo last locale campaign second: sf locker free shipping? | 五月順豐智能櫃免運 @ 2026-05-31 |
+| 44 | PASS | igshop promo after locale campaign expiry: sf locker free shipping? | no match @ 2026-06-01 |
+| 45 | PASS | igshop promo before locale May promo start: 五月免運有冇？ | no match @ 2026-04-30 |
+| 46 | PASS | igshop promo exact locale May start boundary: 五月免運有冇？ | 五月順豐智能櫃免運 @ 2026-05-01 |
 | 47 | PASS | igshop promo mid campaign: 五月免運有冇？ | 五月順豐智能櫃免運 @ 2026-05-15 |
-| 48 | PASS | igshop promo last HK campaign second: 五月免運有冇？ | 五月順豐智能櫃免運 @ 2026-05-31 |
-| 49 | PASS | igshop promo after HK campaign expiry: 五月免運有冇？ | no match @ 2026-06-01 |
-| 50 | PASS | igshop promo before HK May promo start: 買滿幾多包順豐？ | no match @ 2026-04-30 |
-| 51 | PASS | igshop promo exact HK May start boundary: 買滿幾多包順豐？ | 五月順豐智能櫃免運 @ 2026-05-01 |
+| 48 | PASS | igshop promo last locale campaign second: 五月免運有冇？ | 五月順豐智能櫃免運 @ 2026-05-31 |
+| 49 | PASS | igshop promo after locale campaign expiry: 五月免運有冇？ | no match @ 2026-06-01 |
+| 50 | PASS | igshop promo before locale May promo start: 買滿幾多包順豐？ | no match @ 2026-04-30 |
+| 51 | PASS | igshop promo exact locale May start boundary: 買滿幾多包順豐？ | 五月順豐智能櫃免運 @ 2026-05-01 |
 | 52 | PASS | igshop promo mid campaign: 買滿幾多包順豐？ | 五月順豐智能櫃免運 @ 2026-05-15 |
-| 53 | PASS | igshop promo last HK campaign second: 買滿幾多包順豐？ | 五月順豐智能櫃免運 @ 2026-05-31 |
-| 54 | PASS | igshop promo after HK campaign expiry: 買滿幾多包順豐？ | no match @ 2026-06-01 |
+| 53 | PASS | igshop promo last locale campaign second: 買滿幾多包順豐？ | 五月順豐智能櫃免運 @ 2026-05-31 |
+| 54 | PASS | igshop promo after locale campaign expiry: 買滿幾多包順豐？ | no match @ 2026-06-01 |
 | 55 | PASS | non-matching promo context beauty_demo: 幾點開門？ at 2026-04-30T15:30:00.000Z | no match @ 2026-04-30 |
 | 56 | PASS | non-matching promo context beauty_demo: 幾點開門？ at 2026-04-30T16:00:00.000Z | no match @ 2026-05-01 |
 | 57 | PASS | non-matching promo context beauty_demo: 幾點開門？ at 2026-05-15T04:00:00.000Z | no match @ 2026-05-15 |
@@ -114,7 +114,7 @@ Failed: 0
 
 ## Details
 
-### 001 PASS - active small-face promotion matches in HK time
+### 001 PASS - active small-face promotion matches in locale time
 
 Context:
 ```json
@@ -151,7 +151,7 @@ Actual:
 }
 ```
 
-### 002 PASS - expired promotion does not match after HK expiry
+### 002 PASS - expired promotion does not match after locale expiry
 
 Context:
 ```json
@@ -181,7 +181,7 @@ Actual:
   "checkedDateHk": "2026-06-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -216,7 +216,7 @@ Actual:
   "checkedDateHk": "2026-05-09",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -258,7 +258,7 @@ Actual:
 }
 ```
 
-### 005 PASS - beauty promo before HK May promo start: 小顏項目有冇優惠？
+### 005 PASS - beauty promo before locale May promo start: 小顏項目有冇優惠？
 
 Context:
 ```json
@@ -288,12 +288,12 @@ Actual:
   "checkedDateHk": "2026-04-30",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 006 PASS - beauty promo exact HK May start boundary: 小顏項目有冇優惠？
+### 006 PASS - beauty promo exact locale May start boundary: 小顏項目有冇優惠？
 
 Context:
 ```json
@@ -367,7 +367,7 @@ Actual:
 }
 ```
 
-### 008 PASS - beauty promo last HK campaign second: 小顏項目有冇優惠？
+### 008 PASS - beauty promo last locale campaign second: 小顏項目有冇優惠？
 
 Context:
 ```json
@@ -404,7 +404,7 @@ Actual:
 }
 ```
 
-### 009 PASS - beauty promo after HK campaign expiry: 小顏項目有冇優惠？
+### 009 PASS - beauty promo after locale campaign expiry: 小顏項目有冇優惠？
 
 Context:
 ```json
@@ -434,12 +434,12 @@ Actual:
   "checkedDateHk": "2026-06-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 010 PASS - beauty promo before HK May promo start: 面部輪廓收費點計？
+### 010 PASS - beauty promo before locale May promo start: 面部輪廓收費點計？
 
 Context:
 ```json
@@ -469,12 +469,12 @@ Actual:
   "checkedDateHk": "2026-04-30",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 011 PASS - beauty promo exact HK May start boundary: 面部輪廓收費點計？
+### 011 PASS - beauty promo exact locale May start boundary: 面部輪廓收費點計？
 
 Context:
 ```json
@@ -548,7 +548,7 @@ Actual:
 }
 ```
 
-### 013 PASS - beauty promo last HK campaign second: 面部輪廓收費點計？
+### 013 PASS - beauty promo last locale campaign second: 面部輪廓收費點計？
 
 Context:
 ```json
@@ -585,7 +585,7 @@ Actual:
 }
 ```
 
-### 014 PASS - beauty promo after HK campaign expiry: 面部輪廓收費點計？
+### 014 PASS - beauty promo after locale campaign expiry: 面部輪廓收費點計？
 
 Context:
 ```json
@@ -615,12 +615,12 @@ Actual:
   "checkedDateHk": "2026-06-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 015 PASS - beauty promo before HK May promo start: 五月小顏管理幾錢？
+### 015 PASS - beauty promo before locale May promo start: 五月小顏管理幾錢？
 
 Context:
 ```json
@@ -650,12 +650,12 @@ Actual:
   "checkedDateHk": "2026-04-30",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 016 PASS - beauty promo exact HK May start boundary: 五月小顏管理幾錢？
+### 016 PASS - beauty promo exact locale May start boundary: 五月小顏管理幾錢？
 
 Context:
 ```json
@@ -729,7 +729,7 @@ Actual:
 }
 ```
 
-### 018 PASS - beauty promo last HK campaign second: 五月小顏管理幾錢？
+### 018 PASS - beauty promo last locale campaign second: 五月小顏管理幾錢？
 
 Context:
 ```json
@@ -766,7 +766,7 @@ Actual:
 }
 ```
 
-### 019 PASS - beauty promo after HK campaign expiry: 五月小顏管理幾錢？
+### 019 PASS - beauty promo after locale campaign expiry: 五月小顏管理幾錢？
 
 Context:
 ```json
@@ -796,12 +796,12 @@ Actual:
   "checkedDateHk": "2026-06-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 020 PASS - beauty promo before HK May promo start: 浮腫護理有trial嗎？
+### 020 PASS - beauty promo before locale May promo start: 浮腫護理有trial嗎？
 
 Context:
 ```json
@@ -831,12 +831,12 @@ Actual:
   "checkedDateHk": "2026-04-30",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 021 PASS - beauty promo exact HK May start boundary: 浮腫護理有trial嗎？
+### 021 PASS - beauty promo exact locale May start boundary: 浮腫護理有trial嗎？
 
 Context:
 ```json
@@ -910,7 +910,7 @@ Actual:
 }
 ```
 
-### 023 PASS - beauty promo last HK campaign second: 浮腫護理有trial嗎？
+### 023 PASS - beauty promo last locale campaign second: 浮腫護理有trial嗎？
 
 Context:
 ```json
@@ -947,7 +947,7 @@ Actual:
 }
 ```
 
-### 024 PASS - beauty promo after HK campaign expiry: 浮腫護理有trial嗎？
+### 024 PASS - beauty promo after locale campaign expiry: 浮腫護理有trial嗎？
 
 Context:
 ```json
@@ -977,12 +977,12 @@ Actual:
   "checkedDateHk": "2026-06-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 025 PASS - beauty promo before HK May promo start: 想問小顏優惠詳情
+### 025 PASS - beauty promo before locale May promo start: 想問小顏優惠詳情
 
 Context:
 ```json
@@ -1012,12 +1012,12 @@ Actual:
   "checkedDateHk": "2026-04-30",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 026 PASS - beauty promo exact HK May start boundary: 想問小顏優惠詳情
+### 026 PASS - beauty promo exact locale May start boundary: 想問小顏優惠詳情
 
 Context:
 ```json
@@ -1091,7 +1091,7 @@ Actual:
 }
 ```
 
-### 028 PASS - beauty promo last HK campaign second: 想問小顏優惠詳情
+### 028 PASS - beauty promo last locale campaign second: 想問小顏優惠詳情
 
 Context:
 ```json
@@ -1128,7 +1128,7 @@ Actual:
 }
 ```
 
-### 029 PASS - beauty promo after HK campaign expiry: 想問小顏優惠詳情
+### 029 PASS - beauty promo after locale campaign expiry: 想問小顏優惠詳情
 
 Context:
 ```json
@@ -1158,12 +1158,12 @@ Actual:
   "checkedDateHk": "2026-06-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 030 PASS - igshop promo before HK May promo start: 順豐包郵嗎？
+### 030 PASS - igshop promo before locale May promo start: 順豐包郵嗎？
 
 Context:
 ```json
@@ -1193,12 +1193,12 @@ Actual:
   "checkedDateHk": "2026-04-30",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 031 PASS - igshop promo exact HK May start boundary: 順豐包郵嗎？
+### 031 PASS - igshop promo exact locale May start boundary: 順豐包郵嗎？
 
 Context:
 ```json
@@ -1272,7 +1272,7 @@ Actual:
 }
 ```
 
-### 033 PASS - igshop promo last HK campaign second: 順豐包郵嗎？
+### 033 PASS - igshop promo last locale campaign second: 順豐包郵嗎？
 
 Context:
 ```json
@@ -1309,7 +1309,7 @@ Actual:
 }
 ```
 
-### 034 PASS - igshop promo after HK campaign expiry: 順豐包郵嗎？
+### 034 PASS - igshop promo after locale campaign expiry: 順豐包郵嗎？
 
 Context:
 ```json
@@ -1339,12 +1339,12 @@ Actual:
   "checkedDateHk": "2026-06-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 035 PASS - igshop promo before HK May promo start: 運費點計？
+### 035 PASS - igshop promo before locale May promo start: 運費點計？
 
 Context:
 ```json
@@ -1374,12 +1374,12 @@ Actual:
   "checkedDateHk": "2026-04-30",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 036 PASS - igshop promo exact HK May start boundary: 運費點計？
+### 036 PASS - igshop promo exact locale May start boundary: 運費點計？
 
 Context:
 ```json
@@ -1453,7 +1453,7 @@ Actual:
 }
 ```
 
-### 038 PASS - igshop promo last HK campaign second: 運費點計？
+### 038 PASS - igshop promo last locale campaign second: 運費點計？
 
 Context:
 ```json
@@ -1490,7 +1490,7 @@ Actual:
 }
 ```
 
-### 039 PASS - igshop promo after HK campaign expiry: 運費點計？
+### 039 PASS - igshop promo after locale campaign expiry: 運費點計？
 
 Context:
 ```json
@@ -1520,12 +1520,12 @@ Actual:
   "checkedDateHk": "2026-06-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 040 PASS - igshop promo before HK May promo start: sf locker free shipping?
+### 040 PASS - igshop promo before locale May promo start: sf locker free shipping?
 
 Context:
 ```json
@@ -1555,12 +1555,12 @@ Actual:
   "checkedDateHk": "2026-04-30",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 041 PASS - igshop promo exact HK May start boundary: sf locker free shipping?
+### 041 PASS - igshop promo exact locale May start boundary: sf locker free shipping?
 
 Context:
 ```json
@@ -1634,7 +1634,7 @@ Actual:
 }
 ```
 
-### 043 PASS - igshop promo last HK campaign second: sf locker free shipping?
+### 043 PASS - igshop promo last locale campaign second: sf locker free shipping?
 
 Context:
 ```json
@@ -1671,7 +1671,7 @@ Actual:
 }
 ```
 
-### 044 PASS - igshop promo after HK campaign expiry: sf locker free shipping?
+### 044 PASS - igshop promo after locale campaign expiry: sf locker free shipping?
 
 Context:
 ```json
@@ -1701,12 +1701,12 @@ Actual:
   "checkedDateHk": "2026-06-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 045 PASS - igshop promo before HK May promo start: 五月免運有冇？
+### 045 PASS - igshop promo before locale May promo start: 五月免運有冇？
 
 Context:
 ```json
@@ -1736,12 +1736,12 @@ Actual:
   "checkedDateHk": "2026-04-30",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 046 PASS - igshop promo exact HK May start boundary: 五月免運有冇？
+### 046 PASS - igshop promo exact locale May start boundary: 五月免運有冇？
 
 Context:
 ```json
@@ -1815,7 +1815,7 @@ Actual:
 }
 ```
 
-### 048 PASS - igshop promo last HK campaign second: 五月免運有冇？
+### 048 PASS - igshop promo last locale campaign second: 五月免運有冇？
 
 Context:
 ```json
@@ -1852,7 +1852,7 @@ Actual:
 }
 ```
 
-### 049 PASS - igshop promo after HK campaign expiry: 五月免運有冇？
+### 049 PASS - igshop promo after locale campaign expiry: 五月免運有冇？
 
 Context:
 ```json
@@ -1882,12 +1882,12 @@ Actual:
   "checkedDateHk": "2026-06-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 050 PASS - igshop promo before HK May promo start: 買滿幾多包順豐？
+### 050 PASS - igshop promo before locale May promo start: 買滿幾多包順豐？
 
 Context:
 ```json
@@ -1917,12 +1917,12 @@ Actual:
   "checkedDateHk": "2026-04-30",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
 
-### 051 PASS - igshop promo exact HK May start boundary: 買滿幾多包順豐？
+### 051 PASS - igshop promo exact locale May start boundary: 買滿幾多包順豐？
 
 Context:
 ```json
@@ -1996,7 +1996,7 @@ Actual:
 }
 ```
 
-### 053 PASS - igshop promo last HK campaign second: 買滿幾多包順豐？
+### 053 PASS - igshop promo last locale campaign second: 買滿幾多包順豐？
 
 Context:
 ```json
@@ -2033,7 +2033,7 @@ Actual:
 }
 ```
 
-### 054 PASS - igshop promo after HK campaign expiry: 買滿幾多包順豐？
+### 054 PASS - igshop promo after locale campaign expiry: 買滿幾多包順豐？
 
 Context:
 ```json
@@ -2063,7 +2063,7 @@ Actual:
   "checkedDateHk": "2026-06-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2098,7 +2098,7 @@ Actual:
   "checkedDateHk": "2026-04-30",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2133,7 +2133,7 @@ Actual:
   "checkedDateHk": "2026-05-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2168,7 +2168,7 @@ Actual:
   "checkedDateHk": "2026-05-15",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2203,7 +2203,7 @@ Actual:
   "checkedDateHk": "2026-05-31",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2238,7 +2238,7 @@ Actual:
   "checkedDateHk": "2026-06-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2273,7 +2273,7 @@ Actual:
   "checkedDateHk": "2026-04-30",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2308,7 +2308,7 @@ Actual:
   "checkedDateHk": "2026-05-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2343,7 +2343,7 @@ Actual:
   "checkedDateHk": "2026-05-15",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2378,7 +2378,7 @@ Actual:
   "checkedDateHk": "2026-05-31",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2413,7 +2413,7 @@ Actual:
   "checkedDateHk": "2026-06-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2448,7 +2448,7 @@ Actual:
   "checkedDateHk": "2026-04-30",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2483,7 +2483,7 @@ Actual:
   "checkedDateHk": "2026-05-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2518,7 +2518,7 @@ Actual:
   "checkedDateHk": "2026-05-15",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2553,7 +2553,7 @@ Actual:
   "checkedDateHk": "2026-05-31",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2588,7 +2588,7 @@ Actual:
   "checkedDateHk": "2026-06-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2623,7 +2623,7 @@ Actual:
   "checkedDateHk": "2026-04-30",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2658,7 +2658,7 @@ Actual:
   "checkedDateHk": "2026-05-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2693,7 +2693,7 @@ Actual:
   "checkedDateHk": "2026-05-15",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2728,7 +2728,7 @@ Actual:
   "checkedDateHk": "2026-05-31",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2763,7 +2763,7 @@ Actual:
   "checkedDateHk": "2026-06-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2798,7 +2798,7 @@ Actual:
   "checkedDateHk": "2026-04-30",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2833,7 +2833,7 @@ Actual:
   "checkedDateHk": "2026-05-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2868,7 +2868,7 @@ Actual:
   "checkedDateHk": "2026-05-15",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2903,7 +2903,7 @@ Actual:
   "checkedDateHk": "2026-05-31",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```
@@ -2938,7 +2938,7 @@ Actual:
   "checkedDateHk": "2026-06-01",
   "grounding": [],
   "reasons": [
-    "No active approved promotion matched in Hong Kong time."
+    "No active approved promotion matched in UTC+8 locale time."
   ]
 }
 ```

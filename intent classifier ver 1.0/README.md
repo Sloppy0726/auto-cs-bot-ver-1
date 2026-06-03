@@ -2,12 +2,12 @@
 
 The intent classifier runs after the privacy gateway.
 
-It takes the privacy gateway output, reads the sanitized Cantonese, English, or mixed customer message, and
+It takes the privacy gateway output, reads the sanitized Traditional Chinese, English, or mixed customer message, and
 returns normalized intent JSON for the rest of the bot.
 
 The classifier is deterministic-first:
 
-1. Use backend rules for obvious Hong Kong SME customer support intents in Cantonese, English, or mixed-language messages.
+1. Use backend rules for obvious SME customer support intents in Traditional Chinese, English, or mixed-language messages.
 2. Optionally call an injected LLM classifier for ambiguous messages.
 3. Normalize the result so later modules always receive the same shape.
 

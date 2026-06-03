@@ -91,13 +91,19 @@ function lookup(input, entriesByBusiness, options) {
     score: round(score),
     tone: entry.tone || "polite_professional",
     requiresBackend: Boolean(entry.requiresBackend),
+    safeAutoSend: Boolean(entry.safeAutoSend),
     policyRef: entry.policyRef || null,
     approved: entry.approved !== false
   }));
 
   const bestMatch = matches[0] || null;
-  const backendBound = options.backendBoundIntents.includes(primaryIntent)
+  const safeAutoSendMatch = bestMatch?.safeAutoSend === true;
+  const backendBound = (options.backendBoundIntents.includes(primaryIntent) && !safeAutoSendMatch)
     || matches.some((match) => match.requiresBackend);
+  const autoReplyMatches = selectAutoReplyMatches({ matches, intentResult, lowerText });
+  const autoReplyText = autoReplyMatches.length > 0
+    ? autoReplyMatches.map((match) => match.answer).join("\n\n")
+    : null;
 
   return buildResult({
     businessId,
@@ -111,6 +117,8 @@ function lookup(input, entriesByBusiness, options) {
     suggestedClarification: matches.length === 0 ? clarificationFor(primaryIntent, language, businessId) : null,
     language,
     backendBound,
+    autoReplyMatches,
+    autoReplyText,
     reasons: matches.length === 0
       ? [`No approved entry matched intent "${primaryIntent}" with score >= ${options.minScore}`]
       : matches.map((m) => `Matched entry ${m.id} (score ${m.score})`)
@@ -129,9 +137,44 @@ function buildResult(payload) {
     handoff: payload.handoff,
     handoffReason: payload.handoffReason,
     backendBound: Boolean(payload.backendBound),
+    autoReplyMatches: payload.autoReplyMatches || [],
+    autoReplyText: payload.autoReplyText || null,
     suggestedClarification: payload.suggestedClarification,
     reasons: payload.reasons || []
   };
+}
+
+function selectAutoReplyMatches({ matches, intentResult, lowerText }) {
+  if (!Array.isArray(matches) || matches.length === 0) return [];
+  const requestedIntents = [intentResult.primaryIntent, ...(intentResult.secondaryIntents || [])].filter(Boolean);
+  const byIntent = new Map();
+
+  for (const intent of requestedIntents) {
+    const match = matches.find((item) => item.intent === intent && isSafeAutoReplyMatch(item, lowerText));
+    if (match && !byIntent.has(match.id)) byIntent.set(match.id, match);
+  }
+
+  return Array.from(byIntent.values());
+}
+
+function isSafeAutoReplyMatch(match, lowerText) {
+  if (!match || match.requiresBackend) return false;
+  if (match.score >= 0.55) return true;
+
+  if (match.intent === "payment") {
+    return /付款|收錢|點收錢|點付款|fps|payme|alipay|支付寶|payment|pay/.test(lowerText);
+  }
+  if (match.intent === "pricing") {
+    return /幾錢|幾多錢|價錢|價目|收費|price|pricing|how much|cost/.test(lowerText);
+  }
+  if (match.intent === "service_info") {
+    return /有咩可以問|可以問咩|問咩|包括|需要咩資料|點開始|出生|交付|即日|語音|通話|文字|法律|官司|legal/.test(lowerText);
+  }
+  if (match.intent === "hours_location") {
+    return /營業|開舖|開門|24小時|hours|open/.test(lowerText);
+  }
+
+  return false;
 }
 
 function indexEntries(rawEntries) {
@@ -158,6 +201,7 @@ function normalizeEntry(raw) {
     keywords: (raw.keywords || []).map((k) => String(k).toLowerCase()),
     tone: raw.tone || "polite_professional",
     requiresBackend: Boolean(raw.requiresBackend),
+    safeAutoSend: Boolean(raw.safeAutoSend),
     policyRef: raw.policyRef || null,
     approved: true
   };

@@ -25,8 +25,8 @@ const multiPromoDriveDocument = [
 ].join("\n");
 
 const standardCases = [
-  promo("active small-face promotion matches in HK time", "beauty_demo", "想了解小顏項目同點收費", "pricing", "2026-05-09T03:00:00.000Z", true, "小顏管理五月體驗優惠"),
-  promo("expired promotion does not match after HK expiry", "beauty_demo", "想了解小顏項目同點收費", "pricing", "2026-06-01T00:30:00.000Z", false),
+  promo("active small-face promotion matches in locale time", "beauty_demo", "想了解小顏項目同點收費", "pricing", "2026-05-09T03:00:00.000Z", true, "小顏管理五月體驗優惠"),
+  promo("expired promotion does not match after locale expiry", "beauty_demo", "想了解小顏項目同點收費", "pricing", "2026-06-01T00:30:00.000Z", false),
   promo("wrong business does not match beauty promotion", "restaurant_demo", "想了解小顏項目同點收費", "pricing", "2026-05-09T03:00:00.000Z", false),
   promo("IG shop SF locker promotion matches shipping words", "igshop_demo", "包唔包順豐智能櫃？", "service_info", "2026-05-09T03:00:00.000Z", true, "五月順豐智能櫃免運")
 ];
@@ -46,11 +46,11 @@ const igTexts = [
   "買滿幾多包順豐？"
 ];
 const dates = [
-  ["2026-04-30T15:30:00.000Z", false, "before HK May promo start"],
-  ["2026-04-30T16:00:00.000Z", true, "exact HK May start boundary"],
+  ["2026-04-30T15:30:00.000Z", false, "before locale May promo start"],
+  ["2026-04-30T16:00:00.000Z", true, "exact locale May start boundary"],
   ["2026-05-15T04:00:00.000Z", true, "mid campaign"],
-  ["2026-05-31T15:59:59.000Z", true, "last HK campaign second"],
-  ["2026-05-31T16:00:00.000Z", false, "after HK campaign expiry"]
+  ["2026-05-31T15:59:59.000Z", true, "last locale campaign second"],
+  ["2026-05-31T16:00:00.000Z", false, "after locale campaign expiry"]
 ];
 
 for (const text of beautyTexts) {

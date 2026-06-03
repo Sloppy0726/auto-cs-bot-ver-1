@@ -2,7 +2,7 @@
 
 const assert = require("node:assert/strict");
 const { generateDraft, _internal } = require("../src/draftEngine");
-const { chooseModel, DEFAULT_MODELS } = require("../src/anthropicAdapter");
+const { createAnthropicAdapter, chooseModel, DEFAULT_MODELS } = require("../src/anthropicAdapter");
 const { routeMessage } = require("../../privacy gateway ver 1.0/src/privacyGateway");
 const { classifyIntent } = require("../../intent classifier ver 1.0/src/intentClassifier");
 const { createKnowledgeBase } = require("../../knowledge base ver 1.0/src/knowledgeBase");
@@ -45,7 +45,7 @@ async function runCase(testCase) {
     assert.ok(result.citations.includes(testCase.expectCitation), `${label}: missing citation`);
   }
   if (testCase.expectAction === "auto_send") {
-    assert.equal(result.text, pipeline.knowledge.bestMatch.answer, `${label}: auto_send must quote KB verbatim`);
+    assert.equal(result.text, pipeline.knowledge.autoReplyText || pipeline.knowledge.bestMatch.answer, `${label}: auto_send must quote approved KB text verbatim`);
   }
   if (testCase.expectAction === "clarify") {
     assert.equal(result.text, pipeline.decision.clarificationText, `${label}: clarify must return decision text verbatim`);
@@ -76,6 +76,17 @@ async function run() {
   assert.equal(defaultResult.action, "staff_review", "default stub case should be staff_review");
   assert.equal(defaultResult.llmUsed, true, "default stub should mark LLM used for staff_review");
   assert.ok(defaultResult.text.startsWith("[stub] "), "default LLM adapter should return stub text");
+
+  const beautyPricing = beautyBookingDefault;
+  const usageResult = await generateDraft(beautyPricing, {
+    llmAdapter: async () => ({ text: "草稿：請同事覆核價錢。", usage: { input_tokens: 42, output_tokens: 9 } })
+  });
+  assert.deepEqual(usageResult.tokenUsage, { inputTokens: 42, outputTokens: 9, source: "provider" }, "draft should preserve provider token usage");
+  assert.deepEqual(
+    _internal.normalizeTokenUsage({ totalTokens: 1234, source: "codex_cli" }),
+    { inputTokens: 0, outputTokens: 0, totalTokens: 1234, source: "codex_cli" },
+    "draft should preserve Codex CLI total-only token usage"
+  );
 
   const promoCalls = [];
   await generateDraft({
@@ -117,6 +128,31 @@ async function run() {
   assert.equal(guarded.text, null, "forbidden booking confirmation must be withheld");
   assert.ok(guarded.reasons.some((reason) => reason.includes("confirm_booking")), "guard should name confirm_booking");
 
+  const packageDraft = await generateDraft({
+    decision: {
+      action: "auto_send",
+      suggestedTone: "luxury_beauty",
+      forbiddenCapabilities: ["extend_package", "promise_refund", "transfer_package", "alter_remaining_sessions"],
+      grounding: ["pkg_may_hydrafacial_active"],
+      reasons: ["packageFacts.autoSendEligible=true"]
+    },
+    knowledge: {},
+    intent: { primaryIntent: "package_status" },
+    gateway: { sanitizedText: "我想問個package仲有幾多次" },
+    packageFacts: {
+      approvedReplyText: "May，你而家剩餘 3 次保濕 facial，套票到期日係 2026-07-31。",
+      grounding: ["pkg_may_hydrafacial_active"],
+      bestPackage: { id: "pkg_may_hydrafacial_active" }
+    }
+  }, {
+    llmAdapter: async () => {
+      throw new Error("package auto_send must not call LLM");
+    }
+  });
+  assert.equal(packageDraft.text, "May，你而家剩餘 3 次保濕 facial，套票到期日係 2026-07-31。", "package auto_send should quote package facts");
+  assert.deepEqual(packageDraft.citations, ["pkg_may_hydrafacial_active"], "package auto_send should cite package grounding");
+  assert.equal(packageDraft.llmUsed, false, "package auto_send must be deterministic");
+
   assert.equal(
     _internal.validateAgainstForbidden("會退款畀你", ["decide_refund"]).ok,
     false,
@@ -156,7 +192,38 @@ async function run() {
     "handoff/complaint should choose complex model"
   );
 
-  console.log(`draftEngine: ${standardCases.length + 12} tests passed`);
+  const originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
+  const originalClaudeKey = process.env.CLAUDE_API_KEY;
+  try {
+    delete process.env.ANTHROPIC_API_KEY;
+    process.env.CLAUDE_API_KEY = "claude-key-test";
+    let fetchCall = null;
+    const apiAdapter = createAnthropicAdapter({
+      fetch: async (url, options) => {
+        fetchCall = { url, options, body: JSON.parse(options.body) };
+        return {
+          ok: true,
+          json: async () => ({ content: [{ type: "text", text: "草稿：API key draft。" }] })
+        };
+      }
+    });
+    const apiDraft = await apiAdapter("full prompt", {
+      systemPrompt: "system",
+      userPrompt: "user",
+      modelRoute: { model: "claude-haiku-4-5-20251001", maxTokens: 11 }
+    });
+    assert.equal(fetchCall.options.headers["x-api-key"], "claude-key-test", "Claude API key alias should be accepted");
+    assert.equal(fetchCall.body.model, "claude-haiku-4-5-20251001", "model route should reach Anthropic API payload");
+    assert.equal(fetchCall.body.max_tokens, 11, "max token route should reach Anthropic API payload");
+    assert.equal(apiDraft.text, "草稿：API key draft。", "Anthropic adapter should extract text");
+  } finally {
+    if (originalAnthropicKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = originalAnthropicKey;
+    if (originalClaudeKey === undefined) delete process.env.CLAUDE_API_KEY;
+    else process.env.CLAUDE_API_KEY = originalClaudeKey;
+  }
+
+  console.log(`draftEngine: ${standardCases.length + 19} tests passed`);
 }
 
 run().catch((error) => {

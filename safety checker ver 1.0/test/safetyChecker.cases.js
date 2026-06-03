@@ -1,10 +1,12 @@
 "use strict";
 
 const restaurantHours = "我哋每日12:00–15:00 lunch，18:00–22:30 dinner，星期一休息。";
+const packageBalance = "May，你而家仲有 3 次保濕 facial，套票到期日係 2026-07-31。";
 const clarification = "請問你想預約邊個日期同時間？";
 
 const standardCases = [
   passAuto("auto_send approved restaurant hours passes", restaurantHours),
+  passAuto("auto_send deterministic package balance passes", packageBalance, "pkg_may_hydrafacial_active"),
   blockAuto("auto_send edited restaurant hours blocks", "我哋每日開門，歡迎嚟。", "auto_send_not_verbatim"),
   forbidden("booking confirmation surface blocks", "已確認預約今晚8點。", "confirm_booking"),
   clarifyPass("clarify exact booking question passes", clarification),
@@ -23,6 +25,10 @@ const forbiddenSurfaces = [
   ["approve_chargeback", "chargeback approved"],
   ["give_medical_advice", "建議你停藥先做療程。"],
   ["promise_treatment_result", "保證見效。"],
+  ["extend_package", "可以幫你無限延期個package。"],
+  ["promise_refund", "可以安排退款。"],
+  ["transfer_package", "可以轉讓套票俾朋友。"],
+  ["alter_remaining_sessions", "幫你加返3次落個套票。"],
   ["diagnose", "你係皮膚敏感發炎。"],
   ["give_legal_advice", "以下係法律意見。"],
   ["give_financial_advice", "呢個係投資建議。"],
@@ -30,7 +36,7 @@ const forbiddenSurfaces = [
 ];
 
 for (const [capability, text] of forbiddenSurfaces) {
-  standardCases.push(forbidden(`forbidden capability ${capability} blocks Cantonese surface`, text, capability));
+  standardCases.push(forbidden(`forbidden capability ${capability} blocks Traditional Chinese surface`, text, capability));
 }
 
 const placeholderTexts = [
@@ -120,14 +126,14 @@ while (standardCases.length < 100) {
   index += 1;
 }
 
-function passAuto(name, text) {
+function passAuto(name, text, id = "restaurant_hours") {
   return {
     name,
     action: "auto_send",
     text,
     answer: text,
-    citations: ["restaurant_hours"],
-    grounding: ["restaurant_hours"],
+    citations: [id],
+    grounding: [id],
     expectVerdict: "pass",
     expectSafe: true
   };

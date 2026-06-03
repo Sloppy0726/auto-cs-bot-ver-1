@@ -1,6 +1,6 @@
 "use strict";
 
-// HK SME archetype defaults. The boss can override any field per businessId.
+// locale SME archetype defaults. The boss can override any field per businessId.
 // Conservative by default: the owner opts INTO auto_send for each intent,
 // never the other way around.
 
@@ -37,6 +37,14 @@ const ARCHETYPES = Object.freeze({
     policies: ["no_refund_decision"],
     askStaffBeforePromise: true
   },
+  bazi_consultant: {
+    archetype: "bazi_consultant",
+    tone: "mystic_practical",
+    autoSendIntents: ["hours_location", "pricing", "service_info", "payment"],
+    reviewIntents: ["booking", "complaint", "sensitive_health"],
+    policies: ["no_refund_decision"],
+    askStaffBeforePromise: false
+  },
   general_sme: {
     archetype: "general_sme",
     tone: "polite_professional",
@@ -53,7 +61,8 @@ const DEMO_BUSINESS_CONFIGS = Object.freeze({
   beauty_demo: { businessId: "beauty_demo", ...ARCHETYPES.beauty_clinic },
   restaurant_demo: { businessId: "restaurant_demo", ...ARCHETYPES.restaurant },
   igshop_demo: { businessId: "igshop_demo", ...ARCHETYPES.ig_shop },
-  edu_demo: { businessId: "edu_demo", ...ARCHETYPES.education }
+  edu_demo: { businessId: "edu_demo", ...ARCHETYPES.education },
+  solara_bazi: { businessId: "solara_bazi", ...ARCHETYPES.bazi_consultant }
 });
 
 function getConfig(businessId, overrides) {

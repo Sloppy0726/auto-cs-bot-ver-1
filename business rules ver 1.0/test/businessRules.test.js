@@ -74,4 +74,42 @@ assert.equal(syntheticAutoSend.action, "auto_send", "synthetic auto_send case sh
 assert.ok(syntheticAutoSend.allowedCapabilities.includes("quote_kb_verbatim"));
 assert.ok(syntheticAutoSend.allowedCapabilities.includes("cite_entry:x"));
 
-console.log(`businessRules: ${standardCases.length + 1} tests passed`);
+const syntheticPackageAutoSend = evaluate({
+  gateway: { route: "send_to_llm", sanitizedText: "我想問個package仲有幾多次", requiresHumanReview: false, filter: { highestRisk: "none" } },
+  intent: { primaryIntent: "package_status", confidence: 0.93, riskLevel: "none", language: "mixed", needsHumanReview: false },
+  knowledge: { businessId: "beauty_demo", grounding: [], gap: true, handoff: false, backendBound: false },
+  packageFacts: {
+    found: true,
+    verifiedSender: true,
+    autoSendEligible: true,
+    approvedReplyText: "May，你而家剩餘 3 次保濕 facial，套票到期日係 2026-07-31。",
+    grounding: ["pkg_may_hydrafacial_active"],
+    bestPackage: { id: "pkg_may_hydrafacial_active", status: "active" },
+    riskFlags: []
+  },
+  businessConfig: getConfig("beauty_demo")
+});
+assert.equal(syntheticPackageAutoSend.action, "auto_send", "verified active package status should auto_send");
+assert.ok(syntheticPackageAutoSend.allowedCapabilities.includes("quote_package_facts"));
+assert.ok(syntheticPackageAutoSend.allowedCapabilities.includes("cite_package:pkg_may_hydrafacial_active"));
+
+const syntheticPackageReview = evaluate({
+  gateway: { route: "send_to_llm", sanitizedText: "我個package可唔可以延期？", requiresHumanReview: false, filter: { highestRisk: "none" } },
+  intent: { primaryIntent: "package_status", confidence: 0.93, riskLevel: "none", language: "mixed", needsHumanReview: false },
+  knowledge: { businessId: "beauty_demo", grounding: [], gap: true, handoff: false, backendBound: false },
+  packageFacts: {
+    found: true,
+    verifiedSender: true,
+    autoSendEligible: false,
+    approvedReplyText: null,
+    grounding: ["pkg_carmen_expired"],
+    bestPackage: { id: "pkg_carmen_expired", status: "expired" },
+    riskFlags: ["expired"]
+  },
+  businessConfig: getConfig("beauty_demo")
+});
+assert.equal(syntheticPackageReview.action, "staff_review", "expired package status should require staff review");
+assert.ok(syntheticPackageReview.forbiddenCapabilities.includes("extend_package"));
+assert.ok(syntheticPackageReview.forbiddenCapabilities.includes("alter_remaining_sessions"));
+
+console.log(`businessRules: ${standardCases.length + 3} tests passed`);

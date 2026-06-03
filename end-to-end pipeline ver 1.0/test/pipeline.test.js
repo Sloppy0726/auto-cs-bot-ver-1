@@ -35,6 +35,15 @@ async function run() {
         assert.equal(result.staffItem.promotions.bestPromotion.id, c.expectPromotion, `${c.name}: staff item promotion mismatch`);
       }
     }
+    if (c.expectPackage) {
+      assert.equal(result.packageFacts.bestPackage?.id, c.expectPackage, `${c.name}: package mismatch`);
+    }
+    if (c.expectReplyIncludes) {
+      const replyText = result.outbound?.payload?.text?.body || result.outbound?.payload?.text || result.draft?.text || "";
+      for (const snippet of c.expectReplyIncludes) {
+        assert.ok(replyText.includes(snippet), `${c.name}: reply missing ${snippet}`);
+      }
+    }
   }
 
   const tonightQuery = _internal.inferBackendQuery({

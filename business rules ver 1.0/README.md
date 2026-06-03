@@ -2,13 +2,13 @@
 
 Deterministic policy gate. Sits between the knowledge base and the AI draft engine. **No LLM. No I/O.** Pure JS rules running on the output of the upstream modules.
 
-## Why this matters for HK SMEs
+## Why this matters for locale SMEs
 
 | Competitor pattern | Failure mode | Our answer |
 |---|---|---|
 | Intercom Fin / SleekFlow AI agent — policy lives in the prompt | One model upgrade or one prompt-injection and "do not confirm bookings" gets ignored | Policy lives in **typed JS rules**. The LLM is sandwiched: rules decide *what is allowed* before generation, safety checker re-validates after. |
 | Tidio FAQ bot — auto-replies anything that vaguely matches | Wrong price quoted, customer screenshots it on Threads | Six-tier rule order. `auto_send` requires score ≥ 0.7 AND confidence ≥ 0.7 AND no risk AND archetype opt-in AND no number-promise trip. Default is `staff_review`, never silent auto-send. |
-| Gorgias macros — hard-coded replies, no policy awareness | Misses HK-specific guards (deposit, no-medical-claim, refund decisions) | `policyRef` + archetype `policies` derive `forbiddenCapabilities` per message. |
+| Gorgias macros — hard-coded replies, no policy awareness | Misses locale-specific guards (deposit, no-medical-claim, refund decisions) | `policyRef` + archetype `policies` derive `forbiddenCapabilities` per message. |
 
 Pillars covered: **#4 Business rules engine**, partial **#6 (capability contract → safety checker)**, partial **#10 (angry-tone bump, ask-staff-before-promise mode, deposit/refund guards)**.
 
@@ -17,7 +17,7 @@ Pillars covered: **#4 Business rules engine**, partial **#6 (capability contract
 ```
 business rules ver 1.0/
 ├── src/businessRules.js      # evaluate({ gateway, intent, knowledge, businessConfig }) → decision
-├── src/archetypes.js         # 5 HK SME archetype defaults + getConfig(businessId)
+├── src/archetypes.js         # 5 locale SME archetype defaults + getConfig(businessId)
 ├── test/businessRules.cases.js
 ├── test/businessRules.test.js
 ├── scripts/writeSideBySideResults.js
@@ -114,7 +114,7 @@ gateway ─► intent ─► knowledge base ─► business rules ─► [AI dra
 
 The decision object is the **single source of truth** that the AI draft engine and the staff inbox consume. The draft engine reads `allowedCapabilities`/`forbiddenCapabilities` to constrain its prompt. The staff inbox reads `staffPacket` to render the review card.
 
-## HK-specific guards baked in
+## locale-specific guards baked in
 
 - **Angry-tone bump** — `搞錯|嬲|不滿|退錢|退款|chargeback|refund|complaint|angry|furious` in the message → forces `handoff` with `escalationLabel: "angry_customer"`, even if KB has a clean match.
 - **Ask-staff-before-promise mode** — when archetype enables it, any `$` or digit in the answer downgrades `auto_send` → `staff_review`. Keeps clinic/education businesses from auto-quoting prices.

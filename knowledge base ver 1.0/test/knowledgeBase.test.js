@@ -53,6 +53,13 @@ function runCase(testCase) {
   if (testCase.expectClarification) {
     assert.ok(result.suggestedClarification && result.suggestedClarification.length > 0, `${label}: clarification missing`);
   }
+  if (testCase.expectAutoReplyIncludes) {
+    const ids = result.autoReplyMatches.map((match) => match.id);
+    for (const id of testCase.expectAutoReplyIncludes) {
+      assert.ok(ids.includes(id), `${label}: autoReplyMatches missing ${id}`);
+    }
+    assert.ok(result.autoReplyText, `${label}: autoReplyText missing`);
+  }
 
   // Invariants for every case:
   for (const match of result.matches) {

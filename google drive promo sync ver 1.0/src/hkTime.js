@@ -1,9 +1,9 @@
 "use strict";
 
-const HK_TIMEZONE = "Asia/Hong_Kong";
+const HK_TIMEZONE = "Asia/Taipei";
 const HK_OFFSET_MINUTES = 8 * 60;
 
-function toHongKongDateParts(value) {
+function toTaipeiDateParts(value) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error(`Invalid date: ${value}`);
   const hkMs = date.getTime() + HK_OFFSET_MINUTES * 60 * 1000;
@@ -36,7 +36,7 @@ function toHongKongDateParts(value) {
 }
 
 function hkDateKey(value) {
-  return toHongKongDateParts(value).dateKey;
+  return toTaipeiDateParts(value).dateKey;
 }
 
 function compareDateKey(a, b) {
@@ -50,15 +50,15 @@ function isWithinHkDateRange(now, startsOn, expiresOn) {
   return true;
 }
 
-function nextDailyRunAtHongKong(now, hhmm = "04:00") {
-  const parts = toHongKongDateParts(now);
+function nextDailyRunAtTaipei(now, hhmm = "04:00") {
+  const parts = toTaipeiDateParts(now);
   const [hour, minute] = hhmm.split(":").map((value) => Number(value));
   const todayRunUtcMs = Date.UTC(parts.year, parts.month - 1, parts.day, hour - 8, minute, 0);
   const nowMs = (now instanceof Date ? now : new Date(now)).getTime();
   const runMs = nowMs < todayRunUtcMs ? todayRunUtcMs : todayRunUtcMs + 24 * 60 * 60 * 1000;
   return {
     utc: new Date(runMs).toISOString(),
-    hongKong: toHongKongDateParts(new Date(runMs)).isoLocal,
+    hongKong: toTaipeiDateParts(new Date(runMs)).isoLocal,
     timezone: HK_TIMEZONE
   };
 }
@@ -66,9 +66,9 @@ function nextDailyRunAtHongKong(now, hhmm = "04:00") {
 module.exports = {
   HK_TIMEZONE,
   HK_OFFSET_MINUTES,
-  toHongKongDateParts,
+  toTaipeiDateParts,
   hkDateKey,
   isWithinHkDateRange,
-  nextDailyRunAtHongKong,
+  nextDailyRunAtTaipei,
   _internal: { compareDateKey }
 };

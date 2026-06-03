@@ -17,11 +17,12 @@ const COMPLEX_INTENTS = Object.freeze([
 
 function createAnthropicAdapter(config = {}) {
   return async function anthropicAdapter(prompt, context = {}) {
-    const apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY;
+    const apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
     if (!apiKey) {
-      throw new Error("ANTHROPIC_API_KEY is required to use the Anthropic adapter.");
+      throw new Error("ANTHROPIC_API_KEY or CLAUDE_API_KEY is required to use the Anthropic adapter.");
     }
-    if (typeof fetch !== "function") {
+    const fetchImpl = config.fetch || (typeof fetch === "function" ? fetch : null);
+    if (typeof fetchImpl !== "function") {
       throw new Error("This Node.js runtime does not expose global fetch.");
     }
 
@@ -30,7 +31,7 @@ function createAnthropicAdapter(config = {}) {
     const systemPrompt = context.systemPrompt || config.systemPrompt || "You are a grounded customer-support draft engine.";
     const userPrompt = context.userPrompt || String(prompt || "");
 
-    const response = await fetch(config.url || "https://api.anthropic.com/v1/messages", {
+    const response = await fetchImpl(config.url || "https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "content-type": "application/json",

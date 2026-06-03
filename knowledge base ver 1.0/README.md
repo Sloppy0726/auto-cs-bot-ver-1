@@ -1,12 +1,12 @@
 # Knowledge Base ver 1.0
 
-Approved-answers store for the Hong Kong AI Customer Support SaaS.
+Approved-answers store for the Traditional Chinese AI Customer Support Safety Framework.
 
 The KB sits **after** the privacy gateway and intent classifier and **before** the AI draft engine. It guarantees that every reply candidate the AI sees is grounded in something the business owner has explicitly approved — never invented by an LLM.
 
-## Why this matters for HK SMEs
+## Why this matters for locale SMEs
 
-| Competitor pattern | What goes wrong for HK SMEs | KB v1.0 answer |
+| Competitor pattern | What goes wrong for locale SMEs | KB v1.0 answer |
 |---|---|---|
 | SleekFlow / Tidio raw-LLM FAQ bots | LLM invents prices, opening hours, package details | Every match carries `approved: true`; unapproved entries are refused at index time |
 | Intercom Fin "AI from help center" | LLM still chooses how to phrase policy-bound info | KB returns the approved answer **verbatim** with an `id` for citation; AI is downstream |
@@ -123,7 +123,7 @@ The KB **never sees raw text** — it only consumes `sanitizedText` from the gat
 1. `complaint`, `sensitive_health`, `child_data`, `human_request` always return `handoff: true` regardless of KB content.
 2. `booking`, `reschedule`, `order_status`, `payment` always return `backendBound: true` so the draft engine knows it cannot confirm anything without the private business backend.
 3. Entries with `approved !== true` are silently dropped at index time. The KB cannot serve unapproved content even by accident.
-4. No match → `gap: true` plus a Cantonese/English clarification question. This `gap` signal is what feeds the FAQ-gap dashboard (pillar #10).
+4. No match → `gap: true` plus a Traditional Chinese/English clarification question. This `gap` signal is what feeds the FAQ-gap dashboard (pillar #10).
 
 ## Run
 
@@ -150,5 +150,5 @@ node "knowledge base ver 1.0/scripts/writeSideBySideResults.js"
 
 - v1.1: per-entry analytics (hit count, last used) for boss dashboard.
 - v1.2: vector / embedding fallback for fuzzy intent edges (`general` bucket).
-- v1.3: HK opening-hours / public-holiday awareness inside the answer.
+- v1.3: locale opening-hours / public-holiday awareness inside the answer.
 - v2.0: multi-brand support — `businessId` becomes `{ tenantId, brandId }` so one owner can run several IG / FB pages.

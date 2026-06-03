@@ -11,7 +11,7 @@ Failed: 0
 
 | # | Status | Case | Key result |
 |---:|---|---|---|
-| 1 | PASS | beauty: facial pricing in Cantonese | beauty_pricing_facial / pricing |
+| 1 | PASS | beauty: facial pricing in Traditional Chinese | beauty_pricing_facial / pricing |
 | 2 | PASS | beauty: opening hours in mixed | beauty_hours / hours_location |
 | 3 | PASS | beauty: booking is backend-bound | beauty_booking_policy / booking |
 | 4 | PASS | restaurant: tonight 8pm booking | restaurant_booking / booking |
@@ -114,7 +114,7 @@ Failed: 0
 
 ## Details
 
-### 001 PASS - beauty: facial pricing in Cantonese
+### 001 PASS - beauty: facial pricing in Traditional Chinese
 
 Context:
 ```json

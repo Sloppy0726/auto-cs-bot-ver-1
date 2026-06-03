@@ -36,7 +36,8 @@ const detectors = [
     type: "fps_reference",
     risk: "medium",
     placeholder: "PAYMENT_REF",
-    pattern: /(?:\bFPS|轉數快|入數|付款|\bpayment|\bpayme)[\s:#：-]*[A-Z0-9-]{5,24}\b/gi
+    pattern: /(?:\bFPS|轉數快|入數|付款|\bpayment|\bpayme)[\s:#：-]*[A-Z0-9-]{5,24}\b/gi,
+    validate: looksLikePaymentReference
   },
   {
     type: "order_reference",
@@ -157,6 +158,11 @@ function looksLikeCreditCard(value) {
   const digits = value.replace(/\D/g, "");
   if (digits.length < 13 || digits.length > 19) return false;
   return luhnCheck(digits);
+}
+
+function looksLikePaymentReference(value) {
+  const withoutTrigger = String(value || "").replace(/^(?:FPS|轉數快|入數|付款|payment|payme)[\s:#：-]*/i, "");
+  return /\d/.test(withoutTrigger);
 }
 
 function isStandalonePhoneNumber(value, text, start, end) {

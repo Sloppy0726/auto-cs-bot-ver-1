@@ -1,10 +1,10 @@
 # Draft Legal and Trust Documents
 
-Draft customer-facing legal/trust documents for the Hong Kong AI Customer Support SaaS.
+Draft customer-facing legal/trust documents for the Traditional Chinese AI Customer Support Safety Framework.
 
 These files are product-specific working drafts. They are written to match the current v1.0 architecture: privacy filtering before LLM calls, approved knowledge, deterministic business rules, safety checks, staff review, and conservative auto-send behavior.
 
-They are not legal advice and should be reviewed by a Hong Kong-qualified lawyer before use with paying customers.
+They are not legal advice and should be reviewed by a the target locale-qualified lawyer before use with paying customers.
 
 ## Documents
 

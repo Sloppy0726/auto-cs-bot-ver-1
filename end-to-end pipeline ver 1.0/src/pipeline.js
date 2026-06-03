@@ -18,12 +18,15 @@ const { createStaffInbox } = require("../../staff inbox ver 1.0/src/staffInbox")
 const { createPromotionStore } = require("../../google drive promo sync ver 1.0/src/promoSync");
 const { hkDateKey } = require("../../google drive promo sync ver 1.0/src/hkTime");
 const promoSeed = require("../../google drive promo sync ver 1.0/seed/promoSeed");
+const { createPackageStore } = require("../../package ops ver 1.0/src/packageOps");
+const packageSeed = require("../../package ops ver 1.0/seed/packageSeed");
 
 function createPipeline(config = {}) {
   const kb = config.knowledgeBase || createKnowledgeBase({ entries: config.seed || seed });
   const backend = config.backend || createBusinessBackend();
   const inbox = config.staffInbox || createStaffInbox();
   const promotionStore = config.promotionStore || createPromotionStore({ entries: config.promotionEntries || promoSeed });
+  const packageStore = config.packageStore || createPackageStore({ entries: config.packageEntries || packageSeed });
   const llmAdapter = config.llmAdapter;
   const llmIntentAnalyzer = config.llmIntentAnalyzer;
   const paraphraser = config.paraphraser;
@@ -31,12 +34,13 @@ function createPipeline(config = {}) {
 
   return {
     async runMessage(input) {
-      return runMessage(input, { kb, backend, inbox, promotionStore, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
+      return runMessage(input, { kb, backend, inbox, promotionStore, packageStore, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
     },
     inbox,
     backend,
     kb,
-    promotionStore
+    promotionStore,
+    packageStore
   };
 }
 
@@ -55,6 +59,15 @@ async function runMessage(input = {}, deps = {}) {
   const gateway = routeMessage(normalizedMessage.rawText);
   const intent = await classifyIntent(gateway, intentClassifierOptions(deps));
   const knowledge = deps.kb.lookup({ businessId: normalizedMessage.businessId, sanitizedText: gateway.sanitizedText, intent });
+  const packageFacts = deps.packageStore && shouldLookupPackageFacts(gateway.sanitizedText, intent)
+    ? deps.packageStore.lookup({
+      businessId: normalizedMessage.businessId,
+      senderId: normalizedMessage.senderId,
+      sanitizedText: gateway.sanitizedText,
+      intent,
+      now: deps.nowFn()
+    })
+    : null;
   const promotions = deps.promotionStore.lookup({
     businessId: normalizedMessage.businessId,
     sanitizedText: gateway.sanitizedText,
@@ -81,16 +94,16 @@ async function runMessage(input = {}, deps = {}) {
     backend: deps.backend,
     language: knowledge.language || intent.language
   });
-  const decision = evaluate({ gateway, intent, knowledge, businessConfig, requiredClarification });
+  const decision = evaluate({ gateway, intent, knowledge, packageFacts, businessConfig, requiredClarification });
   const modelRoute = routeModel({ decision, intent, gateway });
-  const draft = await generateDraft({ decision, knowledge, intent, gateway, promotions, backendFacts, modelRoute }, { llmAdapter: deps.llmAdapter, paraphraser: deps.paraphraser, modelRoute });
-  const safety = checkDraft({ draft, decision, knowledge, intent, gateway });
+  const draft = await generateDraft({ decision, knowledge, packageFacts, intent, gateway, promotions, backendFacts, modelRoute }, { llmAdapter: deps.llmAdapter, paraphraser: deps.paraphraser, modelRoute });
+  const safety = checkDraft({ draft, decision, knowledge, packageFacts, intent, gateway });
 
   const bookingDraft = inferBookingDraft({ intent, query: backendQuery, normalizedMessage, backend: deps.backend });
 
   let staffItem = null;
   if (!safety.safeToSend || !["auto_send", "clarify"].includes(draft.action)) {
-    staffItem = deps.inbox.submit({ decision, draft, safety, normalizedMessage, customerText: gateway.sanitizedText, backendFacts, promotions, bookingDraft });
+    staffItem = deps.inbox.submit({ decision, draft, safety, normalizedMessage, customerText: gateway.sanitizedText, backendFacts, promotions, packageFacts, bookingDraft });
   }
 
   const outbound = buildOutboundMessage({ normalizedMessage, draft, safety, staffItem });
@@ -101,6 +114,7 @@ async function runMessage(input = {}, deps = {}) {
     gateway,
     intent,
     knowledge,
+    packageFacts,
     promotions,
     decision,
     backendFacts,
@@ -112,6 +126,10 @@ async function runMessage(input = {}, deps = {}) {
     finalStatus,
     errors: []
   });
+}
+
+function shouldLookupPackageFacts(text, intent = {}) {
+  return intent.primaryIntent === "package_status" || /package|套票|剩幾多次|仲有幾多次|到期|expiry|remaining sessions?/i.test(String(text || ""));
 }
 
 function intentClassifierOptions(deps = {}) {
@@ -650,6 +668,7 @@ function result(payload) {
     gateway: payload.gateway || null,
     intent: payload.intent || null,
     knowledge: payload.knowledge || null,
+    packageFacts: payload.packageFacts || null,
     promotions: payload.promotions || null,
     decision: payload.decision || null,
     backendFacts: payload.backendFacts || null,

@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 const seed = require("../seed/promoSeed");
 const { createPromotionStore, createPromoSync, parseDrivePromoDocument } = require("../src/promoSync");
-const { hkDateKey, nextDailyRunAtHongKong } = require("../src/hkTime");
+const { hkDateKey, nextDailyRunAtTaipei } = require("../src/hkTime");
 const { driveDocument, standardCases } = require("./promoSync.cases");
 
 const store = createPromotionStore({ entries: seed });
@@ -17,7 +17,7 @@ for (const c of standardCases) {
   });
   assert.equal(Boolean(result.bestPromotion), c.expectMatch, `${c.name}: match mismatch`);
   if (c.expectTitle) assert.equal(result.bestPromotion.title, c.expectTitle, `${c.name}: title mismatch`);
-  assert.equal(result.timezone, "Asia/Hong_Kong", `${c.name}: timezone mismatch`);
+  assert.equal(result.timezone, "Asia/Taipei", `${c.name}: timezone mismatch`);
 }
 
 const parsed = parseDrivePromoDocument({
@@ -64,8 +64,8 @@ async function run() {
     now: new Date("2026-05-09T00:00:00.000Z")
   });
   assert.ok(lookup.bestPromotion, "synced promotion should match");
-  assert.equal(hkDateKey("2026-05-08T16:30:00.000Z"), "2026-05-09", "HK date should use UTC+8");
-  assert.equal(nextDailyRunAtHongKong(new Date("2026-05-09T00:00:00.000Z"), "04:00").hongKong, "2026-05-10T04:00:00+08:00");
+  assert.equal(hkDateKey("2026-05-08T16:30:00.000Z"), "2026-05-09", "locale date should use UTC+8");
+  assert.equal(nextDailyRunAtTaipei(new Date("2026-05-09T00:00:00.000Z"), "04:00").hongKong, "2026-05-10T04:00:00+08:00");
 
   const multiBusinessStore = createPromotionStore({
     entries: [{

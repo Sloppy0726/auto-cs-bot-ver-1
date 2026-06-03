@@ -13,7 +13,7 @@ module.exports = [
     staffInstruction: "可以提五月體驗價，但要提醒客人先做面部狀態評估，唔好承諾一定瘦面或治療效果。",
     startsOn: "2026-05-01",
     expiresOn: "2026-05-31",
-    timezone: "Asia/Hong_Kong",
+    timezone: "Asia/Taipei",
     approved: true
   },
   {
@@ -28,7 +28,7 @@ module.exports = [
     staffInstruction: "只可講智能櫃免運；住宅或工商地址要由同事再報價。",
     startsOn: "2026-05-01",
     expiresOn: "2026-05-31",
-    timezone: "Asia/Hong_Kong",
+    timezone: "Asia/Taipei",
     approved: true
   }
 ];

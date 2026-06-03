@@ -4,13 +4,13 @@ Last updated: 2026-05-12
 
 Draft status: This is a working product and trust draft for internal review and pilot discussions. It is not final legal wording and should not be published as final customer terms without review.
 
-This page explains how the Hong Kong AI Customer Support SaaS is designed to help small businesses answer routine customer enquiries while reducing privacy and AI-output risk.
+This page explains how the Traditional Chinese AI Customer Support Safety Framework is designed to help small businesses answer routine customer enquiries while reducing privacy and AI-output risk.
 
 This is a plain-English overview, not a replacement for the Terms of Service, Privacy Policy, or Data Processing Addendum.
 
 ## What the Product Does
 
-The product is a Cantonese AI receptionist for Hong Kong SMEs. It helps businesses respond to repetitive customer enquiries from channels such as WhatsApp, Instagram, Facebook Messenger, and website chat.
+The product is a Traditional Chinese AI receptionist for SMEs. It helps businesses respond to repetitive customer enquiries from channels such as WhatsApp, Instagram, Facebook Messenger, and website chat.
 
 The system is designed for routine customer support, such as:
 
@@ -19,7 +19,7 @@ The system is designed for routine customer support, such as:
 - Basic pricing information when the business has approved it.
 - Simple booking, order, stock, or payment enquiries for staff review.
 - Lead capture and human handoff.
-- Cantonese, Traditional Chinese, English, and mixed-language enquiries.
+- Traditional Chinese, Traditional Chinese, English, and mixed-language enquiries.
 
 ## What Makes It Safer Than a Direct Chatbot
 
@@ -41,13 +41,13 @@ The product is designed to avoid sending unnecessary personal customer data to A
 
 The privacy layer detects and redacts common sensitive data such as:
 
-- Hong Kong phone numbers.
+- the target locale phone numbers.
 - Email addresses.
 - HKID-like values.
 - Credit card-like values.
 - FPS or payment references.
 - Order and booking references.
-- Hong Kong address hints.
+- the target locale address hints.
 - Medical, child-data, address, and payment-dispute risk hints.
 
 Where redaction applies, the AI receives placeholders instead of the raw sensitive value. Some messages may still require staff review or a privacy block.

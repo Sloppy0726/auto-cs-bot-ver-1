@@ -8,7 +8,7 @@ const seed = require("../seed/hkSmeSeed");
 
 const seedCases = [
   {
-    name: "beauty: facial pricing in Cantonese",
+    name: "beauty: facial pricing in Traditional Chinese",
     businessId: "beauty_demo",
     input: "做完會唔會即刻見效？幾錢？有冇副作用？",
     expectBestMatchId: "beauty_pricing_facial",
@@ -92,6 +92,22 @@ const seedCases = [
     input: "幾錢呀？",
     expectGap: true,
     expectClarification: true
+  },
+  {
+    name: "solara: stacked payment and pricing",
+    businessId: "solara_bazi",
+    input: "我想知點收錢同幾多錢",
+    expectBestMatchId: "solara_bazi_pricing",
+    expectGap: false,
+    expectAutoReplyIncludes: ["solara_bazi_pricing", "solara_bazi_payment_methods"]
+  },
+  {
+    name: "solara: stacked payment and scope",
+    businessId: "solara_bazi",
+    input: "點收錢同有咩可以問",
+    expectBestMatchId: "solara_bazi_payment_methods",
+    expectGap: false,
+    expectAutoReplyIncludes: ["solara_bazi_payment_methods", "solara_bazi_scope"]
   }
 ];
 
