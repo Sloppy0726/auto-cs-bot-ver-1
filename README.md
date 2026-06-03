@@ -10,6 +10,8 @@ Local v1.0 workflow skeleton is complete:
 
 ```text
 customer channel
+  -> channel adapter
+  -> conversation context
   -> privacy filter
   -> privacy gateway
   -> intent classifier
@@ -24,7 +26,7 @@ customer channel
   -> send reply or staff inbox
 ```
 
-Current test total: **1980 passing**.
+Current test total: **2,121 passing** across 16 plain Node.js test runners.
 
 No npm dependencies are required. Everything is plain Node.js stdlib.
 
@@ -44,20 +46,18 @@ Most customer-support AI examples are English-first and prompt-first. This proje
 |---|---|---|
 | 1 | `privacy filter ver 1.0` | Redacts PII and flags locale-specific risk before any LLM call. |
 | 2 | `privacy gateway ver 1.0` | Routes sanitized messages: send, review, or block. |
-| 3 | `intent classifier ver 1.0` | Classifies Traditional Chinese / English / mixed enquiries into stable intents. |
-| 4 | `package ops ver 1.0` | Sender-bound prepaid package/session lookup for package status replies. |
-| 5 | `knowledge base ver 1.0` | Approved-only business answers and grounding IDs. |
-| 6 | `business rules ver 1.0` | Deterministic policy gate and capability contract. |
-| 7 | `google drive promo sync ver 1.0` | Daily promotion sync with UTC+8 locale expiry checks. |
-| 8 | `AI draft engine ver 1.0` | Produces grounded drafts or staff-only summaries. |
-| 9 | `safety checker ver 1.0` | Re-validates drafts before anything can be sent. |
-| 10 | `channel adapter ver 1.0` | Normalizes WhatsApp / IG / FB / website payloads and builds outbound payloads. |
-| 11 | `model router ver 1.0` | Chooses no-LLM / small model / larger model by action and risk. |
-| 12 | `private business backend mock ver 1.0` | Mock booking, order, stock, and payment facts. |
-| 13 | `staff inbox ver 1.0` | In-memory review / handoff queue. |
-| 14 | `end-to-end pipeline ver 1.0` | Orchestrates the whole local workflow. |
-| 15 | `usage tracker ver 0.1` | Estimates and records token usage per chat turn. |
-| 16 | `whatsapp web automation prototype ver 0.1` | Local browser-automation prototype for internal demos. |
+| 3 | `intent classifier ver 1.0` | Classifies Cantonese / English / mixed enquiries into stable intents. |
+| 4 | `knowledge base ver 1.0` | Approved-only business answers and grounding IDs. |
+| 5 | `business rules ver 1.0` | Deterministic policy gate and capability contract. |
+| 6 | `google drive promo sync ver 1.0` | Daily Google Drive promotion sync with Hong Kong time expiry checks. |
+| 7 | `AI draft engine ver 1.0` | Produces grounded drafts or staff-only summaries. |
+| 8 | `safety checker ver 1.0` | Re-validates drafts before anything can be sent. |
+| 9 | `channel adapter ver 1.0` | Normalizes WhatsApp / IG / FB / website payloads and builds outbound payloads. |
+| 10 | `model router ver 1.0` | Chooses no-LLM / Haiku / Sonnet by action and risk. |
+| 11 | `private business backend mock ver 1.0` | Mock booking, order, stock, and payment facts. |
+| 12 | `staff inbox ver 1.0` | In-memory review / handoff queue. |
+| 13 | `end-to-end pipeline ver 1.0` | Orchestrates the whole local workflow. |
+| 14 | `conversation context ver 1.0` | Shared deterministic stitching for fragmented booking follow-ups before the pipeline. |
 
 ## Legal and trust drafts
 
@@ -83,6 +83,57 @@ Optional LLM adapter modes:
 - `WA_LLM_ADAPTER=claude-api` with `ANTHROPIC_API_KEY` or `CLAUDE_API_KEY`.
 - `WA_LLM_ADAPTER=claude` for local OAuth-based Claude smoke testing.
 - `CODEX_LLM_AUTH_MODE=oauth` with a local Codex CLI session for Codex adapter smoke testing.
+
+Start the local webhook server:
+
+```bash
+npm start
+```
+
+By default it listens at `http://127.0.0.1:3000/webhook` in unsigned local mode for `restaurant_demo`.
+Opening that URL in a browser shows a local website chat simulator with fake customers, orders, payments, stock, and booking scenarios.
+
+The fake database lives at:
+
+```text
+private business backend mock ver 1.0/seed/mockBusinessData.js
+```
+
+Send a test message:
+
+```bash
+curl -X POST http://127.0.0.1:3000/webhook \
+  -H "content-type: application/json" \
+  -d '{"channel":"website","sessionId":"local-demo-001","text":"你哋幾點開門？"}'
+```
+
+To run signed mode, set a webhook secret first:
+
+```bash
+WEBHOOK_SECRET="dev-secret" WEBHOOK_BUSINESS_ID="restaurant_demo" npm start
+```
+
+## WhatsApp Web Local Testing
+
+The WhatsApp Web bridge is packaged separately in:
+
+```text
+whatsapp-web-test-bridge/
+```
+
+This is a development adapter for Safari + WhatsApp Web only. It does not replace the webhook/API infrastructure that a real WhatsApp Business API integration should use.
+
+Fresh machine setup:
+
+```bash
+cd whatsapp-web-test-bridge
+cp .env.example .env
+npm start
+```
+
+For live LLM calls, put proxy-style `ANTHROPIC_BASE_URL` plus `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, or `ANTHROPIC_API_KEY` in `whatsapp-web-test-bridge/.env`. Generate the OAuth token with `claude setup-token` (Claude Pro/Max/Enterprise subscription), or create an API key in the Anthropic Console. The bot tries the proxy auth token first, falls back to Claude OAuth if the proxy request fails, then tries a direct Anthropic API key, and only then falls back to `OPENAI_OAUTH_TOKEN` if no Claude credential is configured.
+
+The packaged starter runs the local bot server if needed, starts the WhatsApp Web bridge in `screen`, and writes logs under `whatsapp-web-test-bridge/logs/`. See [`whatsapp-web-test-bridge/README.md`](whatsapp-web-test-bridge/README.md) for setup, safety switches, and troubleshooting.
 
 Example:
 
@@ -125,7 +176,23 @@ NODE
 Run from the repo root:
 
 ```bash
-npm test
+node "privacy filter ver 1.0/test/privacyFilter.test.js"
+node "privacy filter ver 1.0/test/privacyFilter.edge.test.js"
+node "privacy gateway ver 1.0/test/privacyGateway.test.js"
+node "conversation context ver 1.0/test/conversationContext.test.js"
+node "intent classifier ver 1.0/test/intentClassifier.test.js"
+node "intent classifier ver 1.0/test/intentClassifier.edge.test.js"
+node "knowledge base ver 1.0/test/knowledgeBase.test.js"
+node "business rules ver 1.0/test/businessRules.test.js"
+node "google drive promo sync ver 1.0/test/promoSync.test.js"
+node "AI draft engine ver 1.0/test/draftEngine.test.js"
+node "safety checker ver 1.0/test/safetyChecker.test.js"
+node "channel adapter ver 1.0/test/channelAdapter.test.js"
+node "model router ver 1.0/test/modelRouter.test.js"
+node "private business backend mock ver 1.0/test/businessBackendMock.test.js"
+node "staff inbox ver 1.0/test/staffInbox.test.js"
+node "end-to-end pipeline ver 1.0/test/pipeline.test.js"
+node "end-to-end pipeline ver 1.0/test/server.test.js"
 ```
 
 The test runner discovers all `*.test.js` files outside ignored generated-output folders and runs each one with Node.

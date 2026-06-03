@@ -71,8 +71,8 @@ async function run() {
     await runCase(testCase);
   }
 
-  const beautyPricing = buildPipeline({ businessId: "beauty_demo", input: "facial幾錢？" });
-  const defaultResult = await generateDraft(beautyPricing);
+  const beautyBookingDefault = buildPipeline({ businessId: "beauty_demo", input: "想book今晚個facial有冇位" });
+  const defaultResult = await generateDraft(beautyBookingDefault);
   assert.equal(defaultResult.action, "staff_review", "default stub case should be staff_review");
   assert.equal(defaultResult.llmUsed, true, "default stub should mark LLM used for staff_review");
   assert.ok(defaultResult.text.startsWith("[stub] "), "default LLM adapter should return stub text");
@@ -89,7 +89,7 @@ async function run() {
 
   const promoCalls = [];
   await generateDraft({
-    ...beautyPricing,
+    ...beautyBookingDefault,
     modelRoute: { provider: "anthropic", model: "claude-haiku-4-5-20251001", maxTokens: 321 },
     promotions: {
       activePromotions: [{

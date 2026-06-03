@@ -20,6 +20,19 @@ module.exports = [
     }
   },
   {
+    id: "beauty_identity",
+    businessId: "beauty_demo",
+    intent: "hours_location",
+    question: "店名 / company identity",
+    keywords: ["邊間公司", "邊間店", "店名", "公司名", "間舖", "間鋪", "舖名", "鋪名", "叫咩", "brand", "business name", "shop name", "store name", "你係"],
+    tone: "luxury_beauty",
+    answers: {
+      "zh-HK": "我哋係 Solara Beauty（測試美容店），銅鑼灣店提供面部護理、皮膚狀態評估同部分脫毛護理。",
+      en: "We are Solara Beauty, a test beauty salon. Our Causeway Bay branch offers facial treatments, skin assessments, and selected laser hair removal services.",
+      mixed: "我哋係 Solara Beauty（測試美容店），Causeway Bay店提供facial、skin assessment同部分laser hair removal。"
+    }
+  },
+  {
     id: "beauty_pricing_facial",
     businessId: "beauty_demo",
     intent: "pricing",
@@ -47,6 +60,34 @@ module.exports = [
     }
   },
   {
+    id: "beauty_service_list",
+    businessId: "beauty_demo",
+    intent: "service_info",
+    question: "療程列表 / treatment list",
+    keywords: ["list", "menu", "treatments", "services", "service menu", "treatment list", "有咩療程", "有咩服務", "有冇list", "有無list", "療程list", "服務list"],
+    tone: "luxury_beauty",
+    policyRef: "no_medical_claim",
+    answers: {
+      "zh-HK": "我哋測試美容店暫時有：免費皮膚狀態評估、首次體驗面部護理、皇牌保濕修護護理、面部護理五次套票，同腋下脫毛單次護理。實際適合邊個療程要先睇膚況；如果想睇收費，可以直接問我價目。",
+      en: "Our test beauty salon currently offers: free skin assessments, first-trial facial treatments, signature hydrating repair facials, 5-session facial packages, and single-session underarm laser hair removal. Suitability depends on your skin condition; you can ask me for pricing details anytime.",
+      mixed: "我哋暫時有free skin assessment、first-trial facial、signature hydrating repair facial、5-session facial package同underarm laser hair removal。實際適合邊個plan要睇膚況；想睇pricing可以直接問我。"
+    }
+  },
+  {
+    id: "beauty_service_recommendation",
+    businessId: "beauty_demo",
+    intent: "service_info",
+    question: "療程推介 / treatment recommendation",
+    keywords: ["推介", "推薦", "建議", "介紹", "療程建議", "有咩療程建議", "recommend", "recommendation", "facial", "plan"],
+    tone: "luxury_beauty",
+    policyRef: "no_medical_claim",
+    answers: {
+      "zh-HK": "如果你係第一次嚟，通常會建議先做免費皮膚狀態評估，再按膚況揀療程。想先體驗面部護理，可以考慮首次體驗面部護理；如果主要想定期保養，就可以了解皇牌保濕修護護理或五次套票。",
+      en: "For first-time customers, we usually suggest starting with a free skin assessment, then choosing a treatment based on your skin condition. If you want to try a facial first, you can consider the first-trial facial. For regular maintenance, you can look at the signature hydrating repair facial or the 5-session package.",
+      mixed: "如果第一次嚟，建議先做free skin assessment，再按膚況揀plan。想試facial可以考慮首次體驗；想regular保養可以睇皇牌保濕修護或5次package。"
+    }
+  },
+  {
     id: "beauty_booking_policy",
     businessId: "beauty_demo",
     intent: "booking",
@@ -59,6 +100,20 @@ module.exports = [
       "zh-HK": "我哋幫你check下時段，預約成功後需付HK$200留位費，會喺療程當日扣返。",
       en: "Let me check availability for you. A HK$200 deposit is required to secure the slot, deductible from your treatment fee.",
       mixed: "Let me check下個slot，confirm之後要$200 deposit，做嘅時候deduct返。"
+    }
+  },
+  {
+    id: "beauty_membership_points",
+    businessId: "beauty_demo",
+    intent: "membership",
+    question: "會員積分 / member points",
+    keywords: ["會員", "會員號碼", "會員編號", "積分", "免費療程", "換療程", "member", "membership", "member id", "points", "free treatment", "redeem"],
+    tone: "luxury_beauty",
+    requiresBackend: true,
+    answers: {
+      "zh-HK": "請提供8位數字會員編號，我可以幫你查會員積分。每完成1次療程會累積1分；每10分可換1次免費療程。",
+      en: "Please share your 8-digit member ID and I can check your points. You earn 1 point for each completed treatment, and every 10 points can be redeemed for 1 free treatment.",
+      mixed: "請提供8位member ID，我可以幫你check points。每做1次treatment有1 point；每10 points可換1次free treatment。"
     }
   },
 
@@ -119,6 +174,34 @@ module.exports = [
       mixed: "滿$500免SF locker，否則$30，door-to-door另計。"
     }
   },
+  {
+    id: "igshop_order_status",
+    businessId: "igshop_demo",
+    intent: "order_status",
+    question: "訂單狀態 / order status",
+    keywords: ["order", "status", "訂單", "單號", "物流", "tracking", "shipment", "courier", "IG"],
+    tone: "casual_ig",
+    requiresBackend: true,
+    answers: {
+      "zh-HK": "我可以幫你睇訂單狀態；為保障私隱，只會用已驗證嘅IG帳戶同訂單號查詢。",
+      en: "I can check the order status using the verified IG account and order reference.",
+      mixed: "我可以幫你check order status，會用verified IG account同order ref查。"
+    }
+  },
+  {
+    id: "igshop_payment_check",
+    businessId: "igshop_demo",
+    intent: "payment",
+    question: "付款查詢 / payment check",
+    keywords: ["FPS", "PayMe", "payment", "付款", "入數", "轉數快", "paid", "pay"],
+    tone: "casual_ig",
+    requiresBackend: true,
+    answers: {
+      "zh-HK": "我可以幫你查付款紀錄；為保障私隱，只會用已驗證帳戶同付款參考編號查詢。",
+      en: "I can check the payment record using the verified account and payment reference.",
+      mixed: "我可以幫你check payment record，會用verified account同payment ref查。"
+    }
+  },
 
   // ---------------- Education centre ----------------
   {
@@ -148,97 +231,44 @@ module.exports = [
     }
   },
 
-  // ---------------- Solara Bazi ----------------
+  // ---------------- Prince Snooker (snooker hall, per-table booking) ----------------
   {
-    id: "solara_bazi_hours",
-    businessId: "solara_bazi",
+    id: "prince_hours",
+    businessId: "prince_snooker",
     intent: "hours_location",
     question: "營業時間 / opening hours",
-    keywords: ["營業", "開舖", "開門", "24小時", "二十四小時", "hours", "open"],
-    tone: "mystic_practical",
+    keywords: ["幾點", "營業", "開門", "收工", "hours", "open", "close", "點開"],
+    tone: "polite_professional",
     answers: {
-      "zh-HK": "Solara Bazi 24小時接受查詢，你可以隨時留言。",
-      en: "Solara Bazi accepts enquiries 24 hours a day. You can message us anytime.",
-      mixed: "Solara Bazi 24小時accept enquiry，你可以anytime留言。"
+      "zh-HK": "我哋每日11:00–23:30開門。",
+      en: "We're open daily 11:00–23:30.",
+      mixed: "我哋每日11:00–23:30 open。"
     }
   },
   {
-    id: "solara_bazi_pricing",
-    businessId: "solara_bazi",
-    intent: "pricing",
-    question: "八字服務價目 / BaZi pricing",
-    keywords: ["價目", "價錢", "收費", "幾錢", "幾多錢", "八字", "bazi", "一個問題", "流年", "大運", "詳細批", "price", "pricing"],
-    tone: "mystic_practical",
+    id: "prince_identity",
+    businessId: "prince_snooker",
+    intent: "hours_location",
+    question: "店名 / identity",
+    keywords: ["邊間", "店名", "公司名", "間舖", "間鋪", "叫咩", "brand", "shop name", "你係"],
+    tone: "polite_professional",
     answers: {
-      "zh-HK": "Solara Bazi 價目：HK$100 一個問題、HK$300 一個流年、HK$500 一個大運、HK$1,000 詳細批。",
-      en: "Solara Bazi pricing: HK$100 for one question, HK$300 for annual luck reading, HK$500 for 10-year luck cycle reading, HK$1,000 for a detailed reading.",
-      mixed: "Solara Bazi價目：$100一個問題、$300一個流年、$500一個大運、$1,000詳細批。"
+      "zh-HK": "我哋係王子桌球，提供桌球枱租用服務。",
+      en: "We are Prince Snooker, a snooker hall offering table rentals.",
+      mixed: "我哋係王子桌球，提供snooker table rental。"
     }
   },
   {
-    id: "solara_bazi_intake",
-    businessId: "solara_bazi",
-    intent: "service_info",
-    question: "開始批八字需要咩資料 / intake details",
-    keywords: ["八字", "命理", "算命", "流年", "大運", "詳細批", "問事", "問問題", "出生", "出生時間", "出生地", "需要咩資料", "點開始", "bazi"],
-    tone: "mystic_practical",
+    id: "prince_booking",
+    businessId: "prince_snooker",
+    intent: "booking",
+    question: "預約桌球枱 / book a snooker table",
+    keywords: ["book", "預約", "訂枱", "訂位", "想book", "想訂", "table", "枱", "snooker", "桌球"],
+    tone: "polite_professional",
     answers: {
-      "zh-HK": "如想開始，請先講你想問邊款服務，並準備出生年月日、出生時間、出生地，同你想問嘅主題。出生時間唔準確都接受，不過最好可以準確至分鐘。",
-      en: "To start, please choose the service and prepare your date of birth, birth time, birthplace, and the topic you want to ask about. An uncertain birth time is accepted, but minute-level accuracy is preferred.",
-      mixed: "想開始可以先講想問邊款service，並準備出生年月日、出生時間、出生地，同想問嘅topic。出生時間唔準確都接受，不過最好準確至分鐘。"
-    }
-  },
-  {
-    id: "solara_bazi_payment_methods",
-    businessId: "solara_bazi",
-    intent: "payment",
-    question: "付款方法 / payment methods",
-    keywords: ["付款", "點付款", "收錢", "點收錢", "付款方法", "fps", "轉數快", "payme", "alipay", "支付寶", "payment", "pay"],
-    tone: "mystic_practical",
-    safeAutoSend: true,
-    answers: {
-      "zh-HK": "可以用 FPS、PayMe 或 Alipay 付款。",
-      en: "Payment can be made by FPS, PayMe, or Alipay.",
-      mixed: "可以用 FPS、PayMe 或 Alipay 付款。"
-    }
-  },
-  {
-    id: "solara_bazi_delivery_format",
-    businessId: "solara_bazi",
-    intent: "service_info",
-    question: "交付時間同形式 / delivery time and format",
-    keywords: ["交付", "即日", "幾時有", "幾耐", "文字", "語音", "通話", "形式", "format", "delivery", "same day", "voice", "call"],
-    tone: "mystic_practical",
-    answers: {
-      "zh-HK": "付款後即日交付。詳細批可以用文字、語音或通話形式安排。",
-      en: "Delivery is same-day after payment. Detailed readings can be delivered by text, voice message, or call.",
-      mixed: "付款後即日交付。詳細批可以用文字、語音或通話形式安排。"
-    }
-  },
-  {
-    id: "solara_bazi_scope",
-    businessId: "solara_bazi",
-    intent: "service_info",
-    question: "八字服務範圍 / service scope",
-    keywords: ["包括", "睇咩", "問咩", "有咩可以問", "可以問咩", "感情", "事業", "財運", "運勢", "流年", "大運", "詳細批", "scope"],
-    tone: "mystic_practical",
-    answers: {
-      "zh-HK": "可以問感情、事業、財運、個人方向、流年重點或大運走勢。命理分析只作自我了解同參考，唔會保證結果，亦唔代替法律、醫療或投資意見。",
-      en: "You can ask about relationships, career, wealth themes, personal direction, annual luck, or 10-year luck cycles. BaZi readings are for self-understanding and reference only, not legal, medical, or investment advice.",
-      mixed: "可以問感情、事業、財運、personal direction、流年重點或大運走勢。命理分析只作參考，唔保證結果，亦唔代替legal / medical / investment advice。"
-    }
-  },
-  {
-    id: "solara_bazi_restricted_topics",
-    businessId: "solara_bazi",
-    intent: "service_info",
-    question: "不接問題 / restricted topics",
-    keywords: ["法律", "官司", "合約", "犯法", "告人", "legal", "lawsuit", "contract"],
-    tone: "mystic_practical",
-    answers: {
-      "zh-HK": "法律相關個案唔接。如果係感情、事業、財運、流年、大運或個人方向，可以再講你想問嘅主題。",
-      en: "Legal-related cases are not accepted. For relationships, career, wealth themes, annual luck, 10-year luck cycles, or personal direction, please share the topic you want to ask about.",
-      mixed: "法律相關個案唔接。如果係感情、事業、財運、流年、大運或personal direction，可以再講你想問嘅topic。"
+      "zh-HK": "請問你想book邊張枱、邊日同邊個時間？我哋會由真人同事再次確認後正式幫你留位。",
+      en: "Which table, date, and time would you like to book? Our staff will confirm before holding the slot for you.",
+      mixed: "請問你想book邊張枱、邊日同邊個時間？我哋會由staff confirm之後正式為你hold住。"
     }
   }
 ];

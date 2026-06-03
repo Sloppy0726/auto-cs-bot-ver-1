@@ -1,0 +1,10 @@
+# Allow the cs-bot user to restart and inspect its own service without a
+# password. Required by deploy/deploy.sh.
+#
+# Install with:
+#     sudo install -m 0440 deploy/cs-bot.sudoers /etc/sudoers.d/cs-bot
+#     sudo visudo -c   # validate
+#
+# This is the ONLY privileged action the deploy user can perform.
+
+cs-bot ALL=(root) NOPASSWD: /bin/systemctl restart cs-bot, /bin/systemctl status cs-bot, /bin/systemctl --no-pager --lines=5 status cs-bot

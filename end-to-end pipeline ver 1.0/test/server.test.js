@@ -2,7 +2,7 @@
 
 const assert = require("node:assert/strict");
 const http = require("node:http");
-const { createWebhookServer, _internal } = require("../src/server");
+const { createWebhookServer, startWebhookServer, _internal } = require("../src/server");
 
 (async () => {
   assert.equal(_internal.statusCodeForError(new SyntaxError("bad json")), 400, "SyntaxError should be treated as bad request");
@@ -13,6 +13,31 @@ const { createWebhookServer, _internal } = require("../src/server");
   assert.equal(_internal.publicErrorMessage(new Error("database unavailable"), 500), "internal_server_error", "500s should not expose internal messages");
   assert.equal(_internal.publicErrorMessage(Object.assign(new Error("invalid_webhook_signature"), { statusCode: 401 }), 401), "unauthorized", "auth failures should not expose verifier details");
   assert.equal(_internal.publicErrorMessage(new SyntaxError("bad json"), 400), "bad_request", "bad requests should not expose parser details");
+  const originalOauthToken = process.env.OPENAI_OAUTH_TOKEN;
+  const originalClaudeToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  const originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
+  const originalAnthropicAuthToken = process.env.ANTHROPIC_AUTH_TOKEN;
+  const originalAllowDemo = process.env.ALLOW_LOCAL_DEMO_LLM;
+  delete process.env.OPENAI_OAUTH_TOKEN;
+  delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_AUTH_TOKEN;
+  delete process.env.ALLOW_LOCAL_DEMO_LLM;
+  assert.throws(
+    () => startWebhookServer({ port: 0, envFiles: [] }),
+    /CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or OPENAI_OAUTH_TOKEN is required/,
+    "default server startup should require an LLM-backed adapter"
+  );
+  if (originalOauthToken === undefined) delete process.env.OPENAI_OAUTH_TOKEN;
+  else process.env.OPENAI_OAUTH_TOKEN = originalOauthToken;
+  if (originalClaudeToken === undefined) delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  else process.env.CLAUDE_CODE_OAUTH_TOKEN = originalClaudeToken;
+  if (originalAnthropicKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+  else process.env.ANTHROPIC_API_KEY = originalAnthropicKey;
+  if (originalAnthropicAuthToken === undefined) delete process.env.ANTHROPIC_AUTH_TOKEN;
+  else process.env.ANTHROPIC_AUTH_TOKEN = originalAnthropicAuthToken;
+  if (originalAllowDemo === undefined) delete process.env.ALLOW_LOCAL_DEMO_LLM;
+  else process.env.ALLOW_LOCAL_DEMO_LLM = originalAllowDemo;
 
   const body = JSON.stringify({ channel: "website", businessId: "restaurant_demo", sessionId: "s1", text: "hello" });
   const timestamp = "1778400000";
@@ -74,6 +99,15 @@ const { createWebhookServer, _internal } = require("../src/server");
     { channel: "website", businessId: "beauty_demo", text: "hello" },
     { credentialId: "default" }
   ), /business_id_binding_required/, "tenant-scoped payloads require a server-side business binding");
+  assert.deepEqual(
+    _internal.authorizeWebhookPayload(
+      { channel: "instagram", businessId: "igshop_demo", text: "hello" },
+      { unsigned: true },
+      { allowUnsignedWebhooks: true }
+    ),
+    { channel: "instagram", businessId: "igshop_demo", text: "hello" },
+    "unsigned local mode should allow payload-selected fake businesses"
+  );
   assert.throws(() => _internal.verifyUnsignedWebhookMode({ allowUnsignedWebhooks: true, nodeEnv: "production" }), /webhook_signature_required/, "unsigned webhook mode must not run in production");
 
   await assertServerRejectsUnsignedBeforePipeline({ body, secret, timestamp });
@@ -84,8 +118,9 @@ const { createWebhookServer, _internal } = require("../src/server");
   await assertServerMasksAuthAndBadRequestDetails({ secret, timestamp });
   await assertServerRejectsUnsupportedContentType({ body, secret, timestamp });
   await assertServerRejectsDeclaredOversizeBody({ body, secret, timestamp, signature });
+  await assertServerStitchesApiConversationContext();
 
-  console.log("server: 28 tests passed");
+  console.log("server: 31 tests passed");
 })();
 
 function requestWithHeaders(headers) {
@@ -261,6 +296,41 @@ async function assertServerRejectsUnboundSingleSecretBusinessId({ body, secret, 
   assert.equal(response.statusCode, 401);
   assert.equal(response.body.error, "unauthorized");
   assert.equal(called, false, "pipeline must not run when a single secret is not bound to a businessId");
+}
+
+async function assertServerStitchesApiConversationContext() {
+  const receivedPayloads = [];
+  const server = createWebhookServer({
+    allowUnsignedWebhooks: true,
+    pipeline: {
+      async runMessage(payload) {
+        receivedPayloads.push(payload);
+        return {
+          finalStatus: "ready_to_send",
+          outbound: { status: "ready_to_send", payload: { text: "ok" } },
+          staffItem: null,
+          decision: { action: "auto_send" }
+        };
+      }
+    }
+  });
+
+  const first = await sendJson({
+    server,
+    payload: { channel: "whatsapp", businessId: "beauty_demo", from: "api_sender_1", text: "想book位", debug: true }
+  });
+  assert.equal(first.statusCode, 200);
+  assert.equal(first.body.debug.conversationContext.changed, false);
+
+  const second = await sendJson({
+    server,
+    payload: { channel: "whatsapp", businessId: "beauty_demo", from: "api_sender_1", text: "今晚四點", debug: true }
+  });
+  assert.equal(second.statusCode, 200);
+  assert.equal(receivedPayloads[1].text, "想book 今晚四點", "API server should stitch fragmented booking follow-ups");
+  assert.equal(second.body.debug.conversationContext.changed, true);
+  assert.equal(second.body.debug.conversationContext.originalText, "今晚四點");
+  assert.equal(second.body.debug.conversationContext.stitchedText, "想book 今晚四點");
 }
 
 async function assertServerMasksAuthAndBadRequestDetails({ secret, timestamp }) {

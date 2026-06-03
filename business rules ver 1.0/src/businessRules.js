@@ -17,8 +17,7 @@ const ACTIONS = Object.freeze({
   BLOCK: "block"
 });
 
-const ANGRY_PATTERN = /搞錯|嬲|憤怒|不滿|唔滿意|投訴|退錢|退款|chargeback|refund|complaint|angry|furious|terrible|worst/i;
-const PAYMENT_STATUS_PATTERN = /已(?:經)?(?:付款|付咗款|入數|轉帳|轉賬|pay(?:咗|左)?|paid)|(?:付款|入數|轉帳|轉賬|payme|fps|alipay).*(?:截圖|收唔收到|收到未)|(?:收唔收到|收到未|未收到).*(?:款|付款|錢|payment)|payment sent|paid already|receipt|screenshot/i;
+const ANGRY_PATTERN = /搞錯|嬲|憤怒|不滿|唔滿意|投訴|退錢|退款|屌|廢|垃圾|咁廢|chargeback|refund|complaint|angry|furious|terrible|worst|bad bot|useless bot/i;
 
 const POLICY_TO_FORBIDDEN = Object.freeze({
   no_medical_claim: ["give_medical_advice", "promise_treatment_result", "diagnose"],
@@ -58,8 +57,8 @@ function evaluate(input) {
     gateway = {},
     intent = {},
     knowledge = {},
-    packageFacts = null,
-    businessConfig
+    businessConfig,
+    requiredClarification = null
   } = input || {};
 
   const config = businessConfig || getConfig(knowledge.businessId || gateway.businessId);
@@ -169,6 +168,19 @@ function evaluate(input) {
   const lowConfidence = intentConfidence < 0.5;
   const kbGap = knowledge.gap === true;
 
+  if (requiredClarification?.text) {
+    return decision({
+      action: ACTIONS.CLARIFY,
+      reason: requiredClarification.reason || "Missing required details — ask one clarifying question before backend review.",
+      escalationLabel: null,
+      config,
+      intent,
+      knowledge,
+      reasons: [...reasons, requiredClarification.reason || "required clarification"],
+      clarificationText: requiredClarification.text
+    });
+  }
+
   if ((kbGap && intent.primaryIntent && intent.primaryIntent !== "general") || lowConfidence) {
     return decision({
       action: ACTIONS.CLARIFY,
@@ -193,7 +205,11 @@ function evaluate(input) {
   const forcedReviewReasons = [];
   if (knowledge.backendBound) forcedReviewReasons.push("knowledge.backendBound=true");
   const bestPolicyRef = knowledge.bestMatch?.policyRef;
-  if (bestPolicyRef && config.policies?.includes(bestPolicyRef)) {
+  // If the owner has opted intent into auto_send, the policy still applies as a
+  // content constraint via forbidden capabilities (no medical claim, etc.),
+  // but does not by itself force staff review.
+  const intentOptedIntoAutoSend = (config.autoSendIntents || []).includes(intent.primaryIntent);
+  if (bestPolicyRef && config.policies?.includes(bestPolicyRef) && !intentOptedIntoAutoSend) {
     forcedReviewReasons.push(`policyRef=${bestPolicyRef}`);
   }
   if (gateway.route === "review_before_llm") forcedReviewReasons.push("gateway.route=review_before_llm");
@@ -219,7 +235,14 @@ function evaluate(input) {
   const passScore = bestScore >= 0.7;
   const passConfidence = intentConfidence >= 0.7;
   const noRiskHints = (intent.riskLevel === "none" || intent.riskLevel === "low");
+  // Intents the owner explicitly opted into auto-send have KB answers whose numbers
+  // are pre-approved (e.g. published prices, hours). Don't trip askStaffBeforePromise
+  // on numbers in those answers. For everything else (booking slot counts, payment
+  // amounts, etc.) the staff review still happens.
+  const intentApprovedForNumbers = (config.autoSendIntents || []).includes(intent.primaryIntent);
+  const numberNeedsReview = !intentApprovedForNumbers;
   const askStaffTrip = config.askStaffBeforePromise
+    && numberNeedsReview
     && knowledge.bestMatch
     && NUMBER_LIKE_PATTERN.test(knowledge.bestMatch.answer || "");
 

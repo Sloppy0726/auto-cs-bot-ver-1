@@ -1,0 +1,119 @@
+name: Deploy to shops
+
+# Runs full test suite, then SSHes into every shop in deploy/shops.json
+# (over Tailscale) and runs /opt/cs-bot/deploy/deploy.sh.
+#
+# Required GitHub secrets:
+#   TAILSCALE_OAUTH_CLIENT_ID  — Tailscale OAuth client (scopes: devices)
+#   TAILSCALE_OAUTH_SECRET     — Tailscale OAuth client secret
+#   DEPLOY_SSH_KEY             — private key (ed25519). Its public counterpart
+#                                must be in ~cs-bot/.ssh/authorized_keys on
+#                                every shop.
+#
+# Manually deploy a single shop from the Actions tab via "Run workflow".
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "HANDOFF.md"
+      - "CHANGELOG.md"
+      - "legal/**"
+  workflow_dispatch:
+    inputs:
+      shop:
+        description: "Deploy to a single shop only (Tailscale hostname). Leave blank to deploy to all."
+        required: false
+        default: ""
+
+concurrency:
+  group: deploy-shops
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Run test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run all *.test.js
+        env:
+          NODE_ENV: test
+        run: |
+          set -e
+          failed=0
+          while IFS= read -r f; do
+            # Pre-existing skip: needs jsdom which is not installed at repo root.
+            case "$f" in *sidebarScripts.test.js) continue ;; esac
+            if ! node "$f" > /tmp/test.out 2>&1; then
+              echo "FAIL: $f"
+              cat /tmp/test.out
+              failed=1
+            fi
+          done < <(find . -path ./node_modules -prune -o -name "*.test.js" -print | sort)
+          exit $failed
+
+  inventory:
+    name: Build shop list
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      shops: ${{ steps.list.outputs.shops }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        env:
+          SINGLE: ${{ inputs.shop }}
+        run: |
+          set -e
+          if [ -n "${SINGLE:-}" ]; then
+            shops=$(printf '[{"hostname":"%s"}]' "$SINGLE")
+          else
+            shops=$(jq -c '[.shops[] | {hostname}]' deploy/shops.json)
+          fi
+          echo "shops=$shops" >> "$GITHUB_OUTPUT"
+          echo "Will deploy to: $shops"
+
+  deploy:
+    name: Deploy to ${{ matrix.shop.hostname }}
+    needs: inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shop: ${{ fromJson(needs.inventory.outputs.shops) }}
+    steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat > ~/.ssh/config <<EOF
+          Host *
+            StrictHostKeyChecking accept-new
+            UserKnownHostsFile ~/.ssh/known_hosts
+            ConnectTimeout 10
+            ServerAliveInterval 10
+            ServerAliveCountMax 3
+          EOF
+
+      - name: Deploy
+        run: |
+          set -e
+          echo "::group::ssh cs-bot@${{ matrix.shop.hostname }}"
+          ssh cs-bot@${{ matrix.shop.hostname }} /opt/cs-bot/deploy/deploy.sh
+          echo "::endgroup::"

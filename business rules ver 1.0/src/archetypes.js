@@ -8,8 +8,8 @@ const ARCHETYPES = Object.freeze({
   beauty_clinic: {
     archetype: "beauty_clinic",
     tone: "luxury_beauty",
-    autoSendIntents: ["hours_location"],
-    reviewIntents: ["pricing", "service_info", "aftercare"],
+    autoSendIntents: ["hours_location", "pricing", "service_info"],
+    reviewIntents: ["aftercare"],
     policies: ["no_medical_claim", "deposit_required", "no_refund_decision"],
     askStaffBeforePromise: true
   },

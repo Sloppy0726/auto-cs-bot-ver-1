@@ -7,6 +7,7 @@ const VALID_INTENTS = new Set([
   "hours_location",
   "service_info",
   "aftercare",
+  "membership",
   "payment",
   "order_status",
   "package_status",
@@ -36,7 +37,7 @@ const intentRules = [
     intent: "pricing",
     confidence: 0.9,
     reason: "Matched pricing keyword",
-    pattern: /幾錢|幾多錢|價錢|價目|收費|費用|一百蚊|三百蚊|五百蚊|一千蚊|price|pricing|how much|cost|\bfees?\b|rate|rates|\bcharges?\b|trial|promotion|discount|offer|優惠|package|套票/i
+    pattern: /幾錢|幾多錢|價錢|價目|收費|費用|方案|price|pricing|how much|cost|\bfees?\b|rate|rates|\bcharges?\b|trial|promotion|discount|offer|優惠|package|套票/i
   },
   {
     intent: "reschedule",
@@ -48,25 +49,25 @@ const intentRules = [
     intent: "booking",
     confidence: 0.9,
     reason: "Matched booking keyword",
-    pattern: /book|booking|預約|有冇位|有無位|hold|appointment|walk in|walk-in|availability|available|slot|reserve|schedule/i
+    pattern: /book|booking|預約|有冇位|有無位|有咩時間|咩時間|有咩時段|咩時段|hold|appointment|walk in|walk-in|availability|available|slot|reserve|schedule/i
   },
   {
     intent: "hours_location",
     confidence: 0.88,
     reason: "Matched hours or location keyword",
-    pattern: /地址|邊度|位置|分店|旺角|銅鑼灣|尖沙咀|幾點開|幾點收|營業|開舖|開門|收工|24小時|二十四小時|hours|location|address|branch|open|close|closing|opening|directions|nearest mtr|where are you|地鐵|港鐵|出口|mtr/i
-  },
-  {
-    intent: "service_info",
-    confidence: 0.89,
-    reason: "Matched delivery or reading format keyword",
-    pattern: /(?:付款後|俾錢後|畀錢後).*(?:幾時有|幾耐|交付|即日|文字|語音|通話)|(?:幾時有|幾耐|交付|即日|文字|語音|通話).*(?:詳細批|流年|大運|八字|付款後|俾錢後|畀錢後)/i
+    pattern: /地址|邊度|位置|分店|旺角|銅鑼灣|尖沙咀|幾點開|幾點收|營業|開門|收工|邊間公司|邊間店|店名|公司名|間舖|間鋪|舖名|鋪名|叫咩|brand|business name|shop name|store name|hours|location|address|branch|open|close|closing|opening|directions|nearest mtr|where are you|地鐵|港鐵|出口|mtr/i
   },
   {
     intent: "aftercare",
     confidence: 0.86,
     reason: "Matched aftercare keyword",
     pattern: /做完|aftercare|護理|gym|exercise|workout|運動|桑拿|熱水浴|hot bath|曬太陽|sun exposure|exfoliation|sauna|post-treatment|after treatment/i
+  },
+  {
+    intent: "membership",
+    confidence: 0.88,
+    reason: "Matched membership keyword",
+    pattern: /會員|membership|member\s*id|會員號碼|會員編號|積分|\bpoints?\b|free treatment|免費療程|換療程|redeem/i
   },
   {
     intent: "payment",
@@ -79,6 +80,12 @@ const intentRules = [
     confidence: 0.84,
     reason: "Matched order or status keyword",
     pattern: /訂單|單號|order|status|送貨|物流|出貨|幾時到|delivery|tracking|shipment|shipped|courier|parcel|sf express/i
+  },
+  {
+    intent: "complaint",
+    confidence: 0.94,
+    reason: "Matched complaint keyword",
+    pattern: /投訴|退款|退錢|唔滿意|嬲|屌|廢|垃圾|咁廢|bad bot|useless bot|chargeback|refund|complaint|angry|not happy|bad service|no reply|didn.?t reply|overcharged|payment not found|paid but you said|paid but.*not found/i
   },
   {
     intent: "sensitive_health",
@@ -102,7 +109,7 @@ const intentRules = [
     intent: "service_info",
     confidence: 0.76,
     reason: "Matched service information keyword",
-    pattern: /八字|命理|算命|流年|大運|詳細批|問事|問問題|有咩可以問|可以問咩|問咩|出生時間|出生地|唔準確|不準確|分鐘|即日|交付|幾時有|文字|語音|通話|法律|官司|合約|犯法|告人|療程|服務|做咩|包括|需時|效果|underarm|腋下|laser|facial|HIFU|脫毛|nail|spa|service|treatment|bazi|four pillars|legal|lawsuit|contract/i
+    pattern: /療程|服務|做咩|包括|需時|效果|推介|推薦|建議|介紹|有冇list|有無list|list|menu|recommend|recommendation|underarm|腋下|laser|facial|HIFU|脫毛|nail|spa|service|treatment/i
   }
 ];
 
@@ -135,13 +142,12 @@ function classifyIntent(gatewayOutput, options = {}) {
   }
 
   return Promise.resolve(options.llmClassifier(buildLLMIntentInput(normalizedInput, deterministicResult)))
-    .then((llmResult) => normalizeIntent({
+    .then((llmResult) => mergeLlmIntentResult(deterministicResult, llmResult))
+    .catch((error) => ({
       ...deterministicResult,
-      ...llmResult,
-      source: "llm",
       reasons: [
         ...deterministicResult.reasons,
-        ...(Array.isArray(llmResult?.reasons) ? llmResult.reasons : ["LLM classifier used for ambiguous message"])
+        `LLM classifier failed; used deterministic result: ${error.message}`
       ]
     }));
 }
@@ -300,6 +306,7 @@ function summarizeGoal(intent, text) {
     hours_location: "Customer asks about opening hours, branch, or location.",
     service_info: "Customer asks for service or treatment information.",
     aftercare: "Customer asks about aftercare guidance.",
+    membership: "Customer asks about membership, points, or reward eligibility.",
     payment: "Customer asks about payment methods or payment handling.",
     order_status: "Customer asks about order, delivery, or status.",
     package_status: "Customer asks about prepaid package sessions, balance, or expiry.",
@@ -322,6 +329,36 @@ function buildLLMIntentInput(gatewayOutput, deterministicResult) {
   };
 }
 
+function mergeLlmIntentResult(deterministicResult, llmResult = {}) {
+  const protectedPrimaryIntent = deterministicResult.needsHumanReview
+    && ["complaint", "sensitive_health", "child_data", "human_request"].includes(deterministicResult.primaryIntent);
+  const merged = normalizeIntent({
+    ...deterministicResult,
+    ...llmResult,
+    primaryIntent: protectedPrimaryIntent ? deterministicResult.primaryIntent : (llmResult.primaryIntent || deterministicResult.primaryIntent),
+    riskLevel: highestRiskLevel(deterministicResult.riskLevel, llmResult.riskLevel),
+    needsHumanReview: deterministicResult.needsHumanReview || Boolean(llmResult.needsHumanReview),
+    source: "llm",
+    reasons: [
+      ...deterministicResult.reasons,
+      ...(Array.isArray(llmResult?.reasons) ? llmResult.reasons : ["LLM classifier used for ambiguous message"])
+    ]
+  });
+
+  if (protectedPrimaryIntent && llmResult.primaryIntent && llmResult.primaryIntent !== deterministicResult.primaryIntent) {
+    merged.reasons.push(`Protected deterministic safety intent ${deterministicResult.primaryIntent} over LLM intent ${llmResult.primaryIntent}`);
+  }
+  return merged;
+}
+
+function highestRiskLevel(...levels) {
+  const order = ["none", "low", "medium", "high", "blocked"];
+  return levels.reduce((highest, level) => {
+    const normalized = normalizeRiskLevel(level);
+    return order.indexOf(normalized) > order.indexOf(highest) ? normalized : highest;
+  }, "none");
+}
+
 function clamp(value) {
   return Math.max(0.1, Math.min(0.99, value));
 }
@@ -330,5 +367,6 @@ module.exports = {
   classifyIntent,
   classifyDeterministically,
   buildLLMIntentInput,
-  VALID_INTENTS: Array.from(VALID_INTENTS)
+  VALID_INTENTS: Array.from(VALID_INTENTS),
+  _internal: { mergeLlmIntentResult, highestRiskLevel }
 };

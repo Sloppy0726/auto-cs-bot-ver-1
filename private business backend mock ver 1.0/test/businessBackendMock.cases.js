@@ -5,10 +5,11 @@ const standardCases = [
   availability("beauty unavailable facial slot", "beauty_demo", "2026-05-09", "20:00", "facial", undefined, true, false),
   availability("restaurant available early dinner table", "restaurant_demo", "2026-05-09", "18:30", undefined, 2, true, true),
   availability("restaurant unavailable peak dinner table", "restaurant_demo", "2026-05-09", "20:00", undefined, 4, true, false),
-  availability("beauty vague booking missing time does not wildcard", "beauty_demo", "2026-05-09", undefined, "facial", undefined, false, null),
+  availability("beauty vague booking lists available facial slots", "beauty_demo", "2026-05-09", undefined, "facial", undefined, true, true),
   availability("restaurant vague booking missing headcount does not wildcard", "restaurant_demo", "2026-05-09", "18:30", undefined, undefined, false, null),
   stock("ig shop black tee has stock", "igshop_demo", "TEE-BLK-M", undefined, true, true),
   stock("ig shop cream tote is sold out", "igshop_demo", "BAG-CREAM", undefined, true, false),
+  pricing("beauty facial pricing plans", "beauty_demo", "facial", true),
   order("ig shop paid order lookup", "igshop_demo", "IG1001", true),
   order("ig shop shipped order lookup", "igshop_demo", "IG1002", true),
   payment("ig shop FPS payment received", "igshop_demo", "FPS-IG1001", true)
@@ -26,9 +27,15 @@ const availabilityScenarios = [
 const stockScenarios = [
   stock("stock lookup by product name finds black tee", "igshop_demo", undefined, "black tee", true, true),
   stock("stock lookup by lowercase sku finds black tee", "igshop_demo", "tee-blk-m", undefined, true, true),
-  stock("stock lookup missing sku returns not found", "igshop_demo", "TEE-WHT-S", undefined, false, null),
+  stock("stock lookup missing sku returns not found", "igshop_demo", "TEE-GRN-XL", undefined, false, null),
   stock("restaurant has no retail stock records", "restaurant_demo", "TEE-BLK-M", undefined, false, null),
   stock("beauty has no product stock records", "beauty_demo", "SERUM-001", undefined, false, null)
+];
+
+const pricingScenarios = [
+  pricing("beauty laser pricing plans", "beauty_demo", "laser", true),
+  pricing("restaurant has no pricing plans", "restaurant_demo", "facial", false),
+  pricing("unknown beauty service pricing missing", "beauty_demo", "nail", false)
 ];
 
 const orderScenarios = [
@@ -48,6 +55,7 @@ const minimalFactsScenarios = [
   minimal("minimal facts reschedule routes to availability", "restaurant_demo", "reschedule", { businessId: "restaurant_demo", date: "2026-05-09", time: "18:30", partySize: 2 }, true),
   minimal("minimal facts order status routes to verified order lookup", "igshop_demo", "order_status", { businessId: "igshop_demo", orderId: "IG1001", senderId: "ig_sender_1001" }, true),
   minimal("minimal facts payment routes to verified payment lookup", "igshop_demo", "payment", { businessId: "igshop_demo", reference: "FPS-IG1001", senderId: "ig_sender_1001" }, true),
+  minimal("minimal facts pricing routes to pricing lookup", "beauty_demo", "pricing", { businessId: "beauty_demo", service: "facial" }, true),
   minimal("minimal facts service info routes to stock lookup", "igshop_demo", "service_info", { businessId: "igshop_demo", sku: "TEE-BLK-M" }, true),
   minimal("minimal facts general skips backend lookup", "igshop_demo", "general", { businessId: "igshop_demo", sku: "TEE-BLK-M" }, false)
 ];
@@ -55,6 +63,7 @@ const minimalFactsScenarios = [
 for (const scenario of [
   ...availabilityScenarios,
   ...stockScenarios,
+  ...pricingScenarios,
   ...orderScenarios,
   ...paymentScenarios,
   ...minimalFactsScenarios
@@ -64,7 +73,8 @@ for (const scenario of [
 
 const businesses = ["beauty_demo", "restaurant_demo", "igshop_demo", "edu_demo", "unknown_business"];
 const times = ["11:00", "14:00", "18:30", "19:00", "20:00", "21:30"];
-const skus = ["TEE-BLK-M", "BAG-CREAM", "TEE-WHT-S", "SERUM-001", "COURSE-P3"];
+const skus = ["TEE-BLK-M", "BAG-CREAM", "TEE-GRN-XL", "SERUM-001", "COURSE-P3"];
+const igShopSkus = new Set(["TEE-BLK-M", "BAG-CREAM", "TEE-WHT-S", "CAP-NAVY", "DRESS-FLORAL-M"]);
 let index = 1;
 while (standardCases.length < 100) {
   const businessId = businesses[index % businesses.length];
@@ -72,8 +82,8 @@ while (standardCases.length < 100) {
     standardCases.push(availability(`matrix availability ${businessId} future empty slot ${index}`, businessId, "2027-01-01", times[index % times.length], index % 2 ? "facial" : undefined, index % 3 === 0 ? 4 : undefined, false, null));
   } else if (index % 4 === 1) {
     const sku = skus[index % skus.length];
-    const found = businessId === "igshop_demo" && ["TEE-BLK-M", "BAG-CREAM"].includes(sku);
-    const available = found ? (sku === "TEE-BLK-M") : null;
+    const found = businessId === "igshop_demo" && igShopSkus.has(sku);
+    const available = found ? (sku !== "BAG-CREAM") : null;
     standardCases.push(stock(`matrix stock ${businessId} ${sku} ${index}`, businessId, sku, undefined, found, available));
   } else if (index % 4 === 2) {
     const orderId = index % 3 === 0 ? "IG1002" : `IG${3000 + index}`;
@@ -102,6 +112,15 @@ function stock(name, businessId, sku, nameQuery, expectFound, expectAvailable) {
     query: { businessId, sku, name: nameQuery },
     expectFound,
     expectAvailable
+  };
+}
+
+function pricing(name, businessId, service, expectFound) {
+  return {
+    name,
+    fn: "lookupPricing",
+    query: { businessId, service },
+    expectFound
   };
 }
 

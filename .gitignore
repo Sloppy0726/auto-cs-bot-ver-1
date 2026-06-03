@@ -1,14 +1,8 @@
 .DS_Store
+.env
 node_modules/
 *.log
 ~$*.docx
-.local/
-.env
-.env.local
-.env.*.local
-deliverables/
-*.mp4
-*.webm
-*.mov
-*.ogg
-*.mp3
+private business backend mock ver 1.0/state/
+channel adapter ver 1.0/state/
+whatsapp-web-test-bridge/state/

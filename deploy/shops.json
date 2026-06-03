@@ -1,0 +1,10 @@
+{
+  "_comment": "List of shops that GitHub Actions deploys to. The 'hostname' field is the Tailscale machine name (so the runner can SSH via cs-bot@<hostname>). 'businessId' is informational only — actual binding lives in each shop's /opt/cs-bot/.env. Add new shops by editing this file and pushing to main; the next deploy will include them.",
+  "shops": [
+    {
+      "hostname": "prince-snooker",
+      "businessId": "prince_snooker",
+      "label": "王子桌球"
+    }
+  ]
+}

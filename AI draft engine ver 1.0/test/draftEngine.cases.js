@@ -11,14 +11,12 @@ const seedCases = [
     expectCitation: "restaurant_hours"
   },
   {
-    name: "beauty pricing staff_review calls injected LLM with KB-only source",
+    name: "beauty pricing auto-sends KB answer verbatim with promo suffix",
     businessId: "beauty_demo",
     input: "facial幾錢？",
-    expectAction: "staff_review",
+    expectAction: "auto_send",
     expectTone: "luxury_beauty",
-    expectLlmUsed: true,
-    llmText: "草稿一：多謝你查詢，基礎面部護理單次 HK$680，首次體驗價 HK$380。詳情建議由同事覆核後再回覆你。",
-    expectPromptContains: ["Only approved factual source", "Signature facial單次$680", "give_medical_advice"]
+    expectLlmUsed: false
   },
   {
     name: "restaurant parking clarify returns deterministic clarification",
@@ -62,14 +60,12 @@ const scenarioFamilies = [
     expectCitation: "restaurant_hours"
   },
   {
-    label: "beauty pricing staff review draft",
+    label: "beauty pricing auto-send draft",
     businessId: "beauty_demo",
     inputs: ["facial幾錢？", "想問面部護理價錢", "Signature facial price?", "首次體驗facial幾錢"],
-    expectAction: "staff_review",
+    expectAction: "auto_send",
     expectTone: "luxury_beauty",
-    expectLlmUsed: true,
-    llmText: staffDraft,
-    expectPromptContains: ["Only approved factual source", "Forbidden capabilities"]
+    expectLlmUsed: false
   },
   {
     label: "beauty booking staff review draft",

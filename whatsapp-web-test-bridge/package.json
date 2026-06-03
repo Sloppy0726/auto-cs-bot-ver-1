@@ -1,0 +1,18 @@
+{
+  "name": "auto-cs-bot-whatsapp-web-test-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "bridge": "node src/whatsappWebBridge.js",
+    "start": "bin/start-local.sh",
+    "stop": "bin/stop-local.sh",
+    "status": "bin/status.sh",
+    "test": "node test/handoffState.test.js && node test/messageHeuristics.test.js && node test/sidebarScripts.test.js",
+    "handoff:clear": "rm -f state/handoff.json",
+    "bridge:reply-latest-on-start": "WA_BRIDGE_REPLY_LATEST_ON_START=true node src/whatsappWebBridge.js"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  }
+}

@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { classifyIntent } = require("../src/intentClassifier");
+const { classifyIntent, _internal } = require("../src/intentClassifier");
 const { routeMessage } = require("../../privacy gateway ver 1.0/src/privacyGateway");
 const { standardCases } = require("./intentClassifier.cases");
 
@@ -30,4 +30,29 @@ for (const testCase of standardCases) {
   assertIntent(testCase);
 }
 
-console.log(`intentClassifier: ${standardCases.length} tests passed`);
+const mergedSafetyIntent = _internal.mergeLlmIntentResult(
+  {
+    primaryIntent: "complaint",
+    secondaryIntents: [],
+    confidence: 0.94,
+    riskLevel: "high",
+    needsHumanReview: true,
+    language: "zh-HK",
+    customerGoal: "Complaint",
+    entities: {},
+    source: "deterministic",
+    reasons: ["Matched complaint keyword"]
+  },
+  {
+    primaryIntent: "general",
+    confidence: 0.6,
+    riskLevel: "low",
+    needsHumanReview: false,
+    reasons: ["LLM thought it was general"]
+  }
+);
+assert.equal(mergedSafetyIntent.primaryIntent, "complaint", "LLM must not override protected complaint intent");
+assert.equal(mergedSafetyIntent.riskLevel, "high", "LLM must not lower risk level");
+assert.equal(mergedSafetyIntent.needsHumanReview, true, "LLM must not clear human review flag");
+
+console.log(`intentClassifier: ${standardCases.length + 3} tests passed`);
