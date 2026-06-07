@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "smb-toolkit": {
+      "command": "node",
+      "args": ["small business toolkit ver 1.0/src/server.js"]
+    }
+  }
+}
