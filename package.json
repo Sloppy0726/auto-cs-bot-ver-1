@@ -7,6 +7,7 @@
   "private": false,
   "scripts": {
     "start": "node \"end-to-end pipeline ver 1.0/src/server.js\"",
+    "mcp:smb": "node \"small business toolkit ver 1.0/src/server.js\"",
     "test": "node scripts/run-tests.js",
     "test:verbose": "node scripts/run-tests.js --verbose",
     "test:context": "node \"conversation context ver 1.0/test/conversationContext.test.js\"",
@@ -34,5 +35,8 @@
   },
   "devDependencies": {
     "jsdom": "^29.1.1"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
   }
 }
