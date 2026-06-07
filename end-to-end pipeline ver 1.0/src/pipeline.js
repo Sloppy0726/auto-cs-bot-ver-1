@@ -20,6 +20,7 @@ const { hkDateKey } = require("../../google drive promo sync ver 1.0/src/hkTime"
 const promoSeed = require("../../google drive promo sync ver 1.0/seed/promoSeed");
 const { createPackageStore } = require("../../package ops ver 1.0/src/packageOps");
 const packageSeed = require("../../package ops ver 1.0/seed/packageSeed");
+const { createOwnerConsole } = require("../../owner console ver 1.0/src/ownerConsole");
 
 function createPipeline(config = {}) {
   const kb = config.knowledgeBase || createKnowledgeBase({ entries: config.seed || seed });
@@ -31,10 +32,14 @@ function createPipeline(config = {}) {
   const llmIntentAnalyzer = config.llmIntentAnalyzer;
   const paraphraser = config.paraphraser;
   const nowFn = config.nowFn || (() => new Date());
+  // Owner command console: no-op unless OWNER_PHONES (or config.ownerConsole) is set.
+  const ownerConsole = config.ownerConsole === false
+    ? null
+    : (config.ownerConsole || createOwnerConsole({ env: config.env || process.env }));
 
   return {
     async runMessage(input) {
-      return runMessage(input, { kb, backend, inbox, promotionStore, packageStore, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
+      return runMessage(input, { kb, backend, inbox, promotionStore, packageStore, ownerConsole, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
     },
     inbox,
     backend,
@@ -54,6 +59,26 @@ async function runMessage(input = {}, deps = {}) {
       normalizedMessage
     }) || null;
     return result({ normalizedMessage, staffItem, finalStatus: "staff_review", errors: normalizedMessage.errors });
+  }
+
+  // Owner fast-path: if the sender is a registered owner and their message maps
+  // to a toolkit command, answer directly and skip the customer-support flow.
+  if (deps.ownerConsole) {
+    const ownerOutcome = await deps.ownerConsole.handle({
+      senderId: normalizedMessage.senderId,
+      text: normalizedMessage.rawText
+    });
+    if (ownerOutcome && ownerOutcome.handled) {
+      const draft = { action: "auto_send", text: ownerOutcome.text };
+      const outbound = buildOutboundMessage({ normalizedMessage, draft, safety: { safeToSend: true } });
+      return result({
+        normalizedMessage,
+        draft,
+        outbound,
+        finalStatus: outbound.status === "ready_to_send" ? "ready_to_send" : "staff_review",
+        errors: []
+      });
+    }
   }
 
   const gateway = routeMessage(normalizedMessage.rawText);
