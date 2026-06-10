@@ -4,6 +4,39 @@
 
 ### Security
 
+#### 2026-06-10 HKT - Owner Impersonation, Paraphraser Injection, and Store Race Fixes
+
+- **Owner-command impersonation closed:** the owner fast-path now only runs on
+  channels where the sender's number is operator-verified (default `whatsapp`,
+  configurable via `config.ownerChannels` / `OWNER_CHANNELS`). Previously a
+  website visitor could set their client-chosen `sessionId` to the owner's phone
+  number and run finance/CRM toolkit commands.
+- **Owner matching tightened:** `isOwner` no longer matches an arbitrary short
+  suffix against a real number; it requires a full normalized number or a
+  last-8-digit (HK local) match, with both sides ≥ 8 digits.
+- **Paraphraser can no longer inject facts:** `preservesFacts` is now
+  bidirectional — a rewrite may neither drop a source fact nor introduce a
+  price/time/date/id absent from the approved source. This protects the
+  "auto_send quotes approved KB only" guarantee.
+- **Availability store cross-process lock:** the read-modify-write cycle for
+  bookings/opening-hours/resources is now guarded by a lockfile, preventing
+  lost writes and double-booking when the server and bridge run as separate
+  processes.
+- **Admin token constant-time compare:** the `x-admin-token` check now uses
+  `crypto.timingSafeEqual` instead of `!==`, removing a timing side-channel.
+- **`/debug/fake-db` gated:** the customer/order/payment dump now requires the
+  same admin auth as `/admin` (blocked in production without `ADMIN_TOKEN`).
+- **Rate-limit IP spoofing closed:** `X-Forwarded-For` is only trusted when
+  `config.trustProxy` / `TRUST_PROXY=true` is set; otherwise the real socket
+  address is used so the header can't be rotated to dodge limits.
+- **Safety-checker PII backstop aligned with the filter:** now matches HKID with
+  or without the check-digit parentheses and all HK phone prefixes (2/3/5/6/8/9).
+- **Conversation history is sanitized on disk:** persisted context now stores
+  PII-redacted text instead of raw customer messages.
+- **Tests:** added `ownerSecurity`, `paraphraseInjection`, and
+  `availabilityConcurrency` (8-process concurrent-write) suites; full suite at
+  **3,125 assertions across 52 test files**.
+
 #### 2026-05-12 HKT - Webhook Request Envelope Hardening
 
 - **Availability hardening:** Webhook requests now reject non-JSON content types, oversized declared bodies, and slow request bodies before reaching the pipeline.

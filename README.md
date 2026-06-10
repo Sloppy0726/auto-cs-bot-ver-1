@@ -26,7 +26,7 @@ customer channel
   -> send reply or staff inbox
 ```
 
-Current test total: **3,088 passing** across 43 plain Node.js test runners. Run them all with `npm test`.
+Current test total: **3,125 passing** across 52 plain Node.js test runners. Run them all with `npm test`.
 
 The core pipeline has no runtime npm dependencies — every module runs on the Node.js stdlib. The only devDependency is `jsdom`, used by the WhatsApp Web bridge's sidebar-script tests in [`whatsapp-web-test-bridge/`](whatsapp-web-test-bridge/).
 
@@ -215,8 +215,10 @@ The test runner discovers all `*.test.js` files outside ignored generated-output
 - Privacy gateway runs before any LLM call.
 - Business policy lives in typed JS rules, not only prompts.
 - Promotion expiry is checked using configurable UTC+8 locale time.
-- `auto_send` must quote approved KB text exactly.
+- `auto_send` must quote approved KB text exactly. When paraphrasing is enabled, the rewrite must preserve every source fact and may not introduce any new price/time/date/id.
 - Staff review is required for pricing, backend-bound actions, handoff, safety violations, and privacy blocks.
+- Owner toolkit commands only run on operator-verified channels (default `whatsapp`; override with `OWNER_CHANNELS`). The website channel never grants owner privileges, because its `sessionId` is client-chosen.
+- Admin and debug endpoints (`/admin/*`, `/debug/fake-db`) require `ADMIN_TOKEN` and are blocked in production without it. Set `TRUST_PROXY=true` only when a trusted reverse proxy sets `X-Forwarded-For`.
 - Current channel/server/backend/staff inbox pieces are local skeletons, not production integrations.
 
 See [HANDOFF.md](HANDOFF.md) for detailed session notes and known limitations.

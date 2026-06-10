@@ -312,12 +312,25 @@ function preservesFacts(original, paraphrased) {
   if (!original || !paraphrased) return false;
   const ratio = paraphrased.length / Math.max(original.length, 1);
   if (ratio < 0.4 || ratio > 2.5) return false;
-  const tokens = extractFactTokens(original);
-  const haystack = paraphrased.replace(/\s+/g, "");
-  for (const token of tokens) {
+
+  const originalHaystack = original.replace(/\s+/g, "");
+  const paraphrasedHaystack = paraphrased.replace(/\s+/g, "");
+
+  // 1. Every fact in the approved source must survive the rewrite.
+  for (const token of extractFactTokens(original)) {
     const needle = token.replace(/\s+/g, "");
-    if (needle && !haystack.includes(needle)) return false;
+    if (needle && !paraphrasedHaystack.includes(needle)) return false;
   }
+
+  // 2. The rewrite must NOT introduce a fact (price, time, date, id, …) that
+  //    is absent from the source. Without this check a paraphraser could append
+  //    a fabricated price or closing time to an auto_send reply and still pass,
+  //    which would break the "auto_send quotes approved KB only" guarantee.
+  for (const token of extractFactTokens(paraphrased)) {
+    const needle = token.replace(/\s+/g, "");
+    if (needle && !originalHaystack.includes(needle)) return false;
+  }
+
   return true;
 }
 

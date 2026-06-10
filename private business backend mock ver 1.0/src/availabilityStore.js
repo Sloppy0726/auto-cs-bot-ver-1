@@ -64,10 +64,12 @@ function createAvailabilityStore(options = {}) {
     if (!VALID_BUSINESS_IDS.has(businessId)) return { ok: false, error: `unknown businessId: ${businessId}` };
     const validated = validateOpeningHours(hours);
     if (validated.error) return { ok: false, error: validated.error };
-    const state = loadAll();
-    ensureBusiness(state, businessId).openingHours = validated.hours;
-    saveAll(state);
-    return { ok: true, openingHours: validated.hours };
+    return withLock(filePath, () => {
+      const state = loadAll();
+      ensureBusiness(state, businessId).openingHours = validated.hours;
+      saveAll(state);
+      return { ok: true, openingHours: validated.hours };
+    });
   }
 
   // ---- Closed periods (one-off blocks) ----
@@ -80,22 +82,26 @@ function createAvailabilityStore(options = {}) {
     if (!VALID_BUSINESS_IDS.has(businessId)) return { ok: false, error: `unknown businessId: ${businessId}` };
     const v = validateClosedPeriod(period);
     if (v.error) return { ok: false, error: v.error };
-    const state = loadAll();
-    const record = v.period;
-    record.id = record.id || newId("close");
-    ensureBusiness(state, businessId).closedPeriods.push(record);
-    saveAll(state);
-    return { ok: true, period: record };
+    return withLock(filePath, () => {
+      const state = loadAll();
+      const record = v.period;
+      record.id = record.id || newId("close");
+      ensureBusiness(state, businessId).closedPeriods.push(record);
+      saveAll(state);
+      return { ok: true, period: record };
+    });
   }
 
   function removeClosedPeriod(businessId, id) {
-    const state = loadAll();
-    const arr = state.businesses[businessId]?.closedPeriods || [];
-    const idx = arr.findIndex((p) => p.id === id);
-    if (idx === -1) return { ok: false, error: "closed period not found" };
-    const [removed] = arr.splice(idx, 1);
-    saveAll(state);
-    return { ok: true, period: removed };
+    return withLock(filePath, () => {
+      const state = loadAll();
+      const arr = state.businesses[businessId]?.closedPeriods || [];
+      const idx = arr.findIndex((p) => p.id === id);
+      if (idx === -1) return { ok: false, error: "closed period not found" };
+      const [removed] = arr.splice(idx, 1);
+      saveAll(state);
+      return { ok: true, period: removed };
+    });
   }
 
   // ---- Bookings ----
@@ -107,47 +113,53 @@ function createAvailabilityStore(options = {}) {
   function addBooking(businessId, booking) {
     const v = validateBooking(businessId, booking);
     if (v.error) return { ok: false, error: v.error };
-    const state = loadAll();
-    const resReq = checkBookingResourceRequirement(state, businessId, v.booking);
-    if (!resReq.ok) return { ok: false, error: resReq.error };
-    const overlap = checkBookingResourceOverlap(state, businessId, v.booking);
-    if (!overlap.ok) return { ok: false, error: overlap.error };
-    const fit = checkBookingFitsOpeningHours(state, businessId, v.booking);
-    if (!fit.ok) return { ok: false, error: fit.error };
-    const record = v.booking;
-    record.id = record.id || newId("book");
-    ensureBusiness(state, businessId).bookings.push(record);
-    saveAll(state);
-    return { ok: true, booking: record };
+    return withLock(filePath, () => {
+      const state = loadAll();
+      const resReq = checkBookingResourceRequirement(state, businessId, v.booking);
+      if (!resReq.ok) return { ok: false, error: resReq.error };
+      const overlap = checkBookingResourceOverlap(state, businessId, v.booking);
+      if (!overlap.ok) return { ok: false, error: overlap.error };
+      const fit = checkBookingFitsOpeningHours(state, businessId, v.booking);
+      if (!fit.ok) return { ok: false, error: fit.error };
+      const record = v.booking;
+      record.id = record.id || newId("book");
+      ensureBusiness(state, businessId).bookings.push(record);
+      saveAll(state);
+      return { ok: true, booking: record };
+    });
   }
 
   function updateBooking(businessId, id, patch) {
-    const state = loadAll();
-    const arr = state.businesses[businessId]?.bookings || [];
-    const idx = arr.findIndex((b) => b.id === id);
-    if (idx === -1) return { ok: false, error: "booking not found" };
-    const merged = { ...arr[idx], ...patch, id };
-    const v = validateBooking(businessId, merged);
-    if (v.error) return { ok: false, error: v.error };
-    const resReq = checkBookingResourceRequirement(state, businessId, v.booking);
-    if (!resReq.ok) return { ok: false, error: resReq.error };
-    const overlap = checkBookingResourceOverlap(state, businessId, v.booking, id);
-    if (!overlap.ok) return { ok: false, error: overlap.error };
-    const fit = checkBookingFitsOpeningHours(state, businessId, v.booking);
-    if (!fit.ok) return { ok: false, error: fit.error };
-    arr[idx] = v.booking;
-    saveAll(state);
-    return { ok: true, booking: v.booking };
+    return withLock(filePath, () => {
+      const state = loadAll();
+      const arr = state.businesses[businessId]?.bookings || [];
+      const idx = arr.findIndex((b) => b.id === id);
+      if (idx === -1) return { ok: false, error: "booking not found" };
+      const merged = { ...arr[idx], ...patch, id };
+      const v = validateBooking(businessId, merged);
+      if (v.error) return { ok: false, error: v.error };
+      const resReq = checkBookingResourceRequirement(state, businessId, v.booking);
+      if (!resReq.ok) return { ok: false, error: resReq.error };
+      const overlap = checkBookingResourceOverlap(state, businessId, v.booking, id);
+      if (!overlap.ok) return { ok: false, error: overlap.error };
+      const fit = checkBookingFitsOpeningHours(state, businessId, v.booking);
+      if (!fit.ok) return { ok: false, error: fit.error };
+      arr[idx] = v.booking;
+      saveAll(state);
+      return { ok: true, booking: v.booking };
+    });
   }
 
   function removeBooking(businessId, id) {
-    const state = loadAll();
-    const arr = state.businesses[businessId]?.bookings || [];
-    const idx = arr.findIndex((b) => b.id === id);
-    if (idx === -1) return { ok: false, error: "booking not found" };
-    const [removed] = arr.splice(idx, 1);
-    saveAll(state);
-    return { ok: true, booking: removed };
+    return withLock(filePath, () => {
+      const state = loadAll();
+      const arr = state.businesses[businessId]?.bookings || [];
+      const idx = arr.findIndex((b) => b.id === id);
+      if (idx === -1) return { ok: false, error: "booking not found" };
+      const [removed] = arr.splice(idx, 1);
+      saveAll(state);
+      return { ok: true, booking: removed };
+    });
   }
 
   // ---- Resources (per-business stylists / tables / rooms) ----
@@ -168,25 +180,29 @@ function createAvailabilityStore(options = {}) {
     if (!VALID_BUSINESS_IDS.has(businessId)) return { ok: false, error: `unknown businessId: ${businessId}` };
     const v = validateResource(resource);
     if (v.error) return { ok: false, error: v.error };
-    const state = loadAll();
-    const record = v.resource;
-    record.id = record.id || newId("res");
-    ensureBusiness(state, businessId).resources.push(record);
-    saveAll(state);
-    return { ok: true, resource: record };
+    return withLock(filePath, () => {
+      const state = loadAll();
+      const record = v.resource;
+      record.id = record.id || newId("res");
+      ensureBusiness(state, businessId).resources.push(record);
+      saveAll(state);
+      return { ok: true, resource: record };
+    });
   }
 
   function updateResource(businessId, id, patch) {
-    const state = loadAll();
-    const arr = state.businesses[businessId]?.resources || [];
-    const idx = arr.findIndex((r) => r.id === id);
-    if (idx === -1) return { ok: false, error: "resource not found" };
-    const merged = { ...arr[idx], ...patch, id };
-    const v = validateResource(merged);
-    if (v.error) return { ok: false, error: v.error };
-    arr[idx] = v.resource;
-    saveAll(state);
-    return { ok: true, resource: v.resource };
+    return withLock(filePath, () => {
+      const state = loadAll();
+      const arr = state.businesses[businessId]?.resources || [];
+      const idx = arr.findIndex((r) => r.id === id);
+      if (idx === -1) return { ok: false, error: "resource not found" };
+      const merged = { ...arr[idx], ...patch, id };
+      const v = validateResource(merged);
+      if (v.error) return { ok: false, error: v.error };
+      arr[idx] = v.resource;
+      saveAll(state);
+      return { ok: true, resource: v.resource };
+    });
   }
 
   function removeResource(businessId, id) {
@@ -303,7 +319,7 @@ function createAvailabilityStore(options = {}) {
   }
 
   function reset() {
-    saveAll(buildInitialState());
+    withLock(filePath, () => saveAll(buildInitialState()));
   }
 
   return {
@@ -724,6 +740,46 @@ function atomicWrite(filePath, contents) {
   const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}`;
   fs.writeFileSync(tmp, JSON.stringify(contents, null, 2));
   fs.renameSync(tmp, filePath);
+}
+
+// Cross-process mutual exclusion for the load→check→save cycle. Node is
+// single-threaded, so within one process these mutations already serialize on
+// the event loop. But the bot server and the WhatsApp bridge can run as
+// separate processes sharing this JSON file; without a lock their read-modify-
+// write cycles would clobber each other (last-writer-wins loses bookings) and
+// two concurrent writers could both pass the overlap check and double-book the
+// same resource (TOCTOU). A lockfile plus a brief synchronous spin gives a
+// correct critical section for this low-traffic store.
+function acquireLock(lockPath) {
+  const start = Date.now();
+  for (;;) {
+    try {
+      fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+      return fs.openSync(lockPath, "wx");
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      // Reclaim a stale lock left by a crashed holder.
+      try {
+        if (Date.now() - fs.statSync(lockPath).mtimeMs > 10_000) {
+          fs.unlinkSync(lockPath);
+          continue;
+        }
+      } catch { /* lock vanished between stat and unlink; just retry */ }
+      if (Date.now() - start > 5_000) throw new Error("availability store busy");
+      const until = Date.now() + 20;
+      while (Date.now() < until) { /* brief spin under contention */ }
+    }
+  }
+}
+
+function withLock(filePath, fn) {
+  const fd = acquireLock(`${filePath}.lock`);
+  try {
+    return fn();
+  } finally {
+    try { fs.closeSync(fd); } catch { /* ignore */ }
+    try { fs.unlinkSync(`${filePath}.lock`); } catch { /* ignore */ }
+  }
 }
 
 module.exports = {

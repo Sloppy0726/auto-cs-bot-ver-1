@@ -36,10 +36,11 @@ function createPipeline(config = {}) {
   const ownerConsole = config.ownerConsole === false
     ? null
     : (config.ownerConsole || createOwnerConsole({ env: config.env || process.env }));
+  const ownerChannels = normalizeOwnerChannels(config.ownerChannels, config.env || process.env);
 
   return {
     async runMessage(input) {
-      return runMessage(input, { kb, backend, inbox, promotionStore, packageStore, ownerConsole, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
+      return runMessage(input, { kb, backend, inbox, promotionStore, packageStore, ownerConsole, ownerChannels, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
     },
     inbox,
     backend,
@@ -63,7 +64,12 @@ async function runMessage(input = {}, deps = {}) {
 
   // Owner fast-path: if the sender is a registered owner and their message maps
   // to a toolkit command, answer directly and skip the customer-support flow.
-  if (deps.ownerConsole) {
+  // Owner identity is a phone number, so we only trust it on channels where the
+  // sender's number is operator-verified (default: WhatsApp). On the website
+  // channel the senderId is a client-chosen sessionId, so running the owner
+  // console there would let any visitor impersonate the owner by typing the
+  // owner's number — never do that.
+  if (deps.ownerConsole && deps.ownerChannels.includes(normalizedMessage.channel)) {
     const ownerOutcome = await deps.ownerConsole.handle({
       senderId: normalizedMessage.senderId,
       text: normalizedMessage.rawText
@@ -151,6 +157,18 @@ async function runMessage(input = {}, deps = {}) {
     finalStatus,
     errors: []
   });
+}
+
+// Channels on which the owner fast-path may run. Owner identity is established
+// purely by phone number, which is only trustworthy where the operator verifies
+// the sender. WhatsApp Business API guarantees the sender's number; website
+// sessionIds are caller-chosen. Override with config.ownerChannels or the
+// OWNER_CHANNELS env var (comma-separated) if you wire another verified channel.
+function normalizeOwnerChannels(configured, env) {
+  if (Array.isArray(configured)) return configured.map((c) => String(c).toLowerCase());
+  const raw = env && env.OWNER_CHANNELS;
+  if (raw) return String(raw).split(",").map((c) => c.trim().toLowerCase()).filter(Boolean);
+  return ["whatsapp"];
 }
 
 function shouldLookupPackageFacts(text, intent = {}) {

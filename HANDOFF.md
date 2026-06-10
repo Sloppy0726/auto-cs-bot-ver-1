@@ -1,6 +1,6 @@
 # Handoff - Hong Kong AI Customer Support SaaS
 
-Last verified: 2026-06-03 HKT (per-resource model done through §23; OSS readiness package logged in §24; live-smoke of both LLM adapters logged in §25).
+Last verified: 2026-06-10 HKT (security audit + fixes logged in §27; full suite green at 3,125 assertions across 52 test files). Earlier: per-resource model through §23; OSS readiness package §24; live-smoke of both LLM adapters §25.
 
 This is the project map for the next session. Read this before editing code.
 
@@ -1946,6 +1946,94 @@ entirely rather than substituting "Traditional Chinese". The README uses
 - Full suite still green: 3,088 tests across 43 runners.
 - Live behavior unchanged: the prompts now drop one qualifier; rules,
   citations, and outputs are unaffected.
+
+End of session addendum.
+
+---
+
+## 27. Session Addendum — 2026-06-10 (security audit + fixes)
+
+A deep read of the core modules surfaced one privilege-escalation path, one
+prompt-grounding hole, and a set of medium hardening gaps. All fixed in this
+session with regression tests. Full suite green: **3,125 assertions across 52
+test files** (was 3,088 / 43; +3 new test files, +deltas from tightened paths).
+
+### 27.1 Critical fixes
+
+1. **Owner-command impersonation** (`owner console ver 1.0/src/ownerRegistry.js`,
+   `end-to-end pipeline ver 1.0/src/pipeline.js`).
+   - The owner fast-path ran for every message keyed only on
+     `normalizedMessage.senderId`. On the website channel `senderId` is the
+     client-chosen `sessionId`, so any visitor to the open `/` chat could set it
+     to an owner's phone number and run the finance/CRM toolkit
+     (`registry.js`) — leaking P&L, cash flow, payroll, customer lists.
+   - Fix A: `pipeline.js` now gates the fast-path to operator-verified channels.
+     New `normalizeOwnerChannels(config.ownerChannels, env)` defaults to
+     `["whatsapp"]`; override with `config.ownerChannels` or `OWNER_CHANNELS`.
+     `deps.ownerChannels` is threaded into `runMessage`.
+   - Fix B: `isOwner` no longer uses the bidirectional `endsWith` (a short
+     attacker id could match a long owner number). It requires a full
+     normalized-number match or a last-8-digit (HK local) match, both sides ≥ 8
+     digits.
+   - Tests: `owner console ver 1.0/test/ownerSecurity.test.js`.
+
+2. **Paraphraser fact injection** (`AI draft engine ver 1.0/src/draftEngine.js`).
+   - `preservesFacts` only checked that source facts survived, not that the
+     rewrite added none. A paraphraser could append a fabricated price/closing
+     time to an `auto_send` reply and pass — breaking "auto_send quotes approved
+     KB only". `safetyChecker` shares the same function, so the send-gate had
+     the same hole.
+   - Fix: `preservesFacts` is now bidirectional — every paraphrase fact token
+     must also exist in the source.
+   - Tests: `AI draft engine ver 1.0/test/paraphraseInjection.test.js`.
+
+3. **Availability store cross-process race** (`private business backend mock ver
+   1.0/src/availabilityStore.js`).
+   - Within one process the sync load→check→save is already serialized by the
+     event loop, but the server and the WhatsApp bridge can run as separate
+     processes sharing `state/availability.json`; concurrent writers clobbered
+     each other (lost bookings) and could both pass the overlap check and
+     double-book a resource.
+   - Fix: new `withLock(filePath, fn)` (lockfile + brief sync spin + 10s stale-
+     lock reclaim) wraps every mutating op (`addBooking`, `updateBooking`,
+     `removeBooking`, `setOpeningHours`, closed-period add/remove, resource
+     add/update, `reset`).
+   - Tests: `private business backend mock ver 1.0/test/availabilityConcurrency.test.js`
+     (8 concurrent child processes; asserts no lost writes).
+
+### 27.2 Medium hardening (`end-to-end pipeline ver 1.0/src/server.js` unless noted)
+
+- **Admin token constant-time compare:** new `safeStringEqual` using
+  `crypto.timingSafeEqual`; `verifyAdminRequest` no longer uses `!==`.
+- **`/debug/fake-db` gated** behind `verifyAdminRequest` (was unauthenticated,
+  always-on; dumped customers/orders/payments).
+- **Rate-limit IP spoofing:** `remoteAddressKey(req, config)` only trusts
+  `X-Forwarded-For` when `config.trustProxy` / `TRUST_PROXY=true`; else uses the
+  socket address.
+- **Safety-checker PII backstop** (`safety checker ver 1.0/src/safetyChecker.js`):
+  `PII_PATTERN` aligned to the privacy filter — HKID with/without check-digit
+  parens, HK phone prefixes `[235689]` (was `[569]`).
+- **Conversation history sanitized on disk** (`conversation context ver
+  1.0/src/conversationContext.js`): `commit()` now persists
+  `filterForLLM(...).sanitizedText` instead of raw customer text. Stitching is
+  unaffected (it keys on date/time/service tokens the filter leaves intact).
+
+### 27.3 New config surface (document for operators)
+
+- `OWNER_CHANNELS` (env) / `config.ownerChannels` — channels allowed to run owner
+  commands. Default `whatsapp`.
+- `TRUST_PROXY=true` (env) / `config.trustProxy` — trust `X-Forwarded-For`.
+- `ADMIN_TOKEN` now also guards `/debug/fake-db`.
+- All three documented in `.env.example`, `README.md` ("Important constraints"),
+  and `CHANGELOG.md`.
+
+### 27.4 Still open (enhancement backlog, no security/correctness risk)
+
+- Tenant config still hardcoded (`VALID_BUSINESS_IDS`, archetypes, seeds).
+- `fromMinutes` wraps `% 24` (24:00 → 00:00); harmless today because opening
+  hours cap at 23:30, but revisit before supporting overnight venues.
+- Owner-console `pending` confirm state is in-memory (lost on restart / not
+  multi-process).
 
 End of session addendum.
 

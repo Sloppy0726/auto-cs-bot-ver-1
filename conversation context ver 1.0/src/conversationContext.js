@@ -3,6 +3,15 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { normalizeInbound } = require("../../channel adapter ver 1.0/src/channelAdapter");
+const { filterForLLM } = require("../../privacy filter ver 1.0/src/privacyFilter");
+
+// Redact PII before it is written to the on-disk history. Stitching only needs
+// dates/times/services/booking tokens, which the filter leaves intact, so this
+// keeps context quality while not persisting raw HKIDs, cards, or phones.
+function sanitizeForStorage(text) {
+  if (!text) return text;
+  return filterForLLM(text).sanitizedText;
+}
 
 const DEFAULT_MAX_MESSAGES = 30;
 const DEFAULT_LOOKBACK_MESSAGES = 8;
@@ -40,8 +49,8 @@ function createConversationContextStore(options = {}) {
         commit() {
           const nextHistory = history.concat({
             incoming: true,
-            text: normalized.rawText,
-            stitchedText: stitched.changed ? stitched.text : null,
+            text: sanitizeForStorage(normalized.rawText),
+            stitchedText: stitched.changed ? sanitizeForStorage(stitched.text) : null,
             at: normalized.receivedAt,
             messageId: normalized.externalMessageId
           }).slice(-maxMessages);

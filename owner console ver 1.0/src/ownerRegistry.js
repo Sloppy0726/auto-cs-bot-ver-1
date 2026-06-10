@@ -17,12 +17,19 @@ function loadOwnerPhones(env = process.env) {
     .filter(Boolean);
 }
 
-// Match on digit equality OR suffix (a stored "61112222" matches "85261112222")
-// so owners can list numbers with or without the country code.
+// HK phone numbers are 8 local digits. Match on the full normalized number, or
+// on the last 8 digits so owners can list numbers with or without the +852
+// country code. We deliberately do NOT match on an arbitrary short suffix: the
+// old bidirectional endsWith let a short, attacker-chosen senderId (e.g. a
+// website sessionId normalized down to a few digits) match a real owner number
+// and seize owner privileges. Both sides must carry at least a full local number.
 function isOwner(senderId, phones) {
   const sender = normalizePhone(senderId);
-  if (!sender) return false;
-  return phones.some((p) => p === sender || sender.endsWith(p) || p.endsWith(sender));
+  if (sender.length < 8) return false;
+  return phones.some((p) => {
+    if (p.length < 8) return false;
+    return p === sender || p.slice(-8) === sender.slice(-8);
+  });
 }
 
 module.exports = { normalizePhone, loadOwnerPhones, isOwner };

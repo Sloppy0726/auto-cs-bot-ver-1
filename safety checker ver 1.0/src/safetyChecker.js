@@ -16,7 +16,10 @@ const STAFF_ONLY_ACTIONS = Object.freeze(["staff_review", "handoff"]);
 const BLOCKING_ACTIONS = Object.freeze(["block"]);
 
 const PLACEHOLDER_PATTERN = /<HKID>|<CREDIT_CARD>|<PHONE>|<EMAIL>|\[(?:HKID|CREDIT_CARD|PHONE|EMAIL|PAYMENT_REF|ORDER_REF|BOOKING_REF)_\d+\]|\[stub\]|\{\{[^}]+\}\}|TODO|FIXME/i;
-const PII_PATTERN = /[A-Z]\d{6}\([0-9A]\)|\b(?:\d[ -]?){13,19}\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\b(?:\+?852[-\s]?)?[569]\d{3}[-\s]?\d{4}\b/i;
+// Mirrors the privacy filter's detectors so this final send-gate backstop is no
+// weaker than the front-line filter: HKID with OR without the check-digit
+// parentheses, and all HK phone prefixes (2/3/5/6/8/9), not just 5/6/9.
+const PII_PATTERN = /(?<![A-Z0-9])[A-Z]{1,2}\d{6}(?:\([0-9A]\)|[0-9A])(?![A-Z0-9])|\b(?:\d[ -]?){13,19}\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\b(?:\+?852[-\s]?)?[235689]\d{3}[-\s]?\d{4}\b/i;
 
 function checkDraft(input = {}) {
   const { draft = {}, decision = {}, knowledge = {}, packageFacts = null, intent = {}, gateway = {} } = input;

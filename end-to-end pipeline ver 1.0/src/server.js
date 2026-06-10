@@ -48,6 +48,14 @@ function createWebhookServer(config = {}) {
     }
 
     if (req.method === "GET" && req.url === "/debug/fake-db") {
+      // This dumps customer names, order IDs, and payment references/amounts.
+      // Gate it behind the same admin auth as /admin so it is not an open,
+      // unauthenticated data-exfiltration endpoint in production.
+      const auth = verifyAdminRequest(req, config);
+      if (auth.error) {
+        writeJson(res, auth.status || 401, { error: auth.error });
+        return;
+      }
       writeJson(res, 200, summarizeFakeDatabase(fakeBusinessData));
       return;
     }
@@ -69,7 +77,7 @@ function createWebhookServer(config = {}) {
     }
 
     const startedAt = Date.now();
-    const ipKey = remoteAddressKey(req);
+    const ipKey = remoteAddressKey(req, config);
     if (rateLimiter) {
       const verdict = rateLimiter.take(ipKey);
       if (!verdict.allowed) {
@@ -112,9 +120,15 @@ function createWebhookServer(config = {}) {
   });
 }
 
-function remoteAddressKey(req) {
-  const forwarded = getHeader(req, "x-forwarded-for");
-  if (forwarded) return String(forwarded).split(",")[0].trim();
+function remoteAddressKey(req, config = {}) {
+  // X-Forwarded-For is client-settable, so trusting it lets an attacker rotate
+  // the header to dodge the rate limiter. Only honour it when explicitly told a
+  // trusted proxy sits in front (config.trustProxy or TRUST_PROXY=true).
+  const trustProxy = config.trustProxy ?? (process.env.TRUST_PROXY === "true");
+  if (trustProxy) {
+    const forwarded = getHeader(req, "x-forwarded-for");
+    if (forwarded) return String(forwarded).split(",")[0].trim();
+  }
   return req.socket?.remoteAddress || "unknown";
 }
 
@@ -738,12 +752,22 @@ function verifyAdminRequest(req, config = {}) {
   const expected = config.adminToken || process.env.ADMIN_TOKEN || null;
   const provided = getHeader(req, "x-admin-token") || null;
   if (expected) {
-    if (!provided || provided !== expected) return { error: "unauthorized", status: 401 };
+    if (!provided || !safeStringEqual(provided, expected)) return { error: "unauthorized", status: 401 };
     return {};
   }
   const nodeEnv = config.nodeEnv || process.env.NODE_ENV;
   if (nodeEnv === "production") return { error: "admin_token_required", status: 401 };
   return {};
+}
+
+// Constant-time comparison for non-hex secrets (the admin token). Length may
+// leak (standard for token checks); the content comparison is timing-safe so
+// the token cannot be recovered byte-by-byte via response timing.
+function safeStringEqual(a, b) {
+  const left = Buffer.from(String(a), "utf8");
+  const right = Buffer.from(String(b), "utf8");
+  if (left.length !== right.length) return false;
+  return crypto.timingSafeEqual(left, right);
 }
 
 function summarizeFakeDatabase(data) {
