@@ -34,7 +34,8 @@ const ARCHETYPES = Object.freeze({
     tone: "education",
     autoSendIntents: ["hours_location"],
     reviewIntents: ["pricing", "service_info"],
-    policies: ["no_refund_decision"],
+    // no_academic_guarantee: never promise exam/interview results for a child.
+    policies: ["no_refund_decision", "no_academic_guarantee"],
     askStaffBeforePromise: true
   },
   bazi_consultant: {
@@ -62,6 +63,10 @@ const DEMO_BUSINESS_CONFIGS = Object.freeze({
   restaurant_demo: { businessId: "restaurant_demo", ...ARCHETYPES.restaurant },
   igshop_demo: { businessId: "igshop_demo", ...ARCHETYPES.ig_shop },
   edu_demo: { businessId: "edu_demo", ...ARCHETYPES.education },
+  // BrightPath Learning Centre — the education-centre vertical demo tenant.
+  // businessId matches centre_id in verticals/education-centre/demo-data/brightpath-centre.json.
+  // Shares the education archetype safety settings with edu_demo.
+  "brightpath-demo": { businessId: "brightpath-demo", ...ARCHETYPES.education },
   solara_bazi: { businessId: "solara_bazi", ...ARCHETYPES.bazi_consultant }
 });
 

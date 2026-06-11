@@ -21,11 +21,16 @@ This folder is intentionally product-specific while reusing the existing auto-CS
 
 - `demo-data/brightpath-centre.json` — fake but realistic education centre data for demos.
 - `knowledge-base/approved-faq.md` — approved answers the bot may quote.
+- `knowledge-base/brightpath-kb-seed.js` — structured, loadable form of the approved FAQ (zh-HK/en/mixed answers, keywords, `requiresBackend`/`safeAutoSend`/`policyRef`) for `createKnowledgeBase`.
 - `intents/education-intents.json` — education-specific intent catalogue.
+- `src/educationIntentAdapter.js` — maps vertical product intents onto the core `VALID_INTENTS` taxonomy.
 - `lead-capture/trial-lesson-lead.schema.json` — fields for parent/student trial enquiries.
 - `business-rules/education-handoff-rules.md` — safety and staff-review rules.
 - `sales-demo/demo-conversations.md` — bilingual demo scripts for sales calls.
 - `owner-summary/daily-summary-template.md` — owner-facing daily summary format.
+- `test/` — adapter unit tests and `educationSafety.test.js` (trial lead, pricing review, complaint/child-data handoff, no slot confirmation, no academic guarantee).
+
+The `brightpath-demo` tenant is registered in `business rules ver 1.0/src/archetypes.js` against the `education` archetype, whose `no_academic_guarantee` policy forbids the draft engine from promising exam/interview outcomes.
 
 ## Integration Pattern
 

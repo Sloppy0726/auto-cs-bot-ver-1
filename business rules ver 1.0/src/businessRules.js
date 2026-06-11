@@ -23,7 +23,8 @@ const PAYMENT_STATUS_PATTERN = /已(?:經)?(?:付款|付咗款|入數|轉帳|轉
 const POLICY_TO_FORBIDDEN = Object.freeze({
   no_medical_claim: ["give_medical_advice", "promise_treatment_result", "diagnose"],
   no_refund_decision: ["decide_refund", "approve_chargeback"],
-  deposit_required: ["waive_deposit", "promise_no_deposit"]
+  deposit_required: ["waive_deposit", "promise_no_deposit"],
+  no_academic_guarantee: ["guarantee_exam_result", "promise_academic_outcome", "promise_grade_improvement"]
 });
 
 const PACKAGE_FORBIDDEN = Object.freeze([

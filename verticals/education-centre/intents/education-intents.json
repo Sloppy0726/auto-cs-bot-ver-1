@@ -75,6 +75,17 @@
         "可以留位嗎"
       ],
       "default_action": "collect_lead_then_staff_review"
+    },
+    {
+      "id": "child_data",
+      "examples": [
+        "小朋友全名係",
+        "佢讀緊邊間幼稚園",
+        "child full name is",
+        "my kid's school is",
+        "出生日期"
+      ],
+      "default_action": "staff_review"
     }
   ]
 }
