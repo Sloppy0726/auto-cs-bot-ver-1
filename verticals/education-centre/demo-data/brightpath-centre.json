@@ -1,0 +1,81 @@
+{
+  "centre_id": "brightpath-demo",
+  "name_en": "BrightPath Learning Centre",
+  "name_zh": "明途教育中心",
+  "locale": "Hong Kong",
+  "channels": [
+    "WhatsApp",
+    "Instagram",
+    "Facebook",
+    "Website"
+  ],
+  "languages": [
+    "Traditional Chinese",
+    "English",
+    "mixed Cantonese-English"
+  ],
+  "address": "Demo only: 8/F, Learning Plaza, Mong Kok, Hong Kong",
+  "opening_hours": {
+    "mon_fri": "13:00-20:00",
+    "sat": "09:30-18:30",
+    "sun": "closed"
+  },
+  "courses": [
+    {
+      "code": "K-PHONICS",
+      "name_en": "K1-K3 Phonics",
+      "name_zh": "幼稚園拼音班",
+      "age_group": "K1-K3",
+      "trial_available": true,
+      "price_note": "Staff must confirm current package price."
+    },
+    {
+      "code": "P1-READ",
+      "name_en": "P1-P3 English Reading",
+      "name_zh": "初小英文閱讀班",
+      "age_group": "P1-P3",
+      "trial_available": true,
+      "price_note": "Staff must confirm current package price."
+    },
+    {
+      "code": "P4-WRITE",
+      "name_en": "P4-P6 Writing",
+      "name_zh": "高小英文寫作班",
+      "age_group": "P4-P6",
+      "trial_available": true,
+      "price_note": "Staff must confirm current package price."
+    },
+    {
+      "code": "MATH-JR",
+      "name_en": "Junior Maths",
+      "name_zh": "初小數學班",
+      "age_group": "P1-P4",
+      "trial_available": true,
+      "price_note": "Staff must confirm current package price."
+    },
+    {
+      "code": "INTERVIEW",
+      "name_en": "Interview Preparation",
+      "name_zh": "升小面試班",
+      "age_group": "K2-K3",
+      "trial_available": false,
+      "price_note": "Staff must confirm current package price."
+    }
+  ],
+  "lead_required_fields": [
+    "parent_name",
+    "child_year_group",
+    "subject_or_course",
+    "preferred_day_time",
+    "contact_channel"
+  ],
+  "handoff_topics": [
+    "refunds",
+    "complaints",
+    "exact availability",
+    "payment disputes",
+    "special needs",
+    "private student records",
+    "medical or child-safety details"
+  ]
+}

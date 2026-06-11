@@ -1,0 +1,80 @@
+{
+  "version": "0.1.0",
+  "intents": [
+    {
+      "id": "trial_lesson_enquiry",
+      "examples": [
+        "想試堂",
+        "有冇trial lesson",
+        "Can I book a trial?",
+        "小朋友K3想試英文班"
+      ],
+      "default_action": "collect_lead"
+    },
+    {
+      "id": "price_enquiry",
+      "examples": [
+        "幾錢",
+        "收費點計",
+        "How much is the class?",
+        "package price?"
+      ],
+      "default_action": "answer_if_approved_else_staff_review"
+    },
+    {
+      "id": "class_schedule_enquiry",
+      "examples": [
+        "星期六有冇班",
+        "What time are classes?",
+        "平日夜晚有嗎"
+      ],
+      "default_action": "collect_preferences_then_staff_review"
+    },
+    {
+      "id": "age_group_match",
+      "examples": [
+        "K3啱唔啱",
+        "P2可以讀咩班",
+        "Which class for my child?"
+      ],
+      "default_action": "suggest_approved_options"
+    },
+    {
+      "id": "makeup_class_policy",
+      "examples": [
+        "補堂",
+        "missed class",
+        "改時間"
+      ],
+      "default_action": "collect_details_then_staff_review"
+    },
+    {
+      "id": "refund_or_complaint",
+      "examples": [
+        "退錢",
+        "refund",
+        "投訴",
+        "complaint"
+      ],
+      "default_action": "staff_review"
+    },
+    {
+      "id": "teacher_qualification",
+      "examples": [
+        "老師資歷",
+        "teacher background",
+        "邊個教"
+      ],
+      "default_action": "answer_if_approved_else_staff_review"
+    },
+    {
+      "id": "enrollment_followup",
+      "examples": [
+        "點報名",
+        "I want to join",
+        "可以留位嗎"
+      ],
+      "default_action": "collect_lead_then_staff_review"
+    }
+  ]
+}

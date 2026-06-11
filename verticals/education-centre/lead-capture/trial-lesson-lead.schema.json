@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Education Centre Trial Lesson Lead",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source_channel",
+    "parent_display_name",
+    "child_year_group",
+    "subject_or_course",
+    "preferred_day_time",
+    "status"
+  ],
+  "properties": {
+    "source_channel": {
+      "type": "string",
+      "enum": [
+        "whatsapp",
+        "instagram",
+        "facebook",
+        "website",
+        "manual"
+      ]
+    },
+    "parent_display_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "child_year_group": {
+      "type": "string",
+      "description": "Age/year group such as K3, P2, Form 1."
+    },
+    "subject_or_course": {
+      "type": "string"
+    },
+    "preferred_day_time": {
+      "type": "string"
+    },
+    "contact_handle": {
+      "type": "string",
+      "description": "Channel handle or phone if already provided by customer; do not ask for extra PII unless needed."
+    },
+    "language_preference": {
+      "type": "string",
+      "enum": [
+        "zh-Hant",
+        "en",
+        "mixed",
+        "unknown"
+      ],
+      "default": "unknown"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "risk_flags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "new",
+        "needs_staff_review",
+        "trial_requested",
+        "trial_confirmed_by_staff",
+        "attended",
+        "converted",
+        "lost"
+      ]
+    }
+  }
+}
