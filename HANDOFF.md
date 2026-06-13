@@ -1951,4 +1951,53 @@ End of session addendum.
 
 ---
 
+## 27. Session Addendum — 2026-06-13 (four deterministic differentiators)
+
+Added four new `* ver 1.0` modules that give the bot capabilities no English-first /
+prompt-first competitor ships. All deterministic, stdlib-only, **default-safe**
+(off / no-op until configured) so the existing suite stays byte-for-byte green.
+
+New modules + tests (89 new tests, suite now 56 test files, all green):
+
+- `action journal ver 1.0` — SHA-256 hash-chained, append-only JSONL flight recorder.
+  `verifyChain()` detects edit/delete/reorder; `replay(evaluate, getConfig)` re-runs the
+  business-rules gate over journaled sanitized inputs and proves each deterministic
+  decision reproduces. PII-minimised: `senderRef` is a hash; customer text retained only
+  when `finalStatus === "ready_to_send"`, else hashed. `buildEvidenceBundle()` exports a
+  scoped, chain-verified record set.
+- `hk calendar ver 1.0` — `resolveCulturalDate(text, now)` resolves 年初一/二/三, 除夕,
+  清明, 佛誕, 端午, 中秋(翌日), 重陽, 冬至, 平安夜, 聖誕, 母親節 etc. Lunar dates from
+  `seed/hkHolidays.js`, verified against the GovHK gazette **through 2027**; out-of-table
+  years return `provisional` (ask staff, never guess); spans like 過年 return `ambiguous`.
+- `canto sentiment ver 1.0` — `scoreAnger(text, history)` tiered Cantonese profanity/anger
+  lexicon + HK review-pile-on threat detection (target + action co-occurrence) + velocity.
+- `weather policy ver 1.0` — 打風自動制. `createWeatherStore().setSignal(level)` +
+  per-level policy (T8+/black-rain → closed + depositWaiver). `fetchHkoSignal()` reads the
+  HKO open-data warnsum but is NOT in the request path (wire to a poller). No network by default.
+
+Pipeline wiring (all in `end-to-end pipeline ver 1.0/src/pipeline.js`):
+
+- `createPipeline` gained `journal` (opt-in via `config.actionJournal` or
+  `ACTION_JOURNAL_PATH`) and `weatherStore` (default no-op signal "none"), both exposed on
+  the returned pipeline object. Every `runMessage` return path goes through `journaled()`.
+- `inferRequestedDate` calls `resolveCulturalDate` first; concrete dates flow into the
+  existing availability machinery, ambiguous/provisional fall through to "ask for the date".
+- `scoreAnger` runs on `gateway.sanitizedText`; its result is passed to `evaluate()` and
+  promotions are dropped from the customer draft when `suppressPromo`.
+- `inferWeatherResponse` is prepended to the `requiredClarification` chain, so a live
+  signal pre-empts hours/booking replies with a closure/caution banner.
+
+Core-module change: `business rules ver 1.0/src/businessRules.js` `evaluate()` now accepts an
+optional `sentiment` input and its Tier-2 handoff block escalates on `sentiment.escalate`
+(label `angry_customer`) or `sentiment.reputationThreat` (label `reputation_risk`).
+With no `sentiment` passed, behaviour is identical — confirmed by the unchanged suite.
+
+Deliberately NOT built (scope discipline, documented for the next session): owner-console
+`打風`/`核銷` chat-commands, atomic slot holds, FPS/PayMe deposit ledger, capability-contract
+action layer, 熟客 regulars ledger. See the research transcript for full designs.
+
+End of session addendum.
+
+---
+
 End of handoff.

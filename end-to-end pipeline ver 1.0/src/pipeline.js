@@ -21,6 +21,10 @@ const promoSeed = require("../../google drive promo sync ver 1.0/seed/promoSeed"
 const { createPackageStore } = require("../../package ops ver 1.0/src/packageOps");
 const packageSeed = require("../../package ops ver 1.0/seed/packageSeed");
 const { createOwnerConsole } = require("../../owner console ver 1.0/src/ownerConsole");
+const { createActionJournal } = require("../../action journal ver 1.0/src/actionJournal");
+const { resolveCulturalDate } = require("../../hk calendar ver 1.0/src/hkCalendar");
+const { scoreAnger } = require("../../canto sentiment ver 1.0/src/cantoSentiment");
+const { createWeatherStore, inferWeatherResponse } = require("../../weather policy ver 1.0/src/weatherPolicy");
 
 function createPipeline(config = {}) {
   const kb = config.knowledgeBase || createKnowledgeBase({ entries: config.seed || seed });
@@ -36,17 +40,50 @@ function createPipeline(config = {}) {
   const ownerConsole = config.ownerConsole === false
     ? null
     : (config.ownerConsole || createOwnerConsole({ env: config.env || process.env }));
+  // Tamper-evident action journal: opt-in, like ownerConsole. Off unless a journal
+  // instance is passed or ACTION_JOURNAL_PATH is set, so existing behaviour is
+  // byte-for-byte unchanged when unconfigured.
+  const journal = resolveJournal(config, nowFn);
+  // HKO weather policy store. Defaults to signal "none" (a no-op), so the pipeline is
+  // unchanged until a signal is set via the store, the owner console, or a poller.
+  const weatherStore = config.weatherStore === false ? null : (config.weatherStore || createWeatherStore({ nowFn }));
 
   return {
     async runMessage(input) {
-      return runMessage(input, { kb, backend, inbox, promotionStore, packageStore, ownerConsole, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
+      return runMessage(input, { kb, backend, inbox, promotionStore, packageStore, ownerConsole, journal, weatherStore, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
     },
     inbox,
     backend,
     kb,
     promotionStore,
-    packageStore
+    packageStore,
+    journal,
+    weatherStore
   };
+}
+
+function resolveJournal(config = {}, nowFn) {
+  if (config.actionJournal === false) return null;
+  if (config.actionJournal) return config.actionJournal;
+  const filePath = (config.env || process.env).ACTION_JOURNAL_PATH;
+  if (!filePath) return null;
+  return createActionJournal({ filePath, nowFn });
+}
+
+// Append the turn to the journal (if enabled) and return it. Journaling never
+// changes the returned result; a journal write failure must not break a reply.
+function journaled(deps, payload) {
+  const finalResult = result(payload);
+  if (deps.journal) {
+    try {
+      // The journal copy carries requiredClarification (an evaluate() input) so the
+      // decision can be replayed; the returned result keeps its existing shape.
+      deps.journal.append({ result: { ...finalResult, requiredClarification: payload.requiredClarification || null } });
+    } catch (_err) {
+      // Best-effort recorder: a disk error must not deny a customer their reply.
+    }
+  }
+  return finalResult;
 }
 
 async function runMessage(input = {}, deps = {}) {
@@ -58,7 +95,7 @@ async function runMessage(input = {}, deps = {}) {
       safety: { verdict: "revise", safeToSend: false, reasons: normalizedMessage.errors },
       normalizedMessage
     }) || null;
-    return result({ normalizedMessage, staffItem, finalStatus: "staff_review", errors: normalizedMessage.errors });
+    return journaled(deps, { normalizedMessage, staffItem, finalStatus: "staff_review", errors: normalizedMessage.errors });
   }
 
   // Owner fast-path: if the sender is a registered owner and their message maps
@@ -71,7 +108,7 @@ async function runMessage(input = {}, deps = {}) {
     if (ownerOutcome && ownerOutcome.handled) {
       const draft = { action: "auto_send", text: ownerOutcome.text };
       const outbound = buildOutboundMessage({ normalizedMessage, draft, safety: { safeToSend: true } });
-      return result({
+      return journaled(deps, {
         normalizedMessage,
         draft,
         outbound,
@@ -99,6 +136,10 @@ async function runMessage(input = {}, deps = {}) {
     intent,
     now: deps.nowFn()
   });
+  // Cantonese anger / review-threat ladder. Runs on sanitized text (never raw PII).
+  const sentiment = scoreAnger(gateway.sanitizedText, normalizedMessage.history || []);
+  // Never dangle a promotion at an annoyed or furious customer.
+  const promotionsForDraft = sentiment.suppressPromo ? null : promotions;
   const businessConfig = getConfig(normalizedMessage.businessId);
   const backendQuery = inferBackendQuery({ normalizedMessage, intent, now: deps.nowFn(), backend: deps.backend });
   const backendFacts = deps.backend.getMinimalFacts({
@@ -106,7 +147,19 @@ async function runMessage(input = {}, deps = {}) {
     intent,
     query: backendQuery
   });
-  const requiredClarification = requiredClarificationForBackendIntent({
+  // Weather mode (打風自動制): a live HKO signal pre-empts hours/booking replies with a
+  // deterministic closure or caution banner. Inactive by default (signal "none").
+  const weather = deps.weatherStore
+    ? deps.weatherStore.lookup({ businessConfig, language: knowledge.language || intent.language })
+    : { active: false };
+  const requiredClarification = inferWeatherResponse({
+    weather,
+    intent,
+    normalizedMessage,
+    backend: deps.backend,
+    businessConfig,
+    language: knowledge.language || intent.language
+  }) || requiredClarificationForBackendIntent({
     normalizedMessage,
     intent,
     query: backendQuery,
@@ -119,9 +172,9 @@ async function runMessage(input = {}, deps = {}) {
     backend: deps.backend,
     language: knowledge.language || intent.language
   });
-  const decision = evaluate({ gateway, intent, knowledge, packageFacts, businessConfig, requiredClarification });
+  const decision = evaluate({ gateway, intent, knowledge, packageFacts, businessConfig, requiredClarification, sentiment });
   const modelRoute = routeModel({ decision, intent, gateway });
-  const draft = await generateDraft({ decision, knowledge, packageFacts, intent, gateway, promotions, backendFacts, modelRoute }, { llmAdapter: deps.llmAdapter, paraphraser: deps.paraphraser, modelRoute });
+  const draft = await generateDraft({ decision, knowledge, packageFacts, intent, gateway, promotions: promotionsForDraft, backendFacts, modelRoute }, { llmAdapter: deps.llmAdapter, paraphraser: deps.paraphraser, modelRoute });
   const safety = checkDraft({ draft, decision, knowledge, packageFacts, intent, gateway });
 
   const bookingDraft = inferBookingDraft({ intent, query: backendQuery, normalizedMessage, backend: deps.backend });
@@ -134,7 +187,7 @@ async function runMessage(input = {}, deps = {}) {
   const outbound = buildOutboundMessage({ normalizedMessage, draft, safety, staffItem });
   const finalStatus = outbound.status === "ready_to_send" ? "ready_to_send" : "staff_review";
 
-  return result({
+  return journaled(deps, {
     normalizedMessage,
     gateway,
     intent,
@@ -149,6 +202,7 @@ async function runMessage(input = {}, deps = {}) {
     staffItem,
     outbound,
     finalStatus,
+    requiredClarification,
     errors: []
   });
 }
@@ -481,6 +535,12 @@ function joinEnglishList(parts) {
 }
 
 function inferRequestedDate(text, now) {
+  // HK cultural date words (年初二, 平安夜, 中秋翌日…) resolve first and deterministically.
+  // Ambiguous spans (過年) or years beyond the verified table return no dateKey, so we
+  // fall through to "ask for the date" rather than guessing.
+  const cultural = resolveCulturalDate(text, now || new Date());
+  if (cultural && cultural.dateKey) return cultural.dateKey;
+
   if (/今晚|今日|today|tonight/i.test(text)) return hkDateKey(now);
 
   if (/聽日|明日|明天|tomorrow/i.test(text)) {

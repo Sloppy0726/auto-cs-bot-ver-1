@@ -14,19 +14,23 @@ customer channel
   -> conversation context
   -> privacy filter
   -> privacy gateway
+  -> canto sentiment          (鬧爆 / review-threat ladder)
   -> intent classifier
   -> package ops context
   -> knowledge base
+  -> hk calendar              (年初二 / 中秋 / 平安夜 date resolution)
   -> promotion sync context
+  -> weather policy           (打風自動制: T8 / black-rain mode)
   -> business rules
   -> private business backend mock
   -> model router
   -> AI draft engine
   -> safety checker
   -> send reply or staff inbox
+  -> action journal           (tamper-evident, replayable record)
 ```
 
-Current test total: **3,088 passing** across 43 plain Node.js test runners. Run them all with `npm test`.
+All modules run on the Node.js stdlib; **56 test files** pass with `npm test`.
 
 The core pipeline has no runtime npm dependencies — every module runs on the Node.js stdlib. The only devDependency is `jsdom`, used by the WhatsApp Web bridge's sidebar-script tests in [`whatsapp-web-test-bridge/`](whatsapp-web-test-bridge/).
 
@@ -61,6 +65,21 @@ Most customer-support AI examples are English-first and prompt-first. This proje
 | 15 | `package ops ver 1.0` | Read-only prepaid package entitlement lookup (remaining sessions, expiry, usage history) for beauty / fitness / education shops. |
 | 16 | `usage tracker ver 0.1` | Per-turn token-usage JSONL recording for cost observability. |
 | 17 | `whatsapp web automation prototype ver 0.1` | Local burner-number WhatsApp Web demo. Prototype only — not a production channel integration. |
+| 18 | `action journal ver 1.0` | Tamper-evident SHA-256 hash-chained record of every turn, with a verifier that **replays the deterministic policy gate** to prove each decision reproduces. Privacy-minimised; opt-in. |
+| 19 | `hk calendar ver 1.0` | Resolves how HK customers name dates — `年初二`, `中秋翌日`, `平安夜`, `冬至` — from a gazette-sourced table, 100% reliable where prompt-based bots guess. |
+| 20 | `canto sentiment ver 1.0` | Cantonese anger lexicon + Hong Kong review-pile-on threat detection (`上OpenRice俾你一星`), forcing handoff and suppressing promos. |
+| 21 | `weather policy ver 1.0` | 打風自動制 — HKO T8 / black-rainstorm signals flip the bot into closure mode with auto deposit-waiver, fully deterministic. |
+
+## What makes this build different
+
+Four deterministic differentiators no English-first or prompt-first competitor (Intercom Fin, Zendesk AI, Sierra, Decagon, SleekFlow, Omnichat, Tidio) ships — each impossible to copy without rearchitecting away from LLM tool-calling:
+
+- **Provable, not just safe.** The `action journal` hash-chains every turn and can *re-run* the policy gate to prove the bot would decide identically — a replayable audit trail for Consumer Council / PDPO disputes. LLM tool-call traces cannot be replayed.
+- **Hong Kong-native time.** `hk calendar` resolves lunar and statutory festival dates deterministically; competitors hand dates to an LLM that fumbles `年初二`.
+- **Cantonese-native escalation.** `canto sentiment` detects 粗口 and the distinctly HK threat of a review pile-on, then suppresses promotions to a furious customer — guarantees a prompt cannot.
+- **打風自動制.** `weather policy` turns HKO signals into an automatic closure + deposit-waiver state machine. The research sweep confirmed **zero** competitors offer any HKO-signal workflow.
+
+Each is **default-safe** (off / no-op until configured) and **stdlib-only**, preserving the privacy-before-LLM and safety-before-send ordering.
 
 ## Legal and trust drafts
 

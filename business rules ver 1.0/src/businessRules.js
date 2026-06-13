@@ -61,7 +61,8 @@ function evaluate(input) {
     knowledge = {},
     packageFacts = null,
     businessConfig,
-    requiredClarification = null
+    requiredClarification = null,
+    sentiment = null
   } = input || {};
 
   const config = businessConfig || getConfig(knowledge.businessId || gateway.businessId);
@@ -88,24 +89,31 @@ function evaluate(input) {
   const intentForcesHandoff = mandatoryHandoffIntents.includes(intent.primaryIntent);
   const kbForcesHandoff = knowledge.handoff === true;
   const gatewayHighRisk = gateway.requiresHumanReview && (intent.riskLevel === "high" || gateway?.filter?.highestRisk === "high");
+  // Cantonese anger ladder / review-threat detection (deterministic, opt-in input).
+  const reputationThreat = Boolean(sentiment && sentiment.reputationThreat);
+  const sentimentEscalates = Boolean(sentiment && sentiment.escalate);
 
-  if (kbForcesHandoff || intentForcesHandoff || angryHit || gatewayHighRisk) {
-    const escalationLabel = intentForcesHandoff
-      ? intent.primaryIntent
-      : angryHit
-        ? "angry_customer"
-        : kbForcesHandoff
-          ? (knowledge.handoffReason || "kb_handoff")
-          : "high_risk";
+  if (kbForcesHandoff || intentForcesHandoff || angryHit || gatewayHighRisk || sentimentEscalates) {
+    const escalationLabel = reputationThreat
+      ? "reputation_risk"
+      : intentForcesHandoff
+        ? intent.primaryIntent
+        : (angryHit || sentimentEscalates)
+          ? "angry_customer"
+          : kbForcesHandoff
+            ? (knowledge.handoffReason || "kb_handoff")
+            : "high_risk";
     return decision({
       action: ACTIONS.HANDOFF,
-      reason: angryHit
-        ? "Customer message shows anger or refund/complaint signal — staff must take over."
-        : kbForcesHandoff
-          ? (knowledge.handoffReason || "Knowledge base forced handoff for this intent.")
-          : intentForcesHandoff
-            ? `Intent "${intent.primaryIntent}" requires human handling.`
-            : "Gateway flagged high risk requiring human handling.",
+      reason: reputationThreat
+        ? "Customer is threatening a public review / complaint — staff must take over to protect the relationship and reputation."
+        : (angryHit || sentimentEscalates)
+          ? "Customer message shows anger or refund/complaint signal — staff must take over."
+          : kbForcesHandoff
+            ? (knowledge.handoffReason || "Knowledge base forced handoff for this intent.")
+            : intentForcesHandoff
+              ? `Intent "${intent.primaryIntent}" requires human handling.`
+              : "Gateway flagged high risk requiring human handling.",
       escalationLabel,
       config,
       intent,
@@ -116,7 +124,9 @@ function evaluate(input) {
         kbForcesHandoff && "kb.handoff=true",
         intentForcesHandoff && `intent=${intent.primaryIntent}`,
         angryHit && "angry/refund signal in text",
-        gatewayHighRisk && "gateway high risk"
+        gatewayHighRisk && "gateway high risk",
+        sentimentEscalates && `canto sentiment severity ${sentiment.severity}`,
+        reputationThreat && "review/reputation threat detected"
       ].filter(Boolean)
     });
   }
