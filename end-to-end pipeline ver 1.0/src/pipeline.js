@@ -29,6 +29,7 @@ const { evaluateDepositPolicy, depositInstructionText, claimAcknowledgementText,
 const { parseRedeemCommand, redeemAndReceipt } = require("../../package redemption ledger ver 1.0/src/redemptionLedger");
 const { inferRegularRebook } = require("../../regulars ledger ver 1.0/src/regularsLedger");
 const { assessClaim, suspiciousClaimAckText } = require("../../reconciliation-of-record ver 1.0/src/reconcile");
+const { answerOwnerQuery } = require("../../owner reads ver 1.0/src/ownerReads");
 
 function createPipeline(config = {}) {
   const kb = config.knowledgeBase || createKnowledgeBase({ entries: config.seed || seed });
@@ -59,10 +60,12 @@ function createPipeline(config = {}) {
   const outboxStore = config.outboxStore || null;
   // 熟客 regulars ledger. Opt-in: drives "照舊" rebooking suggestions for regulars.
   const regularsLedger = config.regularsLedger || null;
+  // 召回引擎 (optional, carries attribution history for the owner win-back read).
+  const winback = config.winback || null;
 
   return {
     async runMessage(input) {
-      return runMessage(input, { kb, backend, inbox, promotionStore, packageStore, ownerConsole, journal, weatherStore, depositLedger, redemptionLedger, outboxStore, regularsLedger, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
+      return runMessage(input, { kb, backend, inbox, promotionStore, packageStore, ownerConsole, journal, weatherStore, depositLedger, redemptionLedger, outboxStore, regularsLedger, winback, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
     },
     inbox,
     backend,
@@ -74,7 +77,8 @@ function createPipeline(config = {}) {
     depositLedger,
     redemptionLedger,
     outboxStore,
-    regularsLedger
+    regularsLedger,
+    winback
   };
 }
 
@@ -131,6 +135,24 @@ async function runMessage(input = {}, deps = {}) {
         ? `✅ 已核銷 1 次${redeemCmd.service ? `（${redeemCmd.service}）` : ""}，客人仲剩 ${outcome.balance.remaining} 次${outcome.enqueued ? "，已 WhatsApp 通知客人。" : "。"}`
         : `⚠️ 核銷唔到：${redeemErrorText(outcome.reason)}`;
       const draft = { action: "auto_send", text };
+      const outbound = buildOutboundMessage({ normalizedMessage, draft, safety: { safeToSend: true } });
+      return journaled(deps, {
+        normalizedMessage,
+        draft,
+        outbound,
+        finalStatus: outbound.status === "ready_to_send" ? "ready_to_send" : "staff_review",
+        errors: []
+      });
+    }
+  }
+
+  // Owner read query: "今日收咗幾多訂" / "邊個套票就到期" / "流失幾多" / "閘咗幾多假過數"
+  // → deterministic cross-ledger answer. Owner-gated; runs before the SMB-toolkit router.
+  if (deps.ownerConsole && typeof deps.ownerConsole.isOwner === "function" && deps.ownerConsole.isOwner(normalizedMessage.senderId) &&
+      (deps.depositLedger || deps.redemptionLedger || deps.winback)) {
+    const readAnswer = answerOwnerQuery({ text: normalizedMessage.rawText, deps, businessId: normalizedMessage.businessId, now: deps.nowFn() });
+    if (readAnswer.handled) {
+      const draft = { action: "auto_send", text: readAnswer.text };
       const outbound = buildOutboundMessage({ normalizedMessage, draft, safety: { safeToSend: true } });
       return journaled(deps, {
         normalizedMessage,

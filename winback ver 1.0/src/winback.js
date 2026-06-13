@@ -169,6 +169,7 @@ function makeCandidate(type, kind, bal, packageId, extra) {
   return {
     type, kind, packageId, businessId: bal.businessId,
     customerExternalId: bal.customerExternalId, customerName: bal.customerName,
+    serviceName: bal.serviceName, packageName: bal.packageName,
     remaining: bal.remaining, dollarRemaining: bal.dollarRemaining, expiryDate: bal.expiryDate,
     estValue: bal.dollarRemaining ?? null, suggestedText, ...extra
   };
