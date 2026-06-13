@@ -86,9 +86,11 @@ function createDepositLedger(config = {}) {
   }
 
   function transition(record, status, meta = {}) {
+    const { now, ...rest } = meta;
+    const at = (now instanceof Date ? now : nowFn()).toISOString();
     record.status = status;
-    record.updatedAt = nowFn().toISOString();
-    record.history.push({ status, at: record.updatedAt, ...meta });
+    record.updatedAt = at;
+    record.history.push({ status, at, ...rest });
     persist();
     return record;
   }
@@ -134,7 +136,7 @@ function createDepositLedger(config = {}) {
         r.code === code && r.businessId === input.businessId && r.status === STATES.PENDING &&
         (r.senderRef == null || ref == null || r.senderRef === ref));
       if (!record) return { ok: false, reason: "no_matching_pending_deposit" };
-      transition(record, STATES.CLAIMED, { actor: "customer", via: "reference" });
+      transition(record, STATES.CLAIMED, { actor: "customer", via: "reference", now: input.now });
       return { ok: true, record };
     },
 
@@ -144,7 +146,7 @@ function createDepositLedger(config = {}) {
       const ref = senderRef(input.senderId);
       const pendings = records.filter((r) => r.businessId === input.businessId && r.status === STATES.PENDING && r.senderRef === ref);
       if (pendings.length !== 1) return { ok: false, reason: pendings.length === 0 ? "no_pending_deposit" : "ambiguous_multiple_pending" };
-      transition(pendings[0], STATES.CLAIMED, { actor: "customer", via: "proof" });
+      transition(pendings[0], STATES.CLAIMED, { actor: "customer", via: "proof", now: input.now });
       return { ok: true, record: pendings[0] };
     },
 
@@ -153,7 +155,7 @@ function createDepositLedger(config = {}) {
       const record = records.find((r) => r.id === id);
       if (!record) return { ok: false, reason: "not_found" };
       if (![STATES.CLAIMED, STATES.PENDING].includes(record.status)) return { ok: false, reason: `cannot_verify_from_${record.status}` };
-      transition(record, STATES.VERIFIED, { actor: meta.actor || "staff" });
+      transition(record, STATES.VERIFIED, { actor: meta.actor || "staff", now: meta.now });
       return { ok: true, record };
     },
 
@@ -161,7 +163,7 @@ function createDepositLedger(config = {}) {
       const record = records.find((r) => r.id === id);
       if (!record) return { ok: false, reason: "not_found" };
       if (!ACTIVE_STATES.has(record.status)) return { ok: false, reason: `cannot_waive_from_${record.status}` };
-      transition(record, STATES.WAIVED, { actor: meta.actor || "system", reason: meta.reason || null });
+      transition(record, STATES.WAIVED, { actor: meta.actor || "system", reason: meta.reason || null, now: meta.now });
       return { ok: true, record };
     },
 
