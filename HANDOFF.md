@@ -2000,4 +2000,42 @@ End of session addendum.
 
 ---
 
+## 28. Session Addendum — 2026-06-13 (three SME 剛需 operations features)
+
+After feedback that the trust/audit angle was too abstract, added three deterministic,
+money/operations features owners feel immediately. All stdlib-only, opt-in/default-safe,
+each its own `* ver 1.0` module + unit tests + pipeline integration tests.
+
+- `deposit ledger ver 1.0` — FPS/PayMe anti-no-show. `evaluateDepositPolicy` (party
+  size / peak window / service, from `businessConfig.depositPolicy`) → issue a DEP code
+  + held booking; `claimByReference`/`claimBySenderProof` reconcile `過咗數 DEP-XXXX`;
+  `verify` is the ONLY money-confirming path (human-gated). Pipeline: a deposit-request
+  hook in the requiredClarification chain + a claim short-circuit after gateway/intent.
+  Weather synergy: typhoon closure pre-empts the request; `waiveAllActive` for waivers.
+- `package redemption ledger ver 1.0` — 套票核銷. Append-only hash-chained log (reuses
+  action journal `sha256`/`canonicalize`); balance is folded, never a counter; 改正 =
+  compensating entry. `redeemAndReceipt` redeems + enqueues a WhatsApp receipt via the
+  outbox. Pipeline: owner fast-path for `核銷 <customer> <service>` (gated on
+  `ownerConsole.isOwner` + a configured ledger).
+- `regulars ledger ver 1.0` — 熟客 modal-pattern memory (derived stats only, senderRef
+  hashed, ≥3 visits + ≥50% dominance, PDPO retention + `forget()`). Pipeline:
+  `inferRegularRebook` in the requiredClarification chain offers `照舊…？` as a clarify
+  (never auto-books); explicit time requests are respected.
+
+createPipeline now accepts `depositLedger`, `redemptionLedger`, `outboxStore`,
+`regularsLedger` (all default null/off) and exposes them. `restaurant_demo` /
+`beauty_demo` gained a demo `depositPolicy` (inert without a depositLedger).
+
+Suite: 62 test files, all green (was 56). Per owner feedback, the action journal is
+kept default-off and de-emphasised as a standalone pitch; its hash-chain tech now has a
+concrete use powering the 套票 redemption receipts/statements.
+
+Still deferred (designs in the research transcript): atomic slot holds inside the
+availability store; capability-contract action layer; owner-console-native `核銷`/`打風`
+commands (currently a pipeline fast-path + the weatherStore API).
+
+End of session addendum.
+
+---
+
 End of handoff.

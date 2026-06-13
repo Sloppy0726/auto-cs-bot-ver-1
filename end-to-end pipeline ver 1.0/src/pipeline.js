@@ -27,6 +27,7 @@ const { scoreAnger } = require("../../canto sentiment ver 1.0/src/cantoSentiment
 const { createWeatherStore, inferWeatherResponse } = require("../../weather policy ver 1.0/src/weatherPolicy");
 const { evaluateDepositPolicy, depositInstructionText, claimAcknowledgementText, normalizeCode } = require("../../deposit ledger ver 1.0/src/depositLedger");
 const { parseRedeemCommand, redeemAndReceipt } = require("../../package redemption ledger ver 1.0/src/redemptionLedger");
+const { inferRegularRebook } = require("../../regulars ledger ver 1.0/src/regularsLedger");
 
 function createPipeline(config = {}) {
   const kb = config.knowledgeBase || createKnowledgeBase({ entries: config.seed || seed });
@@ -55,10 +56,12 @@ function createPipeline(config = {}) {
   // 套票核銷 redemption ledger + outbox for pushing receipts. Both opt-in.
   const redemptionLedger = config.redemptionLedger || null;
   const outboxStore = config.outboxStore || null;
+  // 熟客 regulars ledger. Opt-in: drives "照舊" rebooking suggestions for regulars.
+  const regularsLedger = config.regularsLedger || null;
 
   return {
     async runMessage(input) {
-      return runMessage(input, { kb, backend, inbox, promotionStore, packageStore, ownerConsole, journal, weatherStore, depositLedger, redemptionLedger, outboxStore, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
+      return runMessage(input, { kb, backend, inbox, promotionStore, packageStore, ownerConsole, journal, weatherStore, depositLedger, redemptionLedger, outboxStore, regularsLedger, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
     },
     inbox,
     backend,
@@ -69,7 +72,8 @@ function createPipeline(config = {}) {
     weatherStore,
     depositLedger,
     redemptionLedger,
-    outboxStore
+    outboxStore,
+    regularsLedger
   };
 }
 
@@ -199,12 +203,22 @@ async function runMessage(input = {}, deps = {}) {
   const weather = deps.weatherStore
     ? deps.weatherStore.lookup({ businessConfig, language: knowledge.language || intent.language })
     : { active: false };
+  // 熟客 profile (derived, sender-bound) — only when a regulars ledger is configured.
+  const regularProfile = deps.regularsLedger && ["booking", "reschedule"].includes(intent.primaryIntent)
+    ? deps.regularsLedger.profile({ businessId: normalizedMessage.businessId, senderId: normalizedMessage.senderId })
+    : null;
+
   const requiredClarification = inferWeatherResponse({
     weather,
     intent,
     normalizedMessage,
     backend: deps.backend,
     businessConfig,
+    language: knowledge.language || intent.language
+  }) || inferRegularRebook({
+    profile: regularProfile,
+    intent,
+    query: backendQuery,
     language: knowledge.language || intent.language
   }) || requiredClarificationForBackendIntent({
     normalizedMessage,

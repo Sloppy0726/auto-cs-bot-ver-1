@@ -21,16 +21,20 @@ customer channel
   -> hk calendar              (年初二 / 中秋 / 平安夜 date resolution)
   -> promotion sync context
   -> weather policy           (打風自動制: T8 / black-rain mode)
+  -> regulars ledger          (熟客「照舊」rebooking for missing-detail bookings)
   -> business rules
   -> private business backend mock
   -> model router
+  -> deposit ledger           (FPS/PayMe 留位收訂 + 過數對數)
   -> AI draft engine
   -> safety checker
   -> send reply or staff inbox
-  -> action journal           (tamper-evident, replayable record)
+  -> action journal           (tamper-evident record; powers 套票 receipts)
 ```
 
-All modules run on the Node.js stdlib; **56 test files** pass with `npm test`.
+Owner/staff fast-paths: `核銷 <customer> <service>` redeems a prepaid session and WhatsApps the customer a receipt.
+
+All modules run on the Node.js stdlib; **62 test files** pass with `npm test`.
 
 The core pipeline has no runtime npm dependencies — every module runs on the Node.js stdlib. The only devDependency is `jsdom`, used by the WhatsApp Web bridge's sidebar-script tests in [`whatsapp-web-test-bridge/`](whatsapp-web-test-bridge/).
 
@@ -69,17 +73,27 @@ Most customer-support AI examples are English-first and prompt-first. This proje
 | 19 | `hk calendar ver 1.0` | Resolves how HK customers name dates — `年初二`, `中秋翌日`, `平安夜`, `冬至` — from a gazette-sourced table, 100% reliable where prompt-based bots guess. |
 | 20 | `canto sentiment ver 1.0` | Cantonese anger lexicon + Hong Kong review-pile-on threat detection (`上OpenRice俾你一星`), forcing handoff and suppressing promos. |
 | 21 | `weather policy ver 1.0` | 打風自動制 — HKO T8 / black-rainstorm signals flip the bot into closure mode with auto deposit-waiver, fully deterministic. |
+| 22 | `deposit ledger ver 1.0` | FPS/PayMe 留位收訂: issues a DEP code, reconciles `過咗數 DEP-7K3Q` to the booking, one-tap staff verify — the bot never confirms money. |
+| 23 | `package redemption ledger ver 1.0` | 套票核銷: append-only hash-chained session ledger; `核銷` decrements and WhatsApps the customer a receipt + Small-Claims-ready statement. |
+| 24 | `regulars ledger ver 1.0` | 熟客 modal-pattern memory; a regular's vague booking gets a `照舊星期二 下午3點、4位？` confirm — derived stats only, no LLM, PDPO-bounded. |
 
 ## What makes this build different
 
-Four deterministic differentiators no English-first or prompt-first competitor (Intercom Fin, Zendesk AI, Sierra, Decagon, SleekFlow, Omnichat, Tidio) ships — each impossible to copy without rearchitecting away from LLM tool-calling:
+Deterministic differentiators no English-first / prompt-first competitor (Intercom Fin, Zendesk AI, Sierra, Decagon, SleekFlow, Omnichat, Tidio, Bistrochat, Fresha) ships — each impossible to copy without rearchitecting away from LLM tool-calling.
 
-- **Provable, not just safe.** The `action journal` hash-chains every turn and can *re-run* the policy gate to prove the bot would decide identically — a replayable audit trail for Consumer Council / PDPO disputes. LLM tool-call traces cannot be replayed.
-- **Hong Kong-native time.** `hk calendar` resolves lunar and statutory festival dates deterministically; competitors hand dates to an LLM that fumbles `年初二`.
-- **Cantonese-native escalation.** `canto sentiment` detects 粗口 and the distinctly HK threat of a review pile-on, then suppresses promotions to a furious customer — guarantees a prompt cannot.
-- **打風自動制.** `weather policy` turns HKO signals into an automatic closure + deposit-waiver state machine. The research sweep confirmed **zero** competitors offer any HKO-signal workflow.
+**Money & operations (the SME 剛需):**
+- **No-show deposits done the HK way.** `deposit ledger` issues an FPS/PayMe code, reconciles the customer's `過咗數 DEP-7K3Q` to the held booking, and hands staff a one-tap verify — the bot **never** confirms money. Card-rail competitors can't reconcile a WhatsApp FPS screenshot.
+- **套票核銷 that ends disputes.** `package redemption ledger` folds an append-only, hash-chained event log into a balance and WhatsApps the customer a receipt after every visit (HK's #1 Consumer Council complaint category). Exportable as a Small-Claims statement; history is never edited.
+- **熟客 memory without an LLM.** `regulars ledger` mines modal booking patterns to offer `照舊…？`, sender-bound and PDPO-bounded — privacy-safe memory enterprise-only competitors charge for.
 
-Each is **default-safe** (off / no-op until configured) and **stdlib-only**, preserving the privacy-before-LLM and safety-before-send ordering.
+**Hong Kong-native intelligence:**
+- **打風自動制.** `weather policy` turns HKO T8 / black-rain signals into an automatic closure + deposit-waiver state machine. The sweep confirmed **zero** competitors offer any HKO-signal workflow.
+- **農曆 time.** `hk calendar` resolves `年初二 / 中秋翌日 / 平安夜` deterministically where competitors hand dates to an LLM that fumbles them.
+- **Cantonese escalation.** `canto sentiment` detects 粗口 and the distinctly HK review-pile-on threat (`上OpenRice俾你一星`), then suppresses promotions to a furious customer.
+
+**Trust tech:** the `action journal` hash-chains turns and can *re-run the deterministic policy gate to prove a decision reproduces* — the same tamper-evident primitive that powers the 套票 receipts and statements. (Best value as a SaaS/compliance artifact rather than for single-shop self-use.)
+
+Every feature is **default-safe** (off / no-op until configured) and **stdlib-only**, preserving the privacy-before-LLM and safety-before-send ordering.
 
 ## Legal and trust drafts
 
