@@ -26,6 +26,7 @@ const { resolveCulturalDate } = require("../../hk calendar ver 1.0/src/hkCalenda
 const { scoreAnger } = require("../../canto sentiment ver 1.0/src/cantoSentiment");
 const { createWeatherStore, inferWeatherResponse } = require("../../weather policy ver 1.0/src/weatherPolicy");
 const { evaluateDepositPolicy, depositInstructionText, claimAcknowledgementText, normalizeCode } = require("../../deposit ledger ver 1.0/src/depositLedger");
+const { parseRedeemCommand, redeemAndReceipt } = require("../../package redemption ledger ver 1.0/src/redemptionLedger");
 
 function createPipeline(config = {}) {
   const kb = config.knowledgeBase || createKnowledgeBase({ entries: config.seed || seed });
@@ -51,10 +52,13 @@ function createPipeline(config = {}) {
   // FPS/PayMe deposit ledger. Opt-in: off unless a ledger instance is passed AND the
   // business config carries a depositPolicy, so existing behaviour is unchanged.
   const depositLedger = config.depositLedger || null;
+  // 套票核銷 redemption ledger + outbox for pushing receipts. Both opt-in.
+  const redemptionLedger = config.redemptionLedger || null;
+  const outboxStore = config.outboxStore || null;
 
   return {
     async runMessage(input) {
-      return runMessage(input, { kb, backend, inbox, promotionStore, packageStore, ownerConsole, journal, weatherStore, depositLedger, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
+      return runMessage(input, { kb, backend, inbox, promotionStore, packageStore, ownerConsole, journal, weatherStore, depositLedger, redemptionLedger, outboxStore, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
     },
     inbox,
     backend,
@@ -63,7 +67,9 @@ function createPipeline(config = {}) {
     packageStore,
     journal,
     weatherStore,
-    depositLedger
+    depositLedger,
+    redemptionLedger,
+    outboxStore
   };
 }
 
@@ -101,6 +107,34 @@ async function runMessage(input = {}, deps = {}) {
       normalizedMessage
     }) || null;
     return journaled(deps, { normalizedMessage, staffItem, finalStatus: "staff_review", errors: normalizedMessage.errors });
+  }
+
+  // Owner 核銷 fast-path: a staff/owner "核銷 85261112222 facial" redeems one prepaid
+  // session from the tamper-evident ledger and pushes a WhatsApp receipt to the
+  // customer; the owner gets a short confirmation. Opt-in (needs a redemption ledger).
+  if (deps.redemptionLedger && deps.ownerConsole && typeof deps.ownerConsole.isOwner === "function" && deps.ownerConsole.isOwner(normalizedMessage.senderId)) {
+    const redeemCmd = parseRedeemCommand(normalizedMessage.rawText);
+    if (redeemCmd) {
+      const outcome = redeemAndReceipt(deps.redemptionLedger, deps.outboxStore, {
+        businessId: normalizedMessage.businessId,
+        ref: redeemCmd.ref,
+        service: redeemCmd.service,
+        by: normalizedMessage.senderId,
+        language: "zh-HK"
+      });
+      const text = outcome.ok
+        ? `✅ 已核銷 1 次${redeemCmd.service ? `（${redeemCmd.service}）` : ""}，客人仲剩 ${outcome.balance.remaining} 次${outcome.enqueued ? "，已 WhatsApp 通知客人。" : "。"}`
+        : `⚠️ 核銷唔到：${redeemErrorText(outcome.reason)}`;
+      const draft = { action: "auto_send", text };
+      const outbound = buildOutboundMessage({ normalizedMessage, draft, safety: { safeToSend: true } });
+      return journaled(deps, {
+        normalizedMessage,
+        draft,
+        outbound,
+        finalStatus: outbound.status === "ready_to_send" ? "ready_to_send" : "staff_review",
+        errors: []
+      });
+    }
   }
 
   // Owner fast-path: if the sender is a registered owner and their message maps
@@ -441,6 +475,14 @@ function formatServiceEn(service) {
   if (!service) return null;
   const map = { facial: "facial", laser: "laser hair removal", assessment: "skin assessment", p3_english: "P3 English assessment" };
   return map[service] || service;
+}
+
+function redeemErrorText(reason) {
+  const map = {
+    package_not_found: "搵唔到呢位客人嘅有效套票。",
+    insufficient_sessions: "呢個套票冇剩餘次數喇。"
+  };
+  return map[reason] || "請檢查客人編號或套票。";
 }
 
 // Deposit reconciliation: turn a customer "過咗數 DEP-7K3Q" (or a lone payment-proof
