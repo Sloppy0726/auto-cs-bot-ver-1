@@ -25,6 +25,7 @@ const { createActionJournal } = require("../../action journal ver 1.0/src/action
 const { resolveCulturalDate } = require("../../hk calendar ver 1.0/src/hkCalendar");
 const { scoreAnger } = require("../../canto sentiment ver 1.0/src/cantoSentiment");
 const { createWeatherStore, inferWeatherResponse } = require("../../weather policy ver 1.0/src/weatherPolicy");
+const { evaluateDepositPolicy, depositInstructionText, claimAcknowledgementText, normalizeCode } = require("../../deposit ledger ver 1.0/src/depositLedger");
 
 function createPipeline(config = {}) {
   const kb = config.knowledgeBase || createKnowledgeBase({ entries: config.seed || seed });
@@ -47,10 +48,13 @@ function createPipeline(config = {}) {
   // HKO weather policy store. Defaults to signal "none" (a no-op), so the pipeline is
   // unchanged until a signal is set via the store, the owner console, or a poller.
   const weatherStore = config.weatherStore === false ? null : (config.weatherStore || createWeatherStore({ nowFn }));
+  // FPS/PayMe deposit ledger. Opt-in: off unless a ledger instance is passed AND the
+  // business config carries a depositPolicy, so existing behaviour is unchanged.
+  const depositLedger = config.depositLedger || null;
 
   return {
     async runMessage(input) {
-      return runMessage(input, { kb, backend, inbox, promotionStore, packageStore, ownerConsole, journal, weatherStore, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
+      return runMessage(input, { kb, backend, inbox, promotionStore, packageStore, ownerConsole, journal, weatherStore, depositLedger, llmAdapter, llmIntentAnalyzer, paraphraser, nowFn, config });
     },
     inbox,
     backend,
@@ -58,7 +62,8 @@ function createPipeline(config = {}) {
     promotionStore,
     packageStore,
     journal,
-    weatherStore
+    weatherStore,
+    depositLedger
   };
 }
 
@@ -120,6 +125,14 @@ async function runMessage(input = {}, deps = {}) {
 
   const gateway = routeMessage(normalizedMessage.rawText);
   const intent = await classifyIntent(gateway, intentClassifierOptions(deps));
+
+  // Deposit reconciliation fast-path: a customer's "過咗數 DEP-7K3Q" (or a lone
+  // payment-proof message) flips the held deposit to `claimed` and routes a one-tap
+  // verify task to staff. The bot acknowledges receipt only — it never confirms money.
+  const depositClaim = tryDepositClaim(deps, normalizedMessage, gateway, intent);
+  if (depositClaim) {
+    return journaled(deps, depositClaim);
+  }
   const knowledge = deps.kb.lookup({ businessId: normalizedMessage.businessId, sanitizedText: gateway.sanitizedText, intent });
   const packageFacts = deps.packageStore && shouldLookupPackageFacts(gateway.sanitizedText, intent)
     ? deps.packageStore.lookup({
@@ -170,6 +183,14 @@ async function runMessage(input = {}, deps = {}) {
     query: backendQuery,
     backendFacts,
     backend: deps.backend,
+    language: knowledge.language || intent.language
+  }) || inferDepositRequest({
+    deps,
+    intent,
+    query: backendQuery,
+    normalizedMessage,
+    businessConfig,
+    weather,
     language: knowledge.language || intent.language
   });
   const decision = evaluate({ gateway, intent, knowledge, packageFacts, businessConfig, requiredClarification, sentiment });
@@ -420,6 +441,99 @@ function formatServiceEn(service) {
   if (!service) return null;
   const map = { facial: "facial", laser: "laser hair removal", assessment: "skin assessment", p3_english: "P3 English assessment" };
   return map[service] || service;
+}
+
+// Deposit reconciliation: turn a customer "過咗數 DEP-7K3Q" (or a lone payment-proof
+// message when they have exactly one pending deposit) into a claimed deposit + a
+// staff verify task. Returns a journaled-result payload, or null to continue normally.
+// The bot acknowledges receipt only; money is confirmed solely by a human verify.
+function tryDepositClaim(deps, normalizedMessage, gateway, intent) {
+  if (!deps.depositLedger) return null;
+  const businessId = normalizedMessage.businessId;
+  const senderId = normalizedMessage.senderId;
+  const rawText = normalizedMessage.rawText || "";
+  const code = normalizeCode(rawText);
+  const proofHint = /過咗?數|過左數|入咗?數|入左數|轉咗?數|轉左數|過數|轉帳|轉賬|已付|付咗款|paid|payme|fps|截圖|收據|receipt/i.test(rawText);
+  if (!code && !proofHint) return null;
+
+  let claim = null;
+  if (code) {
+    claim = deps.depositLedger.claimByReference({ businessId, senderId, reference: code });
+  }
+  if ((!claim || !claim.ok) && proofHint) {
+    claim = deps.depositLedger.claimBySenderProof({ businessId, senderId });
+  }
+  if (!claim || !claim.ok) return null;
+
+  const record = claim.record;
+  const language = intent.language || "zh-HK";
+  const draft = { action: "clarify", text: claimAcknowledgementText(record, { language }) };
+  const safety = checkDraft({
+    draft,
+    decision: { action: "clarify", forbiddenCapabilities: ["confirm_payment_received", "decide_refund"] },
+    knowledge: {}, intent, gateway
+  });
+
+  const d = record.bookingDraft || {};
+  const detail = [d.date, d.time, d.partySize ? `${d.partySize}位` : null, d.service].filter(Boolean).join(" ");
+  const staffItem = deps.inbox.submit({
+    decision: { action: "staff_review", businessId, escalationLabel: "deposit_claim", reasons: [`deposit ${record.code} claimed; verify bank receipt then confirm`] },
+    draft: { action: "staff_review", text: `客聲稱已過數 ${record.code}（${detail || "預約"}）。請核對銀行/PayMe 入賬後，一鍵確認收訂（depositLedger.verify("${record.id}")）。` },
+    safety: { verdict: "pass", safeToSend: false, reasons: ["deposit awaiting human verification"] },
+    normalizedMessage,
+    customerText: gateway.sanitizedText
+  });
+
+  const outbound = buildOutboundMessage({ normalizedMessage, draft, safety, staffItem });
+  return {
+    normalizedMessage,
+    gateway,
+    intent,
+    draft,
+    safety,
+    staffItem,
+    outbound,
+    finalStatus: outbound.status === "ready_to_send" ? "ready_to_send" : "staff_review",
+    errors: []
+  };
+}
+
+// When a booking is complete and the business's deposit policy applies, hold the slot
+// in the deposit ledger and reply with FPS/PayMe instructions + the DEP code, instead
+// of sending the booking straight to staff. Idempotent on retries. Returns a
+// requiredClarification-shaped {reason, text}, or null to continue normally.
+function inferDepositRequest({ deps, intent, query, normalizedMessage, businessConfig, weather, language }) {
+  if (!deps || !deps.depositLedger) return null;
+  if (!["booking", "reschedule"].includes(intent?.primaryIntent)) return null;
+  if (weather && weather.active && weather.closed) return null; // closure already handled; no deposit during a typhoon
+  if (!businessConfig || !businessConfig.depositPolicy) return null;
+
+  const bookingDraft = inferBookingDraft({ intent, query, normalizedMessage, backend: deps.backend });
+  if (!bookingDraft) return null;
+
+  const now = deps.nowFn ? deps.nowFn() : new Date();
+  const policy = evaluateDepositPolicy(bookingDraft, businessConfig, now);
+  if (!policy.required) return null;
+
+  // Idempotency: reuse an existing pending deposit for the same slot rather than
+  // issuing a new code every time the customer repeats the request.
+  const existing = deps.depositLedger
+    .listActive({ businessId: normalizedMessage.businessId, senderId: normalizedMessage.senderId })
+    .find((r) => r.bookingDraft && r.bookingDraft.date === bookingDraft.date && r.bookingDraft.time === bookingDraft.time);
+  const record = existing || deps.depositLedger.request({
+    businessId: normalizedMessage.businessId,
+    senderId: normalizedMessage.senderId,
+    bookingDraft,
+    amount: policy.amount,
+    currency: policy.currency,
+    ttlMinutes: policy.ttlMinutes,
+    now
+  });
+
+  return {
+    reason: `deposit_required_${policy.amount}`,
+    text: depositInstructionText(record, { rails: policy.rails, language })
+  };
 }
 
 // Snapshot of the booking the customer is asking for, captured at staff_review time

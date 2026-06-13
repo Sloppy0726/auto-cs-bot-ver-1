@@ -59,8 +59,26 @@ const ARCHETYPES = Object.freeze({
 // Map businessId → archetype + per-business overrides for our seeded demos.
 // In production this comes from the SaaS tenant config table.
 const DEMO_BUSINESS_CONFIGS = Object.freeze({
-  beauty_demo: { businessId: "beauty_demo", ...ARCHETYPES.beauty_clinic },
-  restaurant_demo: { businessId: "restaurant_demo", ...ARCHETYPES.restaurant },
+  beauty_demo: {
+    businessId: "beauty_demo",
+    ...ARCHETYPES.beauty_clinic,
+    // Deposit only applies once a depositLedger is wired into the pipeline (opt-in).
+    depositPolicy: {
+      ttlMinutes: 90,
+      rails: { payme: "https://payme.hsbc/glowbeauty", payee: "Glow Beauty Studio" },
+      rules: [{ service: "laser", amount: 200 }]
+    }
+  },
+  restaurant_demo: {
+    businessId: "restaurant_demo",
+    ...ARCHETYPES.restaurant,
+    depositPolicy: {
+      ttlMinutes: 120,
+      currency: "HKD",
+      rails: { payme: "https://payme.hsbc/sunriserestaurant", fps: "163829005", payee: "Sunrise Restaurant Ltd" },
+      rules: [{ minPartySize: 6, days: [5, 6], fromHour: 19, toHour: 22, amount: 500 }]
+    }
+  },
   igshop_demo: { businessId: "igshop_demo", ...ARCHETYPES.ig_shop },
   edu_demo: { businessId: "edu_demo", ...ARCHETYPES.education },
   // BrightPath Learning Centre — the education-centre vertical demo tenant.
