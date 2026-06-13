@@ -30,6 +30,7 @@ const { parseRedeemCommand, redeemAndReceipt } = require("../../package redempti
 const { inferRegularRebook } = require("../../regulars ledger ver 1.0/src/regularsLedger");
 const { assessClaim, suspiciousClaimAckText } = require("../../reconciliation-of-record ver 1.0/src/reconcile");
 const { answerOwnerQuery } = require("../../owner reads ver 1.0/src/ownerReads");
+const { createOwnerDigest, isDigestCommand } = require("../../owner digest ver 1.0/src/ownerDigest");
 
 function createPipeline(config = {}) {
   const kb = config.knowledgeBase || createKnowledgeBase({ entries: config.seed || seed });
@@ -146,10 +147,22 @@ async function runMessage(input = {}, deps = {}) {
     }
   }
 
-  // Owner read query: "今日收咗幾多訂" / "邊個套票就到期" / "流失幾多" / "閘咗幾多假過數"
-  // → deterministic cross-ledger answer. Owner-gated; runs before the SMB-toolkit router.
+  // Owner read query / morning digest: "今日概況" / "今日收咗幾多訂" / "邊個套票就到期" /
+  // "流失幾多" / "閘咗幾多假過數" → deterministic cross-ledger answer. Owner-gated; runs
+  // before the SMB-toolkit router.
   if (deps.ownerConsole && typeof deps.ownerConsole.isOwner === "function" && deps.ownerConsole.isOwner(normalizedMessage.senderId) &&
-      (deps.depositLedger || deps.redemptionLedger || deps.winback)) {
+      (deps.depositLedger || deps.redemptionLedger || deps.winback || deps.weatherStore)) {
+    // On-demand morning brief.
+    if (isDigestCommand(normalizedMessage.rawText)) {
+      const digest = createOwnerDigest({ nowFn: deps.nowFn }).build({ deps, businessId: normalizedMessage.businessId, now: deps.nowFn() });
+      const draft = { action: "auto_send", text: digest.text };
+      const outbound = buildOutboundMessage({ normalizedMessage, draft, safety: { safeToSend: true } });
+      return journaled(deps, {
+        normalizedMessage, draft, outbound,
+        finalStatus: outbound.status === "ready_to_send" ? "ready_to_send" : "staff_review",
+        errors: []
+      });
+    }
     const readAnswer = answerOwnerQuery({ text: normalizedMessage.rawText, deps, businessId: normalizedMessage.businessId, now: deps.nowFn() });
     if (readAnswer.handled) {
       const draft = { action: "auto_send", text: readAnswer.text };

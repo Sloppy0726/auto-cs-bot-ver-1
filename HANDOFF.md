@@ -2038,4 +2038,50 @@ End of session addendum.
 
 ---
 
+## 29. Session Addendum — 2026-06-13 (inevitability layer: A/B/C/D/E)
+
+A 52-agent research workflow scored 38 candidate "make-it-inevitable" features on
+inevitability × feasibility × uniqueness and verified hooks against source. Built the
+chosen 4+1, all stdlib-only, opt-in/default-safe, each with unit + (where relevant)
+pipeline-integration tests. Suite: 68 test files green (was 62).
+
+- **Phase 0**: redemption ledger PURCHASE entries gained `unitPrice`; `foldChain` exposes
+  `dollarRemaining`; `packageSeed` got per-session prices. Deposit ledger `verify/waive/
+  claim` now accept an optional `now` (deterministic/backdatable settlement timestamps).
+- **A — `reconciliation-of-record ver 1.0`**: `assessClaim()` read-only fraud gate runs in
+  `tryDepositClaim` BEFORE the ack; amount+reference must match an open, sender-bound,
+  unexpired hold, else flagged → staff_review (never claimed) + `depositLedger.flagSuspicious`.
+  `lossPreventionSummary/Text` = 「閘咗 $X」; `reconcileExport()` CSV. Frame: "claims blocked",
+  not "audited savings".
+- **C — `winback ver 1.0`**: `sweep()` over the redemption ledger (the store with raw
+  customer id + price + expiry) → package_expiry/package_lapsed candidates ranked by
+  recoverable HK$; `submitCandidates()` → staff inbox (human approve, no auto-send);
+  injectable `canSend()` consent gate; hash-chained `attribute()` + `digest()`. Honest
+  "candidate recovered". Standalone engine; surfaced via B and E.
+- **B — `owner reads ver 1.0`**: owner-gated `answerOwnerQuery()` (deposits-today /
+  packages-expiring / winback / fraud-blocked) wired before the SMB-toolkit router.
+- **D — `ird ledger ver 1.0`**: pure projector folding deposits(verified/waived) +
+  redemption + (optional) journal into s.51C line items + HK-date daily takings + CSV +
+  bilingual signed statement with chain verification. Honest scope: "records the bot
+  emitted, NOT your full statutory books"; evidentiary, not a compliance funnel.
+- **E — `owner digest ver 1.0`**: read-only morning brief; on-demand owner command
+  (今日概況/每朝//digest) + `runOnce()` once-per-day enqueue to the owner. Only non-empty
+  lines; NO compliance-clock lines. The habit spine, owns no data.
+
+createPipeline gained `depositLedger`/`redemptionLedger`/`outboxStore`/`regularsLedger`/
+`winback` deps (all default-off) — wait, the first four landed in §27; this addendum adds
+`winback` + the owner-read/digest fast-paths + the fraud gate inside `tryDepositClaim`.
+
+**Adversarially rejected (do NOT build for lock-in):** cooling-off/refund statutory clocks
+(HK bill stalled 7+ years → no dependency today); cross-shop fraud-signal & benchmark
+networks (cold-start fatal on a one-Mac product, no central data plane); FPS-QR mint &
+cross-rail reconciliation (need a real bank/PayMe/Octopus feed to bite; competitors already
+aggregate rails); standalone PDPO consent vault (Meta's third-party-bot ban is the bigger
+risk; only the minimal `canSend()` gate was built). Full rationale + scores in the research
+transcript under the session workflow `wf_8d7ae122-201`.
+
+End of session addendum.
+
+---
+
 End of handoff.

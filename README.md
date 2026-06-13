@@ -34,7 +34,7 @@ customer channel
 
 Owner/staff fast-paths: `核銷 <customer> <service>` redeems a prepaid session and WhatsApps the customer a receipt.
 
-All modules run on the Node.js stdlib; **62 test files** pass with `npm test`.
+All modules run on the Node.js stdlib; **68 test files** pass with `npm test`.
 
 The core pipeline has no runtime npm dependencies — every module runs on the Node.js stdlib. The only devDependency is `jsdom`, used by the WhatsApp Web bridge's sidebar-script tests in [`whatsapp-web-test-bridge/`](whatsapp-web-test-bridge/).
 
@@ -76,6 +76,23 @@ Most customer-support AI examples are English-first and prompt-first. This proje
 | 22 | `deposit ledger ver 1.0` | FPS/PayMe 留位收訂: issues a DEP code, reconciles `過咗數 DEP-7K3Q` to the booking, one-tap staff verify — the bot never confirms money. |
 | 23 | `package redemption ledger ver 1.0` | 套票核銷: append-only hash-chained session ledger; `核銷` decrements and WhatsApps the customer a receipt + Small-Claims-ready statement. |
 | 24 | `regulars ledger ver 1.0` | 熟客 modal-pattern memory; a regular's vague booking gets a `照舊星期二 下午3點、4位？` confirm — derived stats only, no LLM, PDPO-bounded. |
+| 25 | `reconciliation-of-record ver 1.0` | 假過數對數閘: assesses a deposit claim's amount+reference before any ack; mismatch/reused/expired/unknown → staff, logged for a 「閘咗 $X 可疑過數」 number. |
+| 26 | `winback ver 1.0` | 搵錢實證: surfaces expiring/lapsed prepaid value (recoverable HK$), staff-approved nudges, hash-chained recovered-$ attribution. |
+| 27 | `owner reads ver 1.0` | 一句搞掂: owner texts 「今日收咗幾多訂 / 邊個套票就到期 / 流失幾多 / 閘咗幾多假過數」 → deterministic cross-ledger answer. |
+| 28 | `ird ledger ver 1.0` | IRO s.51C projector: folds ledgers into a tamper-evident, exportable books extract (evidentiary, honestly "records the bot emitted"). |
+| 29 | `owner digest ver 1.0` | 每朝一覽: one bilingual morning brief (deposits/packages/weather/holiday/risk), only non-empty lines, once-per-day. |
+
+## Inevitability layer (makes adoption hard to leave)
+
+A second wave, researched specifically for **lock-in** for the deposit-heavy ICP (salon / tutor / beauty / fitness / clinic taking 訂金 over WhatsApp). The honest moat is **not** "all their money lives here" (walk-in cash/card never enter) — it is the accreted hash-chained deposit/redemption history + dispute-grade evidence + the daily habit of operating through the console; leaving means re-keying months of money-state and losing the loss-prevention/recovered-$ figures.
+
+- **假過數對數閘 (A)** — fraud gate: a fake/mismatched/reused 過數 claim is flagged before any acknowledgement; monthly 「閘咗 $X」 loss-prevention number.
+- **搵錢實證 (C)** — reframes the bot as a profit centre: recoverable expiring/lapsed value + a hash-chained recovered-HK$ ledger (the month-1-dollar that stops month-2 churn).
+- **一句搞掂 (B)** — operate the shop through one WhatsApp line; the daily-habit surface over A/C/D.
+- **IRO s.51C 帳簿 (D)** — tamper-evident, exportable record of the bot-mediated revenue (evidentiary, not a compliance funnel — never overclaimed).
+- **每朝一覽 (E)** — the morning-brief spine that surfaces A/C/D daily and forms the habit.
+
+Deliberately **rejected** after adversarial review (see HANDOFF §29): pending-cooling-off-law compliance clocks, cross-shop fraud/benchmark networks (cold-start), FPS-QR/cross-rail reconciliation (needs a real bank feed), and a standalone PDPO consent vault.
 
 ## What makes this build different
 
