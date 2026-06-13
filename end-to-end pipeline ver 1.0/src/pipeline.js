@@ -28,6 +28,7 @@ const { createWeatherStore, inferWeatherResponse } = require("../../weather poli
 const { evaluateDepositPolicy, depositInstructionText, claimAcknowledgementText, normalizeCode } = require("../../deposit ledger ver 1.0/src/depositLedger");
 const { parseRedeemCommand, redeemAndReceipt } = require("../../package redemption ledger ver 1.0/src/redemptionLedger");
 const { inferRegularRebook } = require("../../regulars ledger ver 1.0/src/regularsLedger");
+const { assessClaim, suspiciousClaimAckText } = require("../../reconciliation-of-record ver 1.0/src/reconcile");
 
 function createPipeline(config = {}) {
   const kb = config.knowledgeBase || createKnowledgeBase({ entries: config.seed || seed });
@@ -512,8 +513,47 @@ function tryDepositClaim(deps, normalizedMessage, gateway, intent) {
   const proofHint = /過咗?數|過左數|入咗?數|入左數|轉咗?數|轉左數|過數|轉帳|轉賬|已付|付咗款|paid|payme|fps|截圖|收據|receipt/i.test(rawText);
   if (!code && !proofHint) return null;
 
+  const now = deps.nowFn ? deps.nowFn() : new Date();
+  const language = intent.language || "zh-HK";
+
+  // Fraud gate: assess the claim (read-only) BEFORE acknowledging anything. A claim
+  // whose amount/reference doesn't exactly match an open, sender-bound, unexpired hold
+  // is flagged and routed to staff — the bot never confirms money, suspicious or not.
+  const assessment = assessClaim({
+    depositLedger: deps.depositLedger,
+    businessId, senderId, text: rawText, now,
+    suspiciousProxies: (deps.config && deps.config.suspiciousProxies) || []
+  });
+
+  if (assessment.suspicious) {
+    deps.depositLedger.flagSuspicious({
+      businessId, senderId, code: assessment.code || null, risk: assessment.risk,
+      claimedAmount: assessment.claimedAmount, expectedAmount: assessment.expectedAmount,
+      reasons: assessment.reasons, now
+    });
+    const draft = { action: "clarify", text: suspiciousClaimAckText({ language }) };
+    const safety = checkDraft({
+      draft,
+      decision: { action: "clarify", forbiddenCapabilities: ["confirm_payment_received", "decide_refund"] },
+      knowledge: {}, intent, gateway
+    });
+    const staffItem = deps.inbox.submit({
+      decision: { action: "staff_review", businessId, escalationLabel: "deposit_suspicious", reasons: [`suspicious deposit claim (${assessment.risk})`, ...assessment.reasons] },
+      draft: { action: "staff_review", text: `⚠️ 可疑過數（${assessment.risk}）${assessment.code ? ` code ${assessment.code}` : ""}。${assessment.reasons.join("；")}。切勿單靠截圖確認，請核對銀行/PayMe 實際入賬。` },
+      safety: { verdict: "pass", safeToSend: false, reasons: ["suspicious deposit claim needs scrutiny"] },
+      normalizedMessage,
+      customerText: gateway.sanitizedText
+    });
+    const outbound = buildOutboundMessage({ normalizedMessage, draft, safety, staffItem });
+    return {
+      normalizedMessage, gateway, intent, draft, safety, staffItem, outbound,
+      finalStatus: outbound.status === "ready_to_send" ? "ready_to_send" : "staff_review",
+      errors: []
+    };
+  }
+
   let claim = null;
-  if (code) {
+  if (code && assessment.risk === "clean") {
     claim = deps.depositLedger.claimByReference({ businessId, senderId, reference: code });
   }
   if ((!claim || !claim.ok) && proofHint) {
@@ -522,7 +562,6 @@ function tryDepositClaim(deps, normalizedMessage, gateway, intent) {
   if (!claim || !claim.ok) return null;
 
   const record = claim.record;
-  const language = intent.language || "zh-HK";
   const draft = { action: "clarify", text: claimAcknowledgementText(record, { language }) };
   const safety = checkDraft({
     draft,

@@ -68,6 +68,10 @@ function createRedemptionLedger(config = {}) {
           customerExternalId: pkg.customerExternalId || null, customerName: pkg.customerName || null,
           packageName: pkg.packageName || null, serviceName: pkg.serviceName || null,
           sessions: Number(pkg.totalSessions) || 0, expiryDate: pkg.expiryDate || null,
+          // Per-session price (optional). Lets the win-back and IRD-record engines show
+          // real HK$ amounts; null when the shop hasn't recorded a price (never fabricated).
+          unitPrice: pkg.unitPrice != null ? Number(pkg.unitPrice) : null,
+          currency: pkg.currency || "HKD",
           at, by: "seed"
         });
         for (let i = 0; i < (Number(pkg.usedSessions) || 0); i += 1) {
@@ -162,13 +166,17 @@ function foldChain(chain) {
       total += Number(e.sessions) || 0;
       meta = {
         businessId: e.businessId, customerExternalId: e.customerExternalId, customerName: e.customerName,
-        packageName: e.packageName, serviceName: e.serviceName, expiryDate: e.expiryDate
+        packageName: e.packageName, serviceName: e.serviceName, expiryDate: e.expiryDate,
+        unitPrice: e.unitPrice != null ? Number(e.unitPrice) : null, currency: e.currency || "HKD"
       };
     } else if (e.type === TYPES.REDEMPTION) {
       used += -(Number(e.sessions) || 0);
     }
   }
-  return { ...meta, total, used, remaining: Math.max(0, remaining) };
+  const remainingClamped = Math.max(0, remaining);
+  // Dollar value of unredeemed sessions — only when a price is recorded (never fabricated).
+  const dollarRemaining = meta.unitPrice != null ? remainingClamped * meta.unitPrice : null;
+  return { ...meta, total, used, remaining: remainingClamped, dollarRemaining };
 }
 
 function verifyChain(chain) {

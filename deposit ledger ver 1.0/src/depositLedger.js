@@ -63,14 +63,21 @@ function createDepositLedger(config = {}) {
   const filePath = config.filePath || null;
   const nowFn = config.nowFn || (() => new Date());
   let records = [];
+  // Suspicious-claim log (fraud gate): claims that failed reconciliation. Kept
+  // separate from records because some (e.g. unknown reference) match no booking.
+  let suspicious = [];
 
-  if (filePath && fs.existsSync(filePath)) records = load(filePath);
+  if (filePath && fs.existsSync(filePath)) {
+    const loaded = load(filePath);
+    records = loaded.records;
+    suspicious = loaded.suspicious;
+  }
 
   function persist() {
     if (!filePath) return;
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     const tmp = `${filePath}.tmp-${process.pid}`;
-    fs.writeFileSync(tmp, JSON.stringify({ records }, null, 2), "utf8");
+    fs.writeFileSync(tmp, JSON.stringify({ records, suspicious }, null, 2), "utf8");
     fs.renameSync(tmp, filePath);
   }
 
@@ -195,8 +202,35 @@ function createDepositLedger(config = {}) {
         (!ref || r.senderRef === ref));
     },
     get(id) { return records.find((r) => r.id === id) || null; },
+    // Non-mutating lookup by code (any status) — lets the fraud gate assess a claim
+    // without transitioning it. claimByReference is the mutating counterpart.
+    findByCode(code) { const c = normalizeCode(code); return c ? (records.find((r) => r.code === c) || null) : null; },
     all() { return records.slice(); },
-    reset() { records = []; persist(); }
+
+    // Fraud gate: record a claim that failed reconciliation. Never confirms money;
+    // this is the loss-prevention log behind the "閘咗 $X 假走數" number.
+    flagSuspicious(input = {}) {
+      const entry = {
+        at: (input.now || nowFn()).toISOString(),
+        businessId: input.businessId || null,
+        senderRef: senderRef(input.senderId),
+        code: input.code || null,
+        risk: input.risk || "unknown",
+        claimedAmount: input.claimedAmount ?? null,
+        expectedAmount: input.expectedAmount ?? null,
+        reasons: input.reasons || []
+      };
+      suspicious.push(entry);
+      persist();
+      return entry;
+    },
+    listSuspicious(input = {}) {
+      return suspicious.filter((s) =>
+        (!input.businessId || s.businessId === input.businessId) &&
+        (!input.fromDate || String(s.at) >= input.fromDate) &&
+        (!input.toDate || String(s.at) <= input.toDate));
+    },
+    reset() { records = []; suspicious = []; persist(); }
   };
 }
 
@@ -292,9 +326,12 @@ function formatHkShort(iso) {
 function load(filePath) {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    return Array.isArray(parsed.records) ? parsed.records : [];
+    return {
+      records: Array.isArray(parsed.records) ? parsed.records : [],
+      suspicious: Array.isArray(parsed.suspicious) ? parsed.suspicious : []
+    };
   } catch (_e) {
-    return [];
+    return { records: [], suspicious: [] };
   }
 }
 
